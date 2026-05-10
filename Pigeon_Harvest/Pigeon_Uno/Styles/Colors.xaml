@@ -1,0 +1,43 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Harvest / Agriculture Theme -->
+    <LinearGradientBrush x:Key="WindowColor2" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#F7FAF7" Offset="0.0"/>
+        <GradientStop Color="#E8F5E9" Offset="1.0"/>
+    </LinearGradientBrush>
+
+    <!-- Core Palette -->
+    <SolidColorBrush x:Key="PrimaryColor" Color="#2E7D32"/>
+    <SolidColorBrush x:Key="SecondaryColor" Color="#4CAF50"/>
+    <SolidColorBrush x:Key="DarkBackgroundColor" Color="#FF0F1F14"/>
+    <SolidColorBrush x:Key="LightBackgroundColor" Color="#FFF7FAF7"/>
+    
+    <!-- Status Colors -->
+    <SolidColorBrush x:Key="SuccessColor" Color="#2E7D32"/>
+    <SolidColorBrush x:Key="WarningColor" Color="#FBC02D"/>
+    <SolidColorBrush x:Key="ErrorColor" Color="#D32F2F"/>
+    <SolidColorBrush x:Key="InfoColor" Color="#1976D2"/>
+    
+    <!-- Text Colors -->
+    <SolidColorBrush x:Key="PrimaryTextColor" Color="#E8F5E9"/>
+    <SolidColorBrush x:Key="SecondaryTextColor" Color="#9CC3A6"/>
+    <SolidColorBrush x:Key="DisabledTextColor" Color="#6F8A77"/>
+    
+    <!-- Border Colors -->
+    <SolidColorBrush x:Key="BorderColor" Color="#2C4D35"/>
+    <SolidColorBrush x:Key="FocusBorderColor" Color="#4CAF50"/>
+    
+    <!-- Button Colors -->
+    <SolidColorBrush x:Key="ButtonBackgroundColor" Color="#1A3522"/>
+    <SolidColorBrush x:Key="ButtonHoverColor" Color="#23452C"/>
+    <SolidColorBrush x:Key="ButtonPressedColor" Color="#2E7D32"/>
+    
+    <!-- Panel Colors -->
+    <SolidColorBrush x:Key="PanelBackgroundColor" Color="#122719"/>
+    <SolidColorBrush x:Key="PanelHeaderColor" Color="#0B1A10"/>
+    
+    <!-- Grid Dimensions -->
+    <GridLength x:Key="MiddleColWidth">270</GridLength>
+    
+</ResourceDictionary>

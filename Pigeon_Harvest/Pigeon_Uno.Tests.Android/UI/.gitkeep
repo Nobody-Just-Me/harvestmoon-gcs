@@ -1,0 +1,6 @@
+# UI and view tests will be added here
+# - ViewRenderingTests.cs
+# - NavigationTests.cs
+# - DataBindingTests.cs
+# - OrientationTests.cs
+# - LayoutTests.cs

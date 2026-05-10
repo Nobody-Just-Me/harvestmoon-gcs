@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="AppName" xml:space="preserve">
+    <value>Pigeon GCS</value>
+  </data>
+  <data name="Flight" xml:space="preserve">
+    <value>Penerbangan</value>
+  </data>
+  <data name="Map" xml:space="preserve">
+    <value>Peta</value>
+  </data>
+  <data name="Stats" xml:space="preserve">
+    <value>Statistik</value>
+  </data>
+  <data name="Calibration" xml:space="preserve">
+    <value>Kalibrasi</value>
+  </data>
+  <data name="Tracker" xml:space="preserve">
+    <value>Pelacak</value>
+  </data>
+  <data name="TLOG" xml:space="preserve">
+    <value>TLOG</value>
+  </data>
+  <data name="LoRa" xml:space="preserve">
+    <value>LoRa</value>
+  </data>
+  <data name="Connect" xml:space="preserve">
+    <value>Sambung</value>
+  </data>
+  <data name="Disconnect" xml:space="preserve">
+    <value>Putus</value>
+  </data>
+  <data name="Connected" xml:space="preserve">
+    <value>Tersambung</value>
+  </data>
+  <data name="Disconnected" xml:space="preserve">
+    <value>Terputus</value>
+  </data>
+  <data name="Armed" xml:space="preserve">
+    <value>Bersenjata</value>
+  </data>
+  <data name="Disarmed" xml:space="preserve">
+    <value>Tidak Bersenjata</value>
+  </data>
+</root>

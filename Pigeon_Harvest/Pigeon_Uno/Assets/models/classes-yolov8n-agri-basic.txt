@@ -1,0 +1,12 @@
+healthy_crop
+crop_stress
+dry_soil
+water_stress
+pest_damage
+weed
+disease
+yellowing
+wilting
+bare_soil
+irrigation_channel
+standing_water

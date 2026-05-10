@@ -1,0 +1,408 @@
+<Page
+    x:Class="Pigeon_Uno.Views.MissionPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:converters="using:Pigeon_Uno.Converters"
+    xmlns:controls="using:Pigeon_Uno.Controls"
+    mc:Ignorable="d"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    
+    <Page.Resources>
+        <converters:CurrentWaypointBackgroundConverter x:Key="CurrentWaypointBackgroundConverter"/>
+    </Page.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="55"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Map View (Full screen with waypoint dock at bottom) -->
+        <Grid Grid.Row="1" Grid.ColumnSpan="2">
+            <controls:SkiaMapControl x:Name="missionMapControl" 
+                                     Margin="2.5,0,2.5,2.5"
+                                     PointerPressed="MissionMap_PointerPressed"
+                                     DoubleTapped="MissionMap_DoubleTapped"/>
+            
+            <!-- Follow Vehicle Button (Top Right) -->
+            <Border x:Name="follow_wahana_border" 
+                    Background="{ThemeResource PrimaryBrush}" 
+                    CornerRadius="16" 
+                    Width="30" 
+                    Height="30" 
+                    HorizontalAlignment="Right" 
+                    VerticalAlignment="Top" 
+                    Margin="0,15,15,0" 
+                    BorderThickness="1">
+                <Button Background="Transparent" 
+                        BorderBrush="{x:Null}" 
+                        ToolTipService.ToolTip="Pusatkan pada Wahana"
+                        Click="IkutiWahana_Clicked">
+                    <Image Source="ms-appx:///Assets/icons/ikon-wahana-pesawat-3.png"/>
+                </Button>
+            </Border>
+        </Grid>
+
+        <!-- Header Title -->
+        <TextBlock x:Name="judul_map" 
+                   Text="Map View" 
+                   HorizontalAlignment="Left" 
+                   VerticalAlignment="Top" 
+                   FontSize="36" 
+                   FontFamily="Century Gothic" 
+                   FontWeight="Bold" 
+                   Foreground="{ThemeResource AccentForegroundBrush}" 
+                   Margin="0" 
+                   Padding="10,5" 
+                   Grid.ColumnSpan="2"/>
+
+        <!-- Map Controls (Top Center) -->
+        <StackPanel Orientation="Horizontal" 
+                    HorizontalAlignment="Left" 
+                    VerticalAlignment="Top" 
+                    Grid.ColumnSpan="2" 
+                    Margin="462,10,0,0">
+            <TextBlock Text="Pilih Peta :" 
+                       VerticalAlignment="Center" 
+                       Margin="0,0,5,0"/>
+            <ComboBox x:Name="cb_map_type" 
+                      SelectionChanged="ChooseMap" 
+                      SelectedIndex="4" 
+                      Width="120">
+                <ComboBoxItem Content="ArcGIS Topografi"/>
+                <ComboBoxItem Content="ArcGIS Imagery"/>
+                <ComboBoxItem Content="ArcGIS Streetmap"/>
+                <ComboBoxItem Content="Google Map"/>
+                <ComboBoxItem Content="Google Satellite"/>
+                <ComboBoxItem Content="Google Terrain"/>
+                <ComboBoxItem Content="Google Hybrid"/>
+            </ComboBox>
+            <TextBlock Text="WP RADIUS:" 
+                       VerticalAlignment="Center" 
+                       Margin="75,0,5,0"/>
+            <TextBox x:Name="tb_radius" 
+                     Text="2" 
+                     Width="75" 
+                     FontSize="15" 
+                     Margin="0,0,5,0"/>
+            
+            <!-- Mission Control Buttons -->
+             <Button x:Name="btn_start_mission"
+                    Content="▶ Start Mission" 
+                    Width="110" 
+                    Height="26"
+                    Margin="20,0,5,0"
+                    Background="{ThemeResource SuccessBrush}" 
+                    Foreground="{ThemeResource PrimaryForegroundBrush}"
+                    FontWeight="Bold" 
+                    FontSize="11"
+                    Click="StartMission_Click"
+                    ToolTipService.ToolTip="Start mission execution (Auto mode)"
+                    IsEnabled="False"/>
+             <Button x:Name="btn_pause_mission"
+                    Content="⏸ Pause" 
+                    Width="70" 
+                    Height="26"
+                    Margin="0,0,5,0"
+                    Background="{ThemeResource WarningBrush}" 
+                    Foreground="{ThemeResource ForegroundBrush}"
+                    FontWeight="Bold" 
+                    FontSize="11"
+                    Click="PauseMission_Click"
+                    ToolTipService.ToolTip="Pause mission"
+                    IsEnabled="False"/>
+             <Button x:Name="btn_resume_mission"
+                    Content="▶ Resume" 
+                    Width="80" 
+                    Height="26"
+                    Margin="0,0,5,0"
+                    Background="{ThemeResource InfoBrush}" 
+                    Foreground="{ThemeResource PrimaryForegroundBrush}"
+                    FontWeight="Bold" 
+                    FontSize="11"
+                    Click="ResumeMission_Click"
+                    ToolTipService.ToolTip="Resume mission"
+                    IsEnabled="False"/>
+            
+            <TextBlock Text="Command" 
+                       VerticalAlignment="Center" 
+                       Margin="15,0,5,0"/>
+            <Button BorderBrush="{x:Null}" 
+                    Width="20" 
+                    Click="SendwaypointCommand" 
+                    Margin="0">
+                <Image Source="ms-appx:///Assets/icons/icons8-email-send-80.png" 
+                       Margin="0,1,0,0"/>
+            </Button>
+            <TextBlock Text="Total Distance:" 
+                       VerticalAlignment="Center" 
+                       Margin="20,0,5,0"/>
+            <TextBlock x:Name="tb_total_distance" 
+                       Text="0.00 km" 
+                       VerticalAlignment="Center" 
+                       Margin="0,0,5,0"/>
+        </StackPanel>
+
+        <!-- Waypoint Dock Panel (Bottom) -->
+        <Grid x:Name="wp_dock" 
+              Grid.Row="1" 
+              Margin="20,0,20,1" 
+              Height="25" 
+              VerticalAlignment="Bottom" 
+              HorizontalAlignment="Stretch" 
+              Grid.ColumnSpan="2">
+            <Grid Height="28" Width="720" HorizontalAlignment="Left" VerticalAlignment="Top">
+                <!-- Toggle Button Background -->
+                 <Polygon Points="0,22.5 20,0 100,0 120,22.5" 
+                         Fill="{ThemeResource BackgroundBrush80}" 
+                         VerticalAlignment="Center" 
+                         HorizontalAlignment="Left" 
+                         Margin="70,0,0,0"/>
+                
+                <!-- Toggle Button -->
+                 <Button x:Name="wp_dock_btn" 
+                         Content="Markers ▲" 
+                         Padding="2" 
+                         HorizontalAlignment="Left" 
+                         VerticalAlignment="Center" 
+                         Background="Transparent" 
+                         BorderBrush="{x:Null}" 
+                         Foreground="{ThemeResource ForegroundBrush}" 
+                         Click="ToggleWPDock" 
+                         Margin="99,0,0,0"/>
+                
+                <!-- Action Buttons -->
+                 <Button x:Name="reset_mark" 
+                         Content="Reset" 
+                         Margin="411,0,0,-2" 
+                         Click="ResetWaypoints_Click" 
+                         Background="{ThemeResource ButtonBackgroundColor}" 
+                         FontFamily="Raleway SemiBold" 
+                         Foreground="{ThemeResource PrimaryTextColor}" 
+                         BorderBrush="{ThemeResource BorderColor}" 
+                         Height="30" 
+                         Width="40" 
+                         HorizontalAlignment="Left"/>
+                 <Button x:Name="Undo" 
+                         Content="Undo" 
+                         Margin="331,0,0,-2" 
+                         Click="Undo_Click" 
+                         Background="{ThemeResource ButtonBackgroundColor}" 
+                         FontFamily="Raleway SemiBold" 
+                         Foreground="{ThemeResource PrimaryTextColor}" 
+                         BorderBrush="{ThemeResource BorderColor}" 
+                         Height="30" 
+                         Width="40" 
+                         HorizontalAlignment="Left"/>
+                 <Button x:Name="Redo" 
+                         Content="Redo" 
+                         Margin="371,-1,0,-1" 
+                         Click="Redo_Click" 
+                         Background="{ThemeResource ButtonBackgroundColor}" 
+                         FontFamily="Raleway SemiBold" 
+                         Foreground="{ThemeResource PrimaryTextColor}" 
+                         BorderBrush="{ThemeResource BorderColor}" 
+                         Height="30" 
+                         Width="40" 
+                         HorizontalAlignment="Left"/>
+                 <Button x:Name="Import" 
+                         Content="Import" 
+                         Margin="499,0,0,-2" 
+                         Click="ImportButton_Click" 
+                         Background="{ThemeResource ButtonBackgroundColor}" 
+                         FontFamily="Raleway SemiBold" 
+                         Foreground="{ThemeResource PrimaryTextColor}" 
+                         BorderBrush="{ThemeResource BorderColor}" 
+                         Height="30" 
+                         Width="50" 
+                         HorizontalAlignment="Left"/>
+                 <Button x:Name="Export" 
+                         Content="Export" 
+                         Margin="265,0,50,0" 
+                         Click="ExportButton_Click" 
+                         Background="{ThemeResource ButtonBackgroundColor}" 
+                         FontFamily="Raleway SemiBold" 
+                         Foreground="{ThemeResource PrimaryTextColor}" 
+                         BorderBrush="{ThemeResource BorderColor}" 
+                         Height="30" 
+                         Width="50" 
+                         HorizontalAlignment="Right"/>
+            </Grid>
+            
+            <!-- Waypoint List Container -->
+            <Border BorderBrush="{ThemeResource BorderColor}" 
+                    BorderThickness="0,0,0,1" 
+                    Margin="0,28,0,0" 
+                    Background="{ThemeResource BackgroundBrush80}" 
+                    CornerRadius="5,5,0,0"
+                    x:Name="wp_dock_container"
+                    Visibility="Collapsed">
+                <ScrollViewer Margin="0,5,5,0" 
+                              VerticalScrollBarVisibility="Auto"
+                              MaxHeight="200">
+                    <StackPanel x:Name="wp_dock_stack">
+                        <!-- Waypoint items will be added here dynamically -->
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+        
+        <!-- Geofence Toggle Button (Top Right) -->
+        <Button x:Name="btn_geofence_toggle" 
+                Grid.Row="1"
+                Content="🔲 Geofence" 
+                Width="90" 
+                Height="26"
+                HorizontalAlignment="Right" 
+                VerticalAlignment="Top"
+                Margin="0,14,57,0"
+                Background="{ThemeResource InfoBrush}" 
+                Foreground="{ThemeResource PrimaryForegroundBrush}"
+                FontWeight="Bold" 
+                FontSize="11"
+                Click="ToggleGeofencePanel_Click"
+                ToolTipService.ToolTip="Open/Close geofencing panel" 
+                Grid.Column="1"/>
+
+        <!-- Geofence Panel -->
+        <Border x:Name="geofence_panel" 
+                Grid.Row="1" 
+                Grid.ColumnSpan="2" 
+                Background="{ThemeResource CardBrush95}" 
+                CornerRadius="8" 
+                HorizontalAlignment="Right" 
+                VerticalAlignment="Top" 
+                Margin="0,40,15,0" 
+                Padding="12"
+                Visibility="Collapsed">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Header -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                    <TextBlock Text="⬡ GEOFENCE SETTINGS" 
+                               Foreground="{ThemeResource ForegroundBrush}" 
+                               FontWeight="Bold" 
+                               FontSize="12"/>
+                    <Border x:Name="geofence_status_border" 
+                            Background="{ThemeResource SecondaryBrush}" 
+                            CornerRadius="3" 
+                            Margin="10,0,0,0" 
+                            Padding="6,2">
+                        <TextBlock x:Name="geofence_status_text" 
+                                   Text="Inactive" 
+                                   Foreground="{ThemeResource ForegroundBrush}" 
+                                   FontSize="10" 
+                                   FontWeight="SemiBold"/>
+                    </Border>
+                </StackPanel>
+
+                <!-- Settings Row -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+                    <TextBlock Text="Type:" 
+                               Foreground="{ThemeResource ForegroundBrush}" 
+                               VerticalAlignment="Center" 
+                               Margin="0,0,5,0"/>
+                    <ComboBox x:Name="cb_geofence_type" 
+                              Width="80" 
+                              Height="24" 
+                              SelectedIndex="0" 
+                              FontSize="11">
+                        <ComboBoxItem Content="Circular"/>
+                        <ComboBoxItem Content="Polygon"/>
+                    </ComboBox>
+                    <TextBlock Text="Radius:" 
+                               Foreground="{ThemeResource ForegroundBrush}" 
+                               VerticalAlignment="Center" 
+                               Margin="8,0,3,0"/>
+                    <TextBox x:Name="tb_geofence_radius" 
+                             Text="500" 
+                             Width="45" 
+                             Height="22" 
+                             FontSize="11"
+                             ToolTipService.ToolTip="Radius in meters"/>
+                    <TextBlock Text="m" 
+                               Foreground="{ThemeResource ForegroundBrush}" 
+                               VerticalAlignment="Center" 
+                               Margin="2,0,8,0"/>
+                    <TextBlock Text="Max Alt:" 
+                               Foreground="{ThemeResource ForegroundBrush}" 
+                               VerticalAlignment="Center" 
+                               Margin="0,0,3,0"/>
+                    <TextBox x:Name="tb_geofence_altitude" 
+                             Text="100" 
+                             Width="45" 
+                             Height="22" 
+                             FontSize="11"
+                             ToolTipService.ToolTip="Maximum altitude in meters"/>
+                    <TextBlock Text="m" 
+                               Foreground="{ThemeResource ForegroundBrush}" 
+                               VerticalAlignment="Center" 
+                               Margin="2,0,0,0"/>
+                </StackPanel>
+
+                <!-- Action Buttons -->
+                <StackPanel Grid.Row="2" 
+                            Orientation="Horizontal" 
+                            HorizontalAlignment="Right">
+                    <Button x:Name="btn_create_geofence" 
+                            Content="Create" 
+                            Width="55" 
+                            Height="24"
+                            Background="{ThemeResource InfoBrush}" 
+                            Foreground="{ThemeResource PrimaryForegroundBrush}" 
+                            FontSize="10"
+                            Click="CreateGeofence_Click" 
+                            ToolTipService.ToolTip="Create geofence at map center"/>
+                    <Button x:Name="btn_send_geofence" 
+                            Content="📤 Send" 
+                            Width="55" 
+                            Height="24" 
+                            Margin="5,0,0,0"
+                            Background="{ThemeResource SuccessBrush}" 
+                            Foreground="{ThemeResource PrimaryForegroundBrush}" 
+                            FontSize="10"
+                            Click="SendGeofence_Click" 
+                            IsEnabled="False"
+                            ToolTipService.ToolTip="Send geofence to vehicle"/>
+                    <Button x:Name="btn_clear_geofence" 
+                            Content="✕" 
+                            Width="28" 
+                            Height="24" 
+                            Margin="5,0,0,0"
+                            Background="{ThemeResource ErrorBrush}" 
+                            Foreground="{ThemeResource PrimaryForegroundBrush}" 
+                            FontWeight="Bold"
+                            Click="ClearGeofence_Click" 
+                            IsEnabled="False"
+                            ToolTipService.ToolTip="Clear geofence"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+        
+        <!-- Hidden elements for code compatibility -->
+        <TextBlock x:Name="StatusTextBlock" Visibility="Collapsed"/>
+        <TextBlock x:Name="MessageTextBlock" Visibility="Collapsed"/>
+        <ProgressBar x:Name="OperationProgressBar" Visibility="Collapsed"/>
+        <ListView x:Name="WaypointListView" Visibility="Collapsed"/>
+        <TextBlock x:Name="WaypointCountText" Visibility="Collapsed"/>
+        <TextBlock x:Name="DistanceText" Visibility="Collapsed"/>
+        <TextBlock x:Name="DurationText" Visibility="Collapsed"/>
+        <Button x:Name="DownloadButton" Visibility="Collapsed" Click="DownloadButton_Click"/>
+        <Button x:Name="UploadButton" Visibility="Collapsed" Click="UploadButton_Click"/>
+        <Button x:Name="ClearButton" Visibility="Collapsed" Click="ClearButton_Click"/>
+        <Button x:Name="AddWaypointButton" Visibility="Collapsed" Click="AddWaypointButton_Click"/>
+        <Button x:Name="GenerateVtolButton" Visibility="Collapsed" Click="GenerateVtolButton_Click"/>
+        <Button x:Name="GenerateMissionPlannerButton" Visibility="Collapsed" Click="GenerateMissionPlannerButton_Click"/>
+    </Grid>
+</Page>

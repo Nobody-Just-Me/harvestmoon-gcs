@@ -1,0 +1,172 @@
+<ContentDialog
+    x:Class="Pigeon_Uno.Views.SerialPortSelectionDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Serial Port Configuration"
+    PrimaryButtonText="Connect"
+    CloseButtonText="Cancel"
+    DefaultButton="Primary"
+    MinWidth="500">
+
+    <StackPanel Spacing="15" Padding="20">
+        
+        <!-- Port Selection -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="Serial Port" 
+                       FontWeight="SemiBold"
+                       FontSize="14"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <ComboBox x:Name="PortComboBox"
+                          Grid.Column="0"
+                          HorizontalAlignment="Stretch"
+                          PlaceholderText="Select a port..."
+                          SelectionChanged="PortComboBox_SelectionChanged">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding PortName}" 
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding Description}" 
+                                           FontSize="12"
+                                           Foreground="Gray"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                
+                <Button x:Name="RefreshButton"
+                        Grid.Column="1"
+                        Content="Refresh"
+                        Click="RefreshButton_Click"
+                        Margin="10,0,0,0"
+                        Padding="15,8"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- Port Details -->
+        <Border x:Name="PortDetailsPanel"
+                Background="#ECF0F1"
+                Padding="15"
+                CornerRadius="8"
+                Visibility="Collapsed">
+            <StackPanel Spacing="5">
+                <TextBlock Text="Port Information" 
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,5"/>
+                <TextBlock x:Name="PortNameText" 
+                           FontSize="12"/>
+                <TextBlock x:Name="PortDescriptionText" 
+                           FontSize="12"/>
+                <TextBlock x:Name="PortManufacturerText" 
+                           FontSize="12"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Baud Rate -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="Baud Rate" 
+                       FontWeight="SemiBold"
+                       FontSize="14"/>
+            <ComboBox x:Name="BaudRateComboBox"
+                      HorizontalAlignment="Stretch"
+                      SelectedIndex="5">
+                <ComboBoxItem Content="9600"/>
+                <ComboBoxItem Content="19200"/>
+                <ComboBoxItem Content="38400"/>
+                <ComboBoxItem Content="57600"/>
+                <ComboBoxItem Content="115200"/>
+                <ComboBoxItem Content="230400"/>
+                <ComboBoxItem Content="460800"/>
+                <ComboBoxItem Content="921600"/>
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Data Bits -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="Data Bits" 
+                       FontWeight="SemiBold"
+                       FontSize="14"/>
+            <ComboBox x:Name="DataBitsComboBox"
+                      HorizontalAlignment="Stretch"
+                      SelectedIndex="3">
+                <ComboBoxItem Content="5"/>
+                <ComboBoxItem Content="6"/>
+                <ComboBoxItem Content="7"/>
+                <ComboBoxItem Content="8"/>
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Parity -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="Parity" 
+                       FontWeight="SemiBold"
+                       FontSize="14"/>
+            <ComboBox x:Name="ParityComboBox"
+                      HorizontalAlignment="Stretch"
+                      SelectedIndex="0">
+                <ComboBoxItem Content="None"/>
+                <ComboBoxItem Content="Odd"/>
+                <ComboBoxItem Content="Even"/>
+                <ComboBoxItem Content="Mark"/>
+                <ComboBoxItem Content="Space"/>
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Stop Bits -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="Stop Bits" 
+                       FontWeight="SemiBold"
+                       FontSize="14"/>
+            <ComboBox x:Name="StopBitsComboBox"
+                      HorizontalAlignment="Stretch"
+                      SelectedIndex="0">
+                <ComboBoxItem Content="1"/>
+                <ComboBoxItem Content="1.5"/>
+                <ComboBoxItem Content="2"/>
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Advanced Options -->
+        <Expander Header="Advanced Options" 
+                  HorizontalAlignment="Stretch">
+            <StackPanel Spacing="10" Margin="0,10,0,0">
+                <CheckBox x:Name="DtrEnableCheck"
+                          Content="Enable DTR (Data Terminal Ready)"
+                          IsChecked="True"/>
+                <CheckBox x:Name="RtsEnableCheck"
+                          Content="Enable RTS (Request To Send)"
+                          IsChecked="True"/>
+                <CheckBox x:Name="AutoReconnectCheck"
+                          Content="Auto-reconnect on disconnect"
+                          IsChecked="True"/>
+                
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="Read Timeout (ms):" 
+                               VerticalAlignment="Center"
+                               Width="150"/>
+                    <TextBox x:Name="ReadTimeoutTextBox"
+                             Text="500"
+                             Width="100"/>
+                </StackPanel>
+                
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="Write Timeout (ms):" 
+                               VerticalAlignment="Center"
+                               Width="150"/>
+                    <TextBox x:Name="WriteTimeoutTextBox"
+                             Text="500"
+                             Width="100"/>
+                </StackPanel>
+            </StackPanel>
+        </Expander>
+
+    </StackPanel>
+</ContentDialog>

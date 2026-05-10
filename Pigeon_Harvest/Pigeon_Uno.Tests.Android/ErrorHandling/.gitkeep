@@ -1,0 +1,5 @@
+# Error handling tests will be added here
+# - NetworkErrorTests.cs
+# - InvalidDataTests.cs
+# - ResourceUnavailableTests.cs
+# - DisconnectionTests.cs

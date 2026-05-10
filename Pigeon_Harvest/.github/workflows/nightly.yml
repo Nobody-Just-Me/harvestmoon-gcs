@@ -1,0 +1,191 @@
+name: Nightly Build
+
+on:
+  schedule:
+    # Run every night at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  SOLUTION_PATH: 'Pigeon_Uno.sln'
+
+jobs:
+  nightly-build:
+    name: Nightly Build and Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+      
+    - name: Build solution
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
+      
+    - name: Run unit tests
+      run: dotnet test ${{ env.SOLUTION_PATH }} --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
+      
+    - name: Run integration tests
+      run: dotnet test ${{ env.SOLUTION_PATH }} --configuration Release --no-build --filter "Category=Integration" --verbosity normal
+      
+    - name: Run performance tests
+      run: dotnet test ${{ env.SOLUTION_PATH }} --configuration Release --no-build --filter "Category=Performance" --verbosity normal
+      
+    - name: Generate test report
+      if: always()
+      uses: dorny/test-reporter@v1
+      with:
+        name: Test Results (${{ matrix.os }})
+        path: '**/*.trx'
+        reporter: dotnet-trx
+        
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest'
+      uses: codecov/codecov-action@v4
+      with:
+        directory: ./coverage
+        flags: nightly
+        token: ${{ secrets.CODECOV_TOKEN }}
+        
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-results.sarif'
+        
+    - name: Run CodeQL analysis
+      uses: github/codeql-action/init@v3
+      with:
+        languages: csharp
+        
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Build for CodeQL
+      run: |
+        dotnet restore ${{ env.SOLUTION_PATH }}
+        dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
+        
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+      
+    - name: Check for vulnerable packages
+      run: dotnet list package --vulnerable --include-transitive
+      
+    - name: Check for deprecated packages
+      run: dotnet list package --deprecated
+      
+    - name: Check for outdated packages
+      run: dotnet list package --outdated
+      
+    - name: Generate dependency report
+      run: |
+        dotnet list package --include-transitive --format json > dependency-report.json
+        
+    - name: Upload dependency report
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependency-report
+        path: dependency-report.json
+        
+  performance-benchmark:
+    name: Performance Benchmark
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+      
+    - name: Build benchmarks
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
+      
+    - name: Run benchmarks
+      run: |
+        # Run performance benchmarks if they exist
+        if [ -f "Pigeon_Uno.Benchmarks/Pigeon_Uno.Benchmarks.csproj" ]; then
+          dotnet run --project Pigeon_Uno.Benchmarks --configuration Release -- --exporters json
+        fi
+        
+    - name: Upload benchmark results
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: BenchmarkDotNet.Artifacts/
+        
+  notify-nightly:
+    name: Notify Nightly Results
+    runs-on: ubuntu-latest
+    needs: [nightly-build, security-scan, dependency-check, performance-benchmark]
+    if: always()
+    
+    steps:
+    - name: Notify Discord (Success)
+      if: needs.nightly-build.result == 'success' && needs.security-scan.result == 'success'
+      uses: Ilshidur/action-discord@master
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      with:
+        args: '🌙 Pigeon Uno nightly build completed successfully. All tests passed and security scans clean.'
+        
+    - name: Notify Discord (Failure)
+      if: needs.nightly-build.result == 'failure' || needs.security-scan.result == 'failure'
+      uses: Ilshidur/action-discord@master
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      with:
+        args: '🚨 Pigeon Uno nightly build failed. Check the logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'

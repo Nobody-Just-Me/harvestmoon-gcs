@@ -1,0 +1,5 @@
+# Performance tests will be added here
+# - MemoryTests.cs
+# - CpuTests.cs
+# - BatteryTests.cs
+# - NetworkEfficiencyTests.cs

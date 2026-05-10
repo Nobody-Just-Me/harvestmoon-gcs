@@ -1,0 +1,75 @@
+<UserControl x:Class="Pigeon_Uno.Views.Marker"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="using:Pigeon_Uno.Views"
+             mc:Ignorable="d"
+             d:DesignHeight="60" d:DesignWidth="800" Margin="5,1,3,1" MaxHeight="60">
+    <Border Background="{ThemeResource CardBrush}" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" CornerRadius="10">
+        <Grid x:Name="wp_grid_">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="1*"/>
+                <RowDefinition Height="1*"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="50*"/>
+                <ColumnDefinition Width="70*"/>
+                <ColumnDefinition Width="70*"/>
+                <ColumnDefinition Width="50*"/>
+                <ColumnDefinition Width="50*"/>
+                <ColumnDefinition Width="50*"/>
+                <ColumnDefinition Width="50*"/>
+                <ColumnDefinition Width="0*"/>
+                <ColumnDefinition Width="0*"/>
+                <ColumnDefinition Width="50*"/>
+                <ColumnDefinition Width="200*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Image x:Name="wp_ikon_" Source="ms-appx:///Assets/icons/marker-waypoint.png" Margin="10,5,5,5" Grid.RowSpan="2"/>
+            <StackPanel Grid.RowSpan="2" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,14,0,0" Grid.Column="1" Height="33" Width="90">
+                <TextBlock x:Name="wp_name_" Text="mode" Margin="0" Padding="0" FontFamily="{StaticResource RalewayFont}" TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="ExtraBold" />
+                <TextBlock Text="Jarak: N/A" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{ThemeResource MutedForegroundBrush}" FontStyle="Italic" FontSize="14"/>
+            </StackPanel>
+            <StackPanel Grid.RowSpan="2" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,14,0,0" Grid.Column="2" Height="32" Width="70">
+                <TextBlock Text="above1" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <ComboBox x:Name="wp_command_" Text="Text1" Padding="0" Foreground="{ThemeResource ForegroundBrush}" Background="{ThemeResource CardBrush}" BorderBrush="{ThemeResource BorderBrush}" FontFamily="Trebuchet MS" FontStyle="Italic" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" FontWeight="Bold" FontSize="14" SelectionChanged="wp_command_SelectionChanged">
+                    <ComboBoxItem Content="Waypoint"/>
+                    <ComboBoxItem Content="Takeoff"/>
+                    <ComboBoxItem Content="Land"/>
+                    <ComboBoxItem Content="SetHome"/>
+                </ComboBox>
+            </StackPanel>
+            <StackPanel Grid.RowSpan="2" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,13,0,0" Grid.Column="3" Height="34" Width="40">
+                <TextBlock  x:Name="param_1" Text="param1" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <TextBox x:Name="wp_param1_" Text="0" Padding="0" Foreground="{ThemeResource ForegroundBrush}" Background="{ThemeResource CardBrush}" BorderBrush="{ThemeResource BorderBrush}" FontFamily="Trebuchet MS" FontStyle="Italic" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" FontWeight="Bold" VerticalAlignment="Center" FontSize="14"/>
+            </StackPanel>
+            <StackPanel Grid.RowSpan="2" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,13,0,0" Grid.Column="4" Height="34" Width="40">
+                <TextBlock x:Name="param_2" Text="param2" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <TextBox x:Name="wp_param2_" Text="0" Padding="0" Foreground="{ThemeResource ForegroundBrush}" Background="{ThemeResource CardBrush}" BorderBrush="{ThemeResource BorderBrush}" FontFamily="Trebuchet MS" FontStyle="Italic" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" FontWeight="Bold" VerticalAlignment="Center" FontSize="14"/>
+            </StackPanel>
+            <StackPanel Grid.RowSpan="2" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,13,0,0" Grid.Column="5" Height="34" Width="40">
+                <TextBlock x:Name="param_3" Text="param3" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <TextBox x:Name="wp_param3_" Text="0" Padding="0" Foreground="{ThemeResource ForegroundBrush}" Background="{ThemeResource CardBrush}" BorderBrush="{ThemeResource BorderBrush}" FontFamily="Trebuchet MS" FontStyle="Italic" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" FontWeight="Bold" VerticalAlignment="Center" FontSize="14"/>
+            </StackPanel>
+            <StackPanel Grid.RowSpan="2" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,13,0,0" Grid.Column="6" Height="34" Width="40">
+                <TextBlock x:Name="param_4" Text="param4" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <TextBox x:Name="wp_param4_" Text="0" Padding="0" Foreground="{ThemeResource ForegroundBrush}" Background="{ThemeResource CardBrush}" BorderBrush="{ThemeResource BorderBrush}" FontFamily="Trebuchet MS" FontStyle="Italic" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" FontWeight="Bold" VerticalAlignment="Center" FontSize="14"/>
+            </StackPanel>
+            <StackPanel Grid.RowSpan="2" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,13,0,0" Grid.Column="9" Height="34" Width="30">
+                <TextBlock Text="alt" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <TextBox x:Name="wp_alt_" Text="2" Padding="0" Foreground="{ThemeResource ForegroundBrush}" Background="{ThemeResource CardBrush}" BorderBrush="{ThemeResource BorderBrush}" FontFamily="Trebuchet MS" FontStyle="Italic" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" FontWeight="Bold" VerticalAlignment="Center" FontSize="14"/>
+            </StackPanel>
+            <StackPanel Margin="5,0,10,2" Grid.Column="10" VerticalAlignment="Bottom" Height="18">
+                <TextBlock Text="LAT " Padding="0" FontSize="10" Width="25" FontFamily="{StaticResource RalewayFont}" FontWeight="SemiBold"/>
+                <TextBox x:Name="wp_lat_" Text="-7.2612623163" Padding="0" Foreground="{ThemeResource ForegroundBrush}" Background="{ThemeResource CardBrush}" BorderBrush="{ThemeResource BorderBrush}" FontFamily="Trebuchet MS" FontStyle="Italic" HorizontalTextAlignment="Center" FontWeight="Bold" FontSize="14" TextChanged="wp_lat_TextChanged"/>
+            </StackPanel>
+            <StackPanel Grid.Row="1" Margin="5,2,10,0" Grid.Column="10" VerticalAlignment="Top" Height="18">
+                <TextBlock Text="LON " Padding="0" FontSize="10" Width="25" FontFamily="{StaticResource RalewayFont}" FontWeight="SemiBold"/>
+                <TextBox x:Name="wp_longt_" Text="-112.173327327" Padding="0" Foreground="{ThemeResource ForegroundBrush}" Background="{ThemeResource CardBrush}" BorderBrush="{ThemeResource BorderBrush}" FontFamily="Trebuchet MS" FontStyle="Italic" HorizontalTextAlignment="Center" FontWeight="Bold" FontSize="14" TextChanged="wp_longt_TextChanged"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

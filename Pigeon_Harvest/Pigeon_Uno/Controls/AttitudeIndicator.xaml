@@ -1,0 +1,43 @@
+<UserControl
+    x:Class="Pigeon_Uno.Controls.AttitudeIndicator"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Pigeon_Uno.Controls"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    d:DesignHeight="300"
+    d:DesignWidth="300">
+
+    <Grid>
+        <Grid.Clip>
+            <RectangleGeometry Rect="0,0,300,300"/> 
+            <!-- We might need dynamic sizing, but for now fixed or bound is safer for clip -->
+        </Grid.Clip>
+        
+        <!-- Horizon (Ground/Sky) -->
+        <!-- Center point for rotation should be center of the control -->
+        <Image x:Name="HorizonImage" 
+               Source="ms-appx:///Assets/avionics/Horizon_GroundSky.bmp" 
+               Stretch="None"
+               RenderTransformOrigin="0.5,0.5">
+            <Image.RenderTransform>
+                <TransformGroup>
+                    <TranslateTransform x:Name="PitchTranslate"/>
+                    <RotateTransform x:Name="RollRotate"/>
+                </TransformGroup>
+            </Image.RenderTransform>
+        </Image>
+
+        <!-- Bezel / Background -->
+        <Image Source="ms-appx:///Assets/avionics/Horizon_Background.bmp" Stretch="Uniform"/>
+
+        <!-- Aircraft Symbol -->
+        <Image Source="ms-appx:///Assets/avionics/Maquette_Avion.bmp" 
+               Stretch="Uniform" 
+               Width="150" 
+               Height="150"
+               HorizontalAlignment="Center" 
+               VerticalAlignment="Center"/>
+    </Grid>
+</UserControl>

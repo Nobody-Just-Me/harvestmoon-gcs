@@ -1,0 +1,7 @@
+# Platform service tests will be added here
+# - PermissionTests.cs
+# - SensorTests.cs
+# - SerialPortTests.cs
+# - StorageTests.cs
+# - SpeechTests.cs
+# - CameraTests.cs

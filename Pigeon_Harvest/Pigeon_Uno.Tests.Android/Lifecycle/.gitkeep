@@ -1,0 +1,5 @@
+# Lifecycle tests will be added here
+# - PauseResumeTests.cs
+# - OrientationChangeTests.cs
+# - BackgroundingTests.cs
+# - StateRestorationTests.cs

@@ -1,0 +1,197 @@
+<Page x:Class="Pigeon_Uno.Views.CameraPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:controls="using:Pigeon_Uno.Controls"
+      Background="Black">
+
+    <Page.Resources>
+        <ResourceDictionary>
+            <Storyboard x:Key="LivePulseAnimation" AutoReverse="True" RepeatBehavior="Forever">
+                <DoubleAnimation Storyboard.TargetName="LivePulseDot" 
+                                 Storyboard.TargetProperty="Opacity" 
+                                 From="1.0" To="0.3" Duration="0:0:0.8"/>
+                <DoubleAnimation Storyboard.TargetName="LiveBadge" 
+                                 Storyboard.TargetProperty="Opacity" 
+                                 From="1.0" To="0.8" Duration="0:0:0.8"/>
+            </Storyboard>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <Grid>
+        <!-- Layer 0: Camera Feed -->
+        <controls:VideoStreamControl x:Name="VideoStream" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+
+        <!-- Layer 1: HUD Overlay -->
+        <Grid x:Name="HudOverlay">
+            <!-- Top Bar -->
+
+            <!-- HUD Elements -->
+            <Grid x:Name="CameraHudGrid" Margin="16,68,16,16">
+                <!-- Top Left Badge: CAMERA VIEW -->
+                <Border Style="{StaticResource StatusBadgeStyle}" 
+                        Background="{ThemeResource CardBrush80}"
+                        BorderBrush="{ThemeResource BorderBrush}"
+                        HorizontalAlignment="Left" 
+                        VerticalAlignment="Top">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="{StaticResource IconCamera}" FontSize="14" VerticalAlignment="Center"/>
+                        <TextBlock Text="CAMERA VIEW" 
+                                   FontSize="12" 
+                                   FontWeight="Bold" 
+                                   Foreground="{ThemeResource ForegroundBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Top Right Badge: LIVE -->
+                <Border x:Name="LiveBadge"
+                        Visibility="Collapsed"
+                        Background="#EF4444" 
+                        Padding="12,8" 
+                        CornerRadius="8"
+                        HorizontalAlignment="Right" 
+                        VerticalAlignment="Top">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Ellipse x:Name="LivePulseDot" Width="8" Height="8" Fill="White" VerticalAlignment="Center"/>
+                        <TextBlock Text="LIVE" 
+                                   FontSize="12" 
+                                   FontWeight="Bold" 
+                                   Foreground="White"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Bottom Right: Metadata -->
+                <Border x:Name="MetadataPanel"
+                        Visibility="Collapsed"
+                        Background="{ThemeResource CardBrush80}" 
+                        Padding="12,8" 
+                        CornerRadius="8"
+                        BorderBrush="{ThemeResource BorderBrush}"
+                        BorderThickness="1"
+                        HorizontalAlignment="Right" 
+                        VerticalAlignment="Bottom">
+                    <StackPanel>
+                        <TextBlock x:Name="MetadataSourceText" Text="SRC: UNKNOWN" 
+                                   FontFamily="Consolas" FontSize="10" Foreground="White"/>
+                        <TextBlock x:Name="MetadataDeviceText" Text="DEV: NONE" 
+                                   FontFamily="Consolas" FontSize="10" Foreground="White" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Bottom Left: PIP Map -->
+                <Border x:Name="PipMapBorder"
+                        Width="208" Height="156" 
+                        Background="{ThemeResource CardBrush}"
+                        BorderBrush="{ThemeResource BorderBrush}"
+                        BorderThickness="2"
+                        CornerRadius="16"
+                        HorizontalAlignment="Left" 
+                        VerticalAlignment="Bottom">
+                    <Grid>
+                        <controls:SkiaMapControl x:Name="PipMap"/>
+                        <Border Background="{ThemeResource CardBrush80}" 
+                                Padding="8,4" 
+                                CornerRadius="4"
+                                HorizontalAlignment="Left" 
+                                VerticalAlignment="Top" 
+                                Margin="12">
+                            <TextBlock Text="MAP" FontSize="10" FontWeight="Bold" Foreground="{ThemeResource ForegroundBrush}"/>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Bottom Center: Camera Selection Panel -->
+                <StackPanel x:Name="CameraControlPanelHost" HorizontalAlignment="Center" VerticalAlignment="Bottom" MaxWidth="440">
+                    <!-- Collapse Toggle -->
+                    <Button x:Name="TogglePanelButton"
+                            HorizontalAlignment="Center"
+                            Background="{ThemeResource CardBrush80}"
+                            BorderBrush="{ThemeResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="20"
+                            Padding="12,6"
+                            Margin="0,0,0,12"
+                            Click="TogglePanelButton_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="{StaticResource IconSettings}" FontSize="12" VerticalAlignment="Center"/>
+                            <TextBlock Text="Pilih Sumber Kamera" FontSize="12" Foreground="{ThemeResource ForegroundBrush}" VerticalAlignment="Center"/>
+                            <FontIcon x:Name="ToggleIcon" Glyph="{StaticResource IconChevronDown}" FontSize="16" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Main Panel -->
+                    <Border x:Name="SelectionPanel"
+                            Style="{StaticResource CardStyle}"
+                            Background="{ThemeResource CardBrush80}"
+                            Visibility="Visible">
+                        <StackPanel Spacing="12">
+                            <!-- Tabs -->
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Sumber:" 
+                                           VerticalAlignment="Center" 
+                                           FontSize="12" 
+                                           Foreground="{ThemeResource MutedForegroundBrush}"
+                                           Margin="0,0,12,0"/>
+                                <RadioButton x:Name="LocalTab" 
+                                             Content="Kamera Lokal" 
+                                             GroupName="SourceTabs"
+                                             IsChecked="True"
+                                             Checked="LocalTab_Checked"/>
+                                <RadioButton x:Name="RtspTab" 
+                                             Content="RTSP Stream" 
+                                             GroupName="SourceTabs"
+                                             Checked="RtspTab_Checked"/>
+                            </StackPanel>
+
+                            <!-- Local Config -->
+                            <Grid x:Name="LocalConfigGrid" Visibility="Visible">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox x:Name="CameraSourceComboBox"
+                                          HorizontalAlignment="Stretch"
+                                          Margin="0,0,12,0"
+                                          DisplayMemberPath="Name"
+                                          SelectionChanged="CameraSourceComboBox_SelectionChanged"/>
+                                <Button x:Name="RefreshSourcesButton"
+                                        Grid.Column="1"
+                                        Click="RefreshSourcesButton_Click">
+                                    <FontIcon Glyph="{StaticResource IconRefresh}" FontSize="14" />
+                                </Button>
+                            </Grid>
+
+                            <!-- RTSP Config -->
+                            <Grid x:Name="RtspConfigGrid" Visibility="Collapsed">
+                                <TextBox x:Name="RtspUrlTextBox" 
+                                         PlaceholderText="rtsp://username:password@ip:554/stream"
+                                         Text="rtsp://"/>
+                            </Grid>
+
+                            <!-- Action Buttons -->
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                <Button x:Name="StartStopButton"
+                                        Content="Mulai Kamera"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Click="StartStopButton_Click"/>
+                                <Button x:Name="ScreenshotButton"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        IsEnabled="False"
+                                        Click="ScreenshotButton_Click">
+                                    <FontIcon Glyph="{StaticResource IconScreenshot}" FontSize="14" />
+                                </Button>
+                                <Button x:Name="RecordButton"
+                                        Style="{StaticResource ModernButtonStyle}"
+                                        IsEnabled="False"
+                                        Click="RecordButton_Click">
+                                    <FontIcon Glyph="{StaticResource IconRecord}" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Page>

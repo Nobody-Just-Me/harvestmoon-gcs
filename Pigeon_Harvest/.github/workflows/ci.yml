@@ -1,0 +1,340 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  SOLUTION_PATH: 'Pigeon_Uno.sln'
+  
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+          
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+      
+    - name: Build solution
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
+      
+    - name: Run unit tests
+      run: dotnet test ${{ env.SOLUTION_PATH }} --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
+      
+    - name: Upload coverage reports
+      if: matrix.os == 'ubuntu-latest'
+      uses: codecov/codecov-action@v4
+      with:
+        directory: ./coverage
+        fail_ci_if_error: true
+        token: ${{ secrets.CODECOV_TOKEN }}
+        
+    - name: Upload build artifacts
+      if: matrix.os == 'ubuntu-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts-${{ matrix.os }}
+        path: |
+          **/bin/Release/**
+          !**/bin/Release/**/ref/**
+          !**/bin/Release/**/*.pdb
+          
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+      
+    - name: Run SonarCloud analysis
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: |
+        dotnet tool install --global dotnet-sonarscanner
+        dotnet sonarscanner begin /k:"pigeon-gcs_pigeon-uno" /o:"pigeon-gcs" /d:sonar.token="${{ secrets.SONAR_TOKEN }}" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
+        dotnet build ${{ env.SOLUTION_PATH }} --configuration Release
+        dotnet test ${{ env.SOLUTION_PATH }} --configuration Release --collect:"XPlat Code Coverage" -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+        dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+        
+    - name: Run security scan
+      uses: securecodewarrior/github-action-add-sarif@v1
+      with:
+        sarif-file: 'security-scan-results.sarif'
+        
+  build-packages:
+    name: Build Distribution Packages
+    runs-on: ${{ matrix.os }}
+    needs: [build-and-test, code-quality]
+    if: github.event_name == 'release'
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: win-x64
+            artifact: windows-package
+          - os: ubuntu-latest
+            target: linux-x64
+            artifact: linux-package
+          - os: macos-latest
+            target: osx-x64
+            artifact: macos-package
+            
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+      
+    - name: Publish application
+      run: dotnet publish Pigeon_Uno/Pigeon_Uno/Pigeon_Uno.csproj -c Release -r ${{ matrix.target }} --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=true -o ./publish/${{ matrix.target }}
+      
+    - name: Create Windows installer (Windows only)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # Install WiX toolset
+        dotnet tool install --global wix
+        # Create MSI installer
+        # TODO: Add WiX configuration files
+        
+    - name: Create Linux packages (Linux only)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        # Create DEB package
+        mkdir -p ./package/DEBIAN
+        mkdir -p ./package/usr/bin
+        mkdir -p ./package/usr/share/applications
+        mkdir -p ./package/usr/share/pixmaps
+        
+        # Copy application files
+        cp -r ./publish/${{ matrix.target }}/* ./package/usr/bin/
+        
+        # Create control file
+        cat > ./package/DEBIAN/control << EOF
+        Package: pigeon-uno
+        Version: ${{ github.event.release.tag_name }}
+        Section: utils
+        Priority: optional
+        Architecture: amd64
+        Depends: libgtk-3-0, libwebkit2gtk-4.0-37
+        Maintainer: Pigeon GCS Team <dev@pigeon-gcs.com>
+        Description: Pigeon Ground Control Station
+         Cross-platform ground control station for UAV/drone operations.
+        EOF
+        
+        # Create desktop entry
+        cat > ./package/usr/share/applications/pigeon-uno.desktop << EOF
+        [Desktop Entry]
+        Name=Pigeon Uno
+        Comment=Ground Control Station
+        Exec=/usr/bin/Pigeon_Uno
+        Icon=pigeon-uno
+        Terminal=false
+        Type=Application
+        Categories=Utility;
+        EOF
+        
+        # Build DEB package
+        dpkg-deb --build ./package pigeon-uno_${{ github.event.release.tag_name }}_amd64.deb
+        
+        # Create AppImage
+        # TODO: Add AppImage creation script
+        
+    - name: Create macOS bundle (macOS only)
+      if: matrix.os == 'macos-latest'
+      run: |
+        # Create app bundle structure
+        mkdir -p "Pigeon Uno.app/Contents/MacOS"
+        mkdir -p "Pigeon Uno.app/Contents/Resources"
+        
+        # Copy application files
+        cp -r ./publish/${{ matrix.target }}/* "Pigeon Uno.app/Contents/MacOS/"
+        
+        # Create Info.plist
+        cat > "Pigeon Uno.app/Contents/Info.plist" << EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key>
+            <string>Pigeon_Uno</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.pigeongcs.pigeonuno</string>
+            <key>CFBundleName</key>
+            <string>Pigeon Uno</string>
+            <key>CFBundleVersion</key>
+            <string>${{ github.event.release.tag_name }}</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${{ github.event.release.tag_name }}</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+        </dict>
+        </plist>
+        EOF
+        
+        # Create DMG
+        hdiutil create -volname "Pigeon Uno" -srcfolder "Pigeon Uno.app" -ov -format UDZO "pigeon-uno-${{ github.event.release.tag_name }}-macos.dmg"
+        
+    - name: Upload package artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: |
+          *.msi
+          *.deb
+          *.rpm
+          *.AppImage
+          *.dmg
+          ./publish/${{ matrix.target }}/
+          
+  build-webassembly:
+    name: Build WebAssembly
+    runs-on: ubuntu-latest
+    needs: [build-and-test, code-quality]
+    if: github.event_name == 'push' || github.event_name == 'release'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Install WASM tools
+      run: dotnet workload install wasm-tools
+      
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+      
+    - name: Build WebAssembly
+      run: dotnet publish Pigeon_Uno/Pigeon_Uno/Pigeon_Uno.csproj -c Release -f net10.0-browserwasm -o ./publish/wasm
+      
+    - name: Upload WebAssembly artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: webassembly-package
+        path: ./publish/wasm/
+        
+    - name: Deploy to GitHub Pages (main branch only)
+      if: github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./publish/wasm
+        cname: app.pigeon-gcs.com
+        
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-packages, build-webassembly]
+    if: github.event_name == 'release'
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      
+    - name: Create release assets
+      run: |
+        # Organize artifacts
+        mkdir -p release-assets
+        
+        # Windows
+        if [ -d "windows-package" ]; then
+          cp windows-package/*.msi release-assets/ 2>/dev/null || true
+          zip -r release-assets/pigeon-uno-${{ github.event.release.tag_name }}-windows.zip windows-package/
+        fi
+        
+        # Linux
+        if [ -d "linux-package" ]; then
+          cp linux-package/*.deb release-assets/ 2>/dev/null || true
+          cp linux-package/*.AppImage release-assets/ 2>/dev/null || true
+          tar -czf release-assets/pigeon-uno-${{ github.event.release.tag_name }}-linux.tar.gz -C linux-package .
+        fi
+        
+        # macOS
+        if [ -d "macos-package" ]; then
+          cp macos-package/*.dmg release-assets/ 2>/dev/null || true
+          tar -czf release-assets/pigeon-uno-${{ github.event.release.tag_name }}-macos.tar.gz -C macos-package .
+        fi
+        
+        # WebAssembly
+        if [ -d "webassembly-package" ]; then
+          zip -r release-assets/pigeon-uno-${{ github.event.release.tag_name }}-webassembly.zip webassembly-package/
+        fi
+        
+    - name: Upload release assets
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release-assets/*
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+  notify:
+    name: Notify Status
+    runs-on: ubuntu-latest
+    needs: [build-and-test, code-quality, build-packages, build-webassembly]
+    if: always()
+    
+    steps:
+    - name: Notify Discord (Success)
+      if: success()
+      uses: Ilshidur/action-discord@master
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      with:
+        args: '✅ Pigeon Uno CI/CD completed successfully for ${{ github.ref }}'
+        
+    - name: Notify Discord (Failure)
+      if: failure()
+      uses: Ilshidur/action-discord@master
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      with:
+        args: '❌ Pigeon Uno CI/CD failed for ${{ github.ref }}. Check the logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'

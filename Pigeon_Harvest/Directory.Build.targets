@@ -1,0 +1,18 @@
+﻿<Project>
+  <!-- 
+    OpenCvSharp4.runtime.ubuntu.22.04-x64 deploys its native lib to
+    runtimes/ubuntu.22.04-x64/native/ but .NET 9 only probes runtimes/linux-x64/native/
+    (NETSDK1206 warning). This target copies the lib after build so it's found at runtime.
+  -->
+  <Target Name="CopyOpenCvSharpNativeToLinuxX64" AfterTargets="Build"
+          Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$(TargetFramework)' == 'net9.0-desktop'">
+    <ItemGroup>
+      <_OpenCvNativeSource Include="$(OutputPath)runtimes/ubuntu.22.04-x64/native/libOpenCvSharpExtern.so"
+                           Condition="Exists('$(OutputPath)runtimes/ubuntu.22.04-x64/native/libOpenCvSharpExtern.so')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_OpenCvNativeSource)"
+          DestinationFolder="$(OutputPath)runtimes/linux-x64/native/"
+          SkipUnchangedFiles="true"
+          Condition="'@(_OpenCvNativeSource)' != ''" />
+  </Target>
+</Project>

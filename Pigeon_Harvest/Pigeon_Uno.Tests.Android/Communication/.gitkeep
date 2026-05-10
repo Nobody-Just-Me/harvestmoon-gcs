@@ -1,0 +1,5 @@
+# Communication tests will be added here
+# - TcpTransportAndroidTests.cs
+# - UdpTransportAndroidTests.cs
+# - SerialTransportAndroidTests.cs
+# - NetworkChangeTests.cs

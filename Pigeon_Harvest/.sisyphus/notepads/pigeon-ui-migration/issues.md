@@ -1,0 +1,1 @@
+- Existing compilation errors found in AndroidSerialPortService.cs (CS0104: 'Application' ambiguous reference) and duplicate Content items in csproj, preventing a fully clean dotnet build. However, no XAML errors were introduced in CameraPage.xaml.

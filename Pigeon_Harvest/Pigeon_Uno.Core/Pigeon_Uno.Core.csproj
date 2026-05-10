@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);CS0108;CS0169;CS0414;CS0067;CS0649;CS1998;CS8600;CS8602;CS8603;CS8604;CS8618;CS8622;CS8625</NoWarn>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">26.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" />
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="System.IO.Ports" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="OpenCvSharp4" />
+    <PackageReference Include="Mapsui" />
+    <PackageReference Include="Mapsui.Tiling" />
+    <PackageReference Include="Mapsui.Nts" />
+    <PackageReference Include="LiveChartsCore" />
+    <PackageReference Include="LiveChartsCore.SkiaSharpView" />
+    <PackageReference Include="LibVLCSharp" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+    <PackageReference Include="OpenCvSharp4.runtime.ubuntu.22.04-x64" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
+  </ItemGroup>
+
+</Project>

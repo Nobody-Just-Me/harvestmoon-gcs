@@ -1,0 +1,125 @@
+<UserControl x:Class="Pigeon_Uno.Controls.StatusBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="50" d:DesignWidth="1024">
+    <Grid Background="#FF6B2D8F" Height="50">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        
+        <!-- Logo Section -->
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0">
+            <Image Source="ms-appx:///Assets/logo/pigeonlogo.png" 
+                   Width="40" Height="40" 
+                   Margin="0,0,10,0"
+                   VerticalAlignment="Center"/>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="PIGEON" 
+                          FontSize="16" 
+                          FontWeight="Bold" 
+                          Foreground="White"/>
+                <TextBlock Text="Ground Control Station" 
+                          FontSize="10" 
+                          Foreground="#FFCCCCCC"/>
+            </StackPanel>
+        </StackPanel>
+        
+        <!-- Connection Status -->
+        <StackPanel Grid.Column="1" 
+                   Orientation="Horizontal" 
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center">
+            <Border Background="#FF4CAF50" 
+                   CornerRadius="15" 
+                   Padding="15,5"
+                   Margin="0,0,20,0">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="●" 
+                              FontSize="16" 
+                              Foreground="White" 
+                              Margin="0,0,5,0"/>
+                    <TextBlock x:Name="txtConnectionStatus" 
+                              Text="ONLINE" 
+                              FontSize="14" 
+                              FontWeight="Bold" 
+                              Foreground="White"/>
+                </StackPanel>
+            </Border>
+            
+            <TextBlock Text="Wahana &amp; Tracker" 
+                      FontSize="12" 
+                      Foreground="White" 
+                      VerticalAlignment="Center"/>
+        </StackPanel>
+        
+        <!-- Status Indicators -->
+        <StackPanel Grid.Column="2" 
+                   Orientation="Horizontal" 
+                   Margin="10,0"
+                   VerticalAlignment="Center">
+            <!-- WiFi Signal -->
+            <StackPanel Margin="0,0,15,0">
+                <TextBlock Text="📶" FontSize="16" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="txtSignal" 
+                          Text="Sinyal" 
+                          FontSize="9" 
+                          Foreground="White" 
+                          HorizontalAlignment="Center"/>
+                <TextBlock x:Name="txtSignalValue" 
+                          Text="100%" 
+                          FontSize="10" 
+                          FontWeight="Bold" 
+                          Foreground="White" 
+                          HorizontalAlignment="Center"/>
+            </StackPanel>
+            
+            <!-- Flight Time -->
+            <StackPanel Margin="0,0,15,0">
+                <TextBlock Text="⏱" FontSize="16" HorizontalAlignment="Center"/>
+                <TextBlock Text="Waktu Terbang" 
+                          FontSize="9" 
+                          Foreground="White" 
+                          HorizontalAlignment="Center"/>
+                <TextBlock x:Name="txtFlightTime" 
+                          Text="00:00:00" 
+                          FontSize="10" 
+                          FontWeight="Bold" 
+                          Foreground="White" 
+                          HorizontalAlignment="Center"/>
+            </StackPanel>
+            
+            <!-- Battery -->
+            <StackPanel Margin="0,0,15,0">
+                <TextBlock Text="🔋" FontSize="16" HorizontalAlignment="Center"/>
+                <TextBlock Text="Batt" 
+                          FontSize="9" 
+                          Foreground="White" 
+                          HorizontalAlignment="Center"/>
+                <TextBlock x:Name="txtBattery" 
+                          Text="N/A" 
+                          FontSize="10" 
+                          FontWeight="Bold" 
+                          Foreground="White" 
+                          HorizontalAlignment="Center"/>
+            </StackPanel>
+            
+            <!-- Power Button -->
+            <Button Width="30" 
+                   Height="30" 
+                   Background="Transparent" 
+                   BorderBrush="White" 
+                   BorderThickness="2"
+                   CornerRadius="15"
+                   Margin="5,0,0,0">
+                <TextBlock Text="⏻" 
+                          FontSize="16" 
+                          Foreground="White"/>
+            </Button>
+        </StackPanel>
+    </Grid>
+</UserControl>

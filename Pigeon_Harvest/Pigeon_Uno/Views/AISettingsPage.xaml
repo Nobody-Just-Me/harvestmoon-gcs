@@ -1,0 +1,420 @@
+<Page x:Class="Pigeon_Uno.Views.AISettingsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      mc:Ignorable="d"
+      Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Background="{ThemeResource CardBrush}" Padding="14,10">
+            <StackPanel>
+                <TextBlock Text="PIA Settings"
+                           FontSize="22"
+                           FontWeight="Bold"
+                           Foreground="{ThemeResource ForegroundBrush}"/>
+                <TextBlock Text="Setup cepat: OpenRouter sebagai provider utama, Gemini sebagai fallback"
+                           FontSize="12"
+                           Foreground="{ThemeResource MutedForegroundBrush}"
+                           Margin="0,5,0,0"/>
+            </StackPanel>
+        </Grid>
+
+        <ScrollViewer Grid.Row="1" Padding="12">
+            <StackPanel Spacing="12" MaxWidth="640">
+
+                <Border Background="{ThemeResource CardBrush}"
+                        Padding="12"
+                        CornerRadius="8"
+                        BorderBrush="{ThemeResource BorderBrush}"
+                        BorderThickness="1">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="Quick Setup"
+                                   FontSize="17"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource ForegroundBrush}"/>
+                        <TextBlock Text="Isi API key, test koneksi, lalu simpan. Pengaturan teknis lain tersedia di Advanced."
+                                   TextWrapping="Wrap"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <Rectangle Height="1" Fill="{ThemeResource BorderBrush}"/>
+
+                        <ToggleSwitch x:Name="AiEnabledToggle"
+                                      Header="Enable AI Features"
+                                      OnContent="Enabled"
+                                      OffContent="Disabled"/>
+
+                        <TextBlock Text="LLM Provider"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <ComboBox x:Name="ProviderCombo"
+                                  MinWidth="200"
+                                  HorizontalAlignment="Left"
+                                  SelectedIndex="0">
+                            <ComboBoxItem Content="OpenRouter"/>
+                            <ComboBoxItem Content="Gemini"/>
+                            <ComboBoxItem Content="OpenAI"/>
+                            <ComboBoxItem Content="Grok"/>
+                        </ComboBox>
+
+                        <TextBlock Text="Primary API Key"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <PasswordBox x:Name="OpenRouterApiKeyBox"
+                                     PlaceholderText="API key OpenRouter utama"
+                                     MaxWidth="460"
+                                     HorizontalAlignment="Stretch"
+                                     PasswordRevealMode="Peek"/>
+
+                        <TextBlock Text="Fallback Provider"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <ComboBox x:Name="FallbackProviderCombo"
+                                  MinWidth="200"
+                                  HorizontalAlignment="Left"
+                                  SelectedIndex="1">
+                            <ComboBoxItem Content="OpenRouter"/>
+                            <ComboBoxItem Content="Gemini"/>
+                            <ComboBoxItem Content="OpenAI"/>
+                            <ComboBoxItem Content="Grok"/>
+                        </ComboBox>
+
+                        <TextBlock Text="Fallback API Key"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <PasswordBox x:Name="FallbackApiKeyBox"
+                                     PlaceholderText="API key Gemini fallback"
+                                     MaxWidth="460"
+                                     HorizontalAlignment="Stretch"
+                                     PasswordRevealMode="Peek"/>
+
+                        <TextBlock Text="Provider Diagnostic"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource ForegroundBrush}"
+                                   Margin="0,8,0,0"/>
+                        <Rectangle Height="1" Fill="{ThemeResource BorderBrush}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="TestPrimaryButton"
+                                    Content="Test Primary"
+                                    Click="TestPrimaryButton_Click"/>
+                            <Button x:Name="TestFallbackButton"
+                                    Content="Test Fallback"
+                                    Click="TestFallbackButton_Click"/>
+                        </StackPanel>
+                        <TextBlock x:Name="ProviderDiagnosticText"
+                                   Text="Belum ada diagnostic."
+                                   TextWrapping="Wrap"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+
+                        <Button x:Name="AdvancedToggleButton"
+                                Content="Tampilkan Advanced Settings"
+                                Click="AdvancedToggleButton_Click"
+                                HorizontalAlignment="Left"
+                                Margin="0,4,0,0"/>
+
+                        <StackPanel x:Name="AdvancedSettingsPanel"
+                                    Spacing="14"
+                                    Visibility="Collapsed">
+
+                        <TextBlock Text="Site URL"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SiteUrlBox"
+                                 PlaceholderText="https://pigeon-gcs.app"
+                                 MinWidth="280"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Site Name"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SiteNameBox"
+                                 PlaceholderText="Pigeon GCS - PIA"
+                                 MinWidth="280"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Voice Command"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource ForegroundBrush}"
+                                   Margin="0,8,0,0"/>
+                        <Rectangle Height="1" Fill="{ThemeResource BorderBrush}"/>
+
+                        <ToggleSwitch x:Name="VoiceEnabledToggle"
+                                      Header="Enable Voice Command"
+                                      OnContent="Enabled"
+                                      OffContent="Disabled"/>
+
+                        <TextBlock Text="Voice Confidence Threshold (0.3 - 1.0)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="VoiceConfidenceBox"
+                                 PlaceholderText="0.6"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Voice Language"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <ComboBox x:Name="VoiceLanguageCombo"
+                                  MinWidth="160"
+                                  HorizontalAlignment="Left"
+                                  SelectedIndex="0">
+                            <ComboBoxItem Content="id-ID"/>
+                            <ComboBoxItem Content="en-US"/>
+                        </ComboBox>
+
+                        <TextBlock Text="Anomaly Detection"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource ForegroundBrush}"
+                                   Margin="0,8,0,0"/>
+                        <Rectangle Height="1" Fill="{ThemeResource BorderBrush}"/>
+
+                        <ToggleSwitch x:Name="RuleBasedToggle"
+                                      Header="Rule-based Layer"
+                                      OnContent="Enabled"
+                                      OffContent="Disabled"/>
+                        <ToggleSwitch x:Name="StatisticalToggle"
+                                      Header="Statistical Layer"
+                                      OnContent="Enabled"
+                                      OffContent="Disabled"/>
+                        <ToggleSwitch x:Name="AiLayerToggle"
+                                      Header="AI Layer"
+                                      OnContent="Enabled"
+                                      OffContent="Disabled"/>
+                        <ToggleSwitch x:Name="AutoResponseToggle"
+                                      Header="Auto Response"
+                                      OnContent="Enabled"
+                                      OffContent="Disabled"/>
+
+                        <TextBlock Text="Analysis"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource ForegroundBrush}"
+                                   Margin="0,8,0,0"/>
+                        <Rectangle Height="1" Fill="{ThemeResource BorderBrush}"/>
+
+                        <TextBlock Text="Analysis Interval Seconds"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="AnalysisIntervalBox"
+                                 PlaceholderText="30"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Analysis Buffer Seconds"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="AnalysisBufferBox"
+                                 PlaceholderText="30"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Analysis Min Confidence (0 - 1)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="AnalysisMinConfidenceBox"
+                                 PlaceholderText="0.7"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="PIA History Retention (days)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="HistoryRetentionDaysBox"
+                                 PlaceholderText="30"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Telemetry Sampling"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource ForegroundBrush}"
+                                   Margin="0,8,0,0"/>
+                        <Rectangle Height="1" Fill="{ThemeResource BorderBrush}"/>
+
+                        <TextBlock Text="Minimum Sample Interval (ms)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingMinIntervalBox"
+                                 PlaceholderText="500"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Force Sample Interval (ms)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingForceIntervalBox"
+                                 PlaceholderText="2000"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Battery Delta Trigger (%)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingBatteryDeltaBox"
+                                 PlaceholderText="0.8"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Altitude Delta Trigger (m)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingAltitudeDeltaBox"
+                                 PlaceholderText="1.5"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Speed Delta Trigger (m/s)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingSpeedDeltaBox"
+                                 PlaceholderText="0.8"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Heading Delta Trigger (deg)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingHeadingDeltaBox"
+                                 PlaceholderText="7"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Vertical Speed Delta Trigger (m/s)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingVerticalSpeedDeltaBox"
+                                 PlaceholderText="0.6"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="GPS Distance Trigger (m)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingGpsDeltaBox"
+                                 PlaceholderText="2.5"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="GPS HDOP Delta Trigger"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingGpsHdopDeltaBox"
+                                 PlaceholderText="0.3"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Battery Voltage Delta Trigger (V)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingBatteryVoltageDeltaBox"
+                                 PlaceholderText="0.08"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Battery Current Delta Trigger (A)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingBatteryCurrentDeltaBox"
+                                 PlaceholderText="0.4"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Roll Delta Trigger (deg)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingRollDeltaBox"
+                                 PlaceholderText="2.0"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Pitch Delta Trigger (deg)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingPitchDeltaBox"
+                                 PlaceholderText="2.0"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Vibration Magnitude Delta Trigger"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingVibrationDeltaBox"
+                                 PlaceholderText="8.0"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="Link Quality Delta Trigger (%)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="SamplingLinkQualityDeltaBox"
+                                 PlaceholderText="8.0"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <ToggleSwitch x:Name="SamplingFlightModeToggle"
+                                      Header="Sample on Flight Mode Change"
+                                      OnContent="Enabled"
+                                      OffContent="Disabled"/>
+                        <ToggleSwitch x:Name="SamplingArmedStateToggle"
+                                      Header="Sample on Armed State Change"
+                                      OnContent="Enabled"
+                                      OffContent="Disabled"/>
+
+                        <TextBlock Text="Models"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource ForegroundBrush}"
+                                   Margin="0,8,0,0"/>
+                        <Rectangle Height="1" Fill="{ThemeResource BorderBrush}"/>
+
+                        <TextBlock Text="Telemetry Analysis Model" FontWeight="SemiBold" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="TelemetryModelBox" PlaceholderText="google/gemini-2.5-flash-lite"/>
+                        <TextBlock Text="Anomaly Detection Model" FontWeight="SemiBold" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="AnomalyModelBox" PlaceholderText="google/gemini-2.5-flash-lite"/>
+                        <TextBlock Text="Natural Language Chat Model" FontWeight="SemiBold" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="ChatModelBox" PlaceholderText="google/gemini-2.5-flash-lite"/>
+                        <TextBlock Text="Maintenance Prediction Model" FontWeight="SemiBold" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="MaintenanceModelBox" PlaceholderText="deepseek/deepseek-v4"/>
+                        <TextBlock Text="Performance Scoring Model" FontWeight="SemiBold" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="PerformanceModelBox" PlaceholderText="deepseek/deepseek-v4"/>
+                        <TextBlock Text="Voice Intent Model" FontWeight="SemiBold" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="VoiceIntentModelBox" PlaceholderText="google/gemini-2.5-flash-lite"/>
+                        <TextBlock Text="Fallback Model" FontWeight="SemiBold" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="FallbackModelBox" PlaceholderText="openrouter/free"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Orientation="Horizontal"
+                            Spacing="10"
+                            HorizontalAlignment="Right"
+                            Margin="0,8,0,20">
+                    <Button x:Name="CancelButton"
+                            Content="Cancel"
+                            Click="CancelButton_Click"
+                            Background="{ThemeResource SecondaryBrush}"
+                            Foreground="{ThemeResource ForegroundBrush}"
+                            Padding="14,8"
+                            CornerRadius="4"
+                            FontSize="12"/>
+                    <Button x:Name="SaveButton"
+                            Content="Save Settings"
+                            Click="SaveButton_Click"
+                            Background="{ThemeResource SuccessBrush}"
+                            Foreground="{ThemeResource PrimaryForegroundBrush}"
+                            Padding="14,8"
+                            CornerRadius="4"
+                            FontSize="12"
+                            FontWeight="SemiBold"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

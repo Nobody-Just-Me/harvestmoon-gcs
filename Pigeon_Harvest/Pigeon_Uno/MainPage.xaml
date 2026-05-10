@@ -1,0 +1,298 @@
+<Page x:Class="Pigeon_Uno.MainPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:local="using:Pigeon_Uno"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      mc:Ignorable="d"
+      Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Page.Resources>
+        <Style x:Key="SidebarButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Height" Value="65"/> <!-- Match WPF -->
+            <Setter Property="Margin" Value="0"/>
+        </Style>
+    </Page.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="55"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="80"/>
+            <ColumnDefinition Width="2*"/>
+            <ColumnDefinition Width="1*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- TOP LEFT LOGO AREA -->
+        <Grid Grid.Column="0" Grid.Row="0" Background="{StaticResource WindowColor2}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <Image Source="ms-appx:///Assets/logo/pigeon.png" Height="25" Margin="4,4,4,0"/>
+                <Image Source="ms-appx:///Assets/logo/efalcon-gcs.png" Height="15" Margin="4,0,4,4"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- TOP HEADER AREA (Spans Col 1 and 2) -->
+        <Grid Grid.Column="1" Grid.ColumnSpan="2" Grid.Row="0" Background="{StaticResource WindowColor2}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300"/> <!-- Header Image Alignment Filler -->
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Header Image -->
+            <Image Grid.Column="1" Source="ms-appx:///Assets/images/header-new.png" 
+                   Stretch="UniformToFill" 
+                   HorizontalAlignment="Right"
+                   VerticalAlignment="Stretch"/>
+
+            <!-- Status Content -->
+            <Grid Grid.Column="1" Margin="0,5">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*"/> <!-- Status -->
+                    <ColumnDefinition Width="1.5*"/> <!-- Signal -->
+                    <ColumnDefinition Width="1.5*"/> <!-- Flight Time -->
+                    <ColumnDefinition Width="1.5*"/> <!-- Battery -->
+                    <ColumnDefinition Width="1*"/> <!-- Exit -->
+                </Grid.ColumnDefinitions>
+
+                <!-- STATUS -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Image Source="ms-appx:///Assets/logo/efalcon.png" Height="35" Margin="0,0,10,0"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock x:Name="StatusText" Text="OFFLINE" FontFamily="{StaticResource CommandoFont}" Foreground="#FF969696" FontSize="20" HorizontalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="Wahana" FontFamily="{StaticResource RalewayFont}" FontWeight="Bold" FontSize="10"/>
+                            <TextBlock Text=" &amp; " FontSize="10"/>
+                            <TextBlock Text="Tracker" FontFamily="{StaticResource RalewayFont}" FontWeight="Bold" FontSize="10"/>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- SIGNAL STRENGTH -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Grid VerticalAlignment="Center" Margin="0,0,5,0">
+                         <Image Source="ms-appx:///Assets/icons/icons8-wi-fi-50.png" Height="25"/>
+                         <Image Source="ms-appx:///Assets/icons/icons8-wi-fi-filled-50.png" Height="25"/> <!-- Placeholder Clip removed -->
+                    </Grid>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Sinyal" FontFamily="{StaticResource RalewayFont}" FontSize="10"/>
+                        <TextBlock x:Name="SignalText" Text="(N/A%)" FontFamily="{StaticResource RalewayFont}" FontWeight="Bold" FontSize="12"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- FLIGHT TIME -->
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock Text="Waktu Terbang" FontFamily="{StaticResource RalewayFont}" FontSize="10" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="FlightTimeText" Text="00:00:00" FontFamily="{StaticResource RalewayFont}" FontSize="18" HorizontalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- BATTERY -->
+                <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Grid VerticalAlignment="Center" Margin="0,0,5,0">
+                        <Image Source="ms-appx:///Assets/icons/bat-empty.png" Height="25"/>
+                    </Grid>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Batt" FontFamily="{StaticResource RalewayFont}" FontSize="10" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="BatteryText" Text="N/A" FontFamily="{StaticResource RalewayFont}" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- EXIT BUTTON -->
+                <Button Grid.Column="4" Background="Transparent" BorderThickness="0" 
+                        HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0"
+                        Click="ExitButton_Click" x:Name="ExitButton">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="ExitLabel" Text="EXIT" Foreground="#FF636363" FontSize="14" VerticalAlignment="Center" Margin="0,0,5,0">
+                            <TextBlock.RenderTransform>
+                                <RotateTransform Angle="-90"/>
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
+                        <Image Source="ms-appx:///Assets/icons/icons8-shutdown-50.png" Height="30"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Grid>
+
+        <!-- SIDEBAR (Row 1, Col 0) -->
+        <Grid Grid.Row="1" Grid.Column="0" Background="{StaticResource WindowColor2}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/> <!-- Language -->
+                <RowDefinition Height="Auto"/> <!-- Flight -->
+                <RowDefinition Height="Auto"/> <!-- Map -->
+                <RowDefinition Height="Auto"/> <!-- Stats -->
+                <RowDefinition Height="Auto"/> <!-- Track -->
+                <RowDefinition Height="Auto"/> <!-- Calib -->
+                <RowDefinition Height="Auto"/> <!-- Tlog -->
+                <RowDefinition Height="Auto"/> <!-- LoRa -->
+                <RowDefinition Height="*"/>    <!-- Spacer -->
+                <RowDefinition Height="Auto"/> <!-- Help & Clock -->
+            </Grid.RowDefinitions>
+
+            <!-- Language -->
+            <StackPanel Grid.Row="0" Margin="0,15,0,0">
+                <TextBlock x:Name="LanguageLabel" Text="Bahasa :" Foreground="White" HorizontalAlignment="Center" FontFamily="{StaticResource RalewayFont}" FontSize="10"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,2">
+                    <Button x:Name="IndonesiaFlag" Background="DeepSkyBlue" Padding="2" Margin="0" BorderThickness="0" Click="LanguageButton_Click" Tag="ID">
+                         <Image Source="ms-appx:///Assets/icons/Flag_of_Indonesia.png" Width="22" Height="12"/>
+                    </Button>
+                    <Button x:Name="EnglishFlag" Background="Transparent" Padding="2" Margin="5,0,0,0" BorderThickness="0" Click="LanguageButton_Click" Tag="EN">
+                         <Image Source="ms-appx:///Assets/icons/Flag_of_the_United_Kingdom.png" Width="22" Height="12"/>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Menu Buttons -->
+            <!-- 1. Flight -->
+            <Button Grid.Row="1" x:Name="FlightButton" Style="{StaticResource SidebarButtonStyle}" Click="NavButton_Click" Tag="Flight">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Rectangle x:Name="FlightIndicator" Fill="White" Width="5" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="FlightLabel" Grid.Column="1" Text="Terbang" Foreground="White" FontSize="14" FontFamily="{StaticResource RalewayFont}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                        <TextBlock.RenderTransform>
+                            <RotateTransform Angle="-90"/>
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                    <Image Grid.Column="2" Source="ms-appx:///Assets/icons/icons8-wasp.png" Width="40" Height="40" Margin="0,0,5,0"/>
+                </Grid>
+            </Button>
+
+            <!-- 2. Map -->
+            <Button Grid.Row="2" x:Name="MapButton" Style="{StaticResource SidebarButtonStyle}" Click="NavButton_Click" Tag="Map">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Rectangle x:Name="MapIndicator" Fill="White" Width="5" HorizontalAlignment="Left" Visibility="Collapsed"/>
+                    <TextBlock x:Name="MapLabel" Grid.Column="1" Text="Peta" Foreground="White" FontSize="14" FontFamily="{StaticResource RalewayFont}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                        <TextBlock.RenderTransform>
+                            <RotateTransform Angle="-90"/>
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                    <Image Grid.Column="2" Source="ms-appx:///Assets/icons/icons8-waypoint-map-50.png" Width="40" Height="40" Margin="0,0,5,0"/>
+                </Grid>
+            </Button>
+
+            <!-- 3. Stats -->
+            <Button Grid.Row="3" x:Name="StatsButton" Style="{StaticResource SidebarButtonStyle}" Click="NavButton_Click" Tag="Stats">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Rectangle x:Name="StatsIndicator" Fill="White" Width="5" HorizontalAlignment="Left" Visibility="Collapsed"/>
+                    <TextBlock x:Name="StatsLabel" Grid.Column="1" Text="Stats" Foreground="White" FontSize="14" FontFamily="{StaticResource RalewayFont}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                        <TextBlock.RenderTransform>
+                            <RotateTransform Angle="-90"/>
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                    <Image Grid.Column="2" Source="ms-appx:///Assets/icons/icons8-statistics-50.png" Width="40" Height="40" Margin="0,0,5,0"/>
+                </Grid>
+            </Button>
+
+            <!-- 4. Tracker -->
+            <Button Grid.Row="4" x:Name="TrackerButton" Style="{StaticResource SidebarButtonStyle}" Click="NavButton_Click" Tag="Tracker">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Rectangle x:Name="TrackerIndicator" Fill="White" Width="5" HorizontalAlignment="Left" Visibility="Collapsed"/>
+                    <TextBlock x:Name="TrackerLabel" Grid.Column="1" Text="Tracker" Foreground="White" FontSize="14" FontFamily="{StaticResource RalewayFont}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                        <TextBlock.RenderTransform>
+                            <RotateTransform Angle="-90"/>
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                    <Image Grid.Column="2" Source="ms-appx:///Assets/icons/icons8-gps-antenna-100.png" Width="40" Height="40" Margin="0,0,5,0"/>
+                </Grid>
+            </Button>
+
+            <!-- 5. Calibration -->
+            <Button Grid.Row="5" x:Name="CalibrationButton" Style="{StaticResource SidebarButtonStyle}" Click="NavButton_Click" Tag="Calibration">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Rectangle x:Name="CalibrationIndicator" Fill="White" Width="5" HorizontalAlignment="Left" Visibility="Collapsed"/>
+                    <TextBlock x:Name="CalibrationLabel" Grid.Column="1" Text="Calibrat" Foreground="White" FontSize="14" FontFamily="{StaticResource RalewayFont}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                        <TextBlock.RenderTransform>
+                            <RotateTransform Angle="-90"/>
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                    <Image Grid.Column="2" Source="ms-appx:///Assets/icons/gerigi.png" Width="40" Height="40" Margin="0,0,5,0"/>
+                </Grid>
+            </Button>
+
+            <!-- 6. TLOG -->
+            <Button Grid.Row="6" x:Name="TlogButton" Style="{StaticResource SidebarButtonStyle}" Click="NavButton_Click" Tag="TLOG">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Rectangle x:Name="TlogIndicator" Fill="White" Width="5" HorizontalAlignment="Left" Visibility="Collapsed"/>
+                    <TextBlock x:Name="TlogLabel" Grid.Column="1" Text="TLOG" Foreground="White" FontSize="14" FontFamily="{StaticResource RalewayFont}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                        <TextBlock.RenderTransform>
+                            <RotateTransform Angle="-90"/>
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                    <Image Grid.Column="2" Source="ms-appx:///Assets/icons/icons8-play-50.png" Width="40" Height="40" Margin="0,0,5,0"/>
+                </Grid>
+            </Button>
+
+            <!-- 7. LoRa -->
+            <Button Grid.Row="7" x:Name="LoRaButton" Style="{StaticResource SidebarButtonStyle}" Click="NavButton_Click" Tag="LoRa">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Rectangle x:Name="LoRaIndicator" Fill="White" Width="5" HorizontalAlignment="Left" Visibility="Collapsed"/>
+                    <TextBlock x:Name="LoRaLabel" Grid.Column="1" Text="LoRa" Foreground="White" FontSize="14" FontFamily="{StaticResource RalewayFont}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                        <TextBlock.RenderTransform>
+                            <RotateTransform Angle="-90"/>
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                    <Image Grid.Column="2" Source="ms-appx:///Assets/icons/icons8-wi-fi-50.png" Width="40" Height="40" Margin="0,0,5,0"/>
+                </Grid>
+            </Button>
+
+            <!-- Bottom Area -->
+            <StackPanel Grid.Row="9" Margin="0,0,0,10">
+                <Button Content="Help" Background="Transparent" Foreground="White" FontFamily="Unispace" FontWeight="Bold" FontSize="9" HorizontalAlignment="Center"/>
+                <TextBlock Text="Waktu Sekarang" Foreground="White" FontSize="9" HorizontalAlignment="Center" Margin="0,10,0,0"/>
+                <!-- Clock placeholder -->
+                <TextBlock x:Name="DigitalClock" Text="00:00" Foreground="White" FontSize="12" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- MAIN CONTENT -->
+        <Border Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" BorderBrush="#FFA8A8A8" BorderThickness="2" Margin="0,5,5,5">
+            <Frame x:Name="ContentFrame" NavigationFailed="ContentFrame_NavigationFailed"/>
+        </Border>
+    </Grid>
+</Page>

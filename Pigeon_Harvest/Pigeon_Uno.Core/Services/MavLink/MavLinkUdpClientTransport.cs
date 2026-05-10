@@ -1,0 +1,279 @@
+/*
+The MIT License (MIT)
+
+Copyright (c) 2013, David Suarez
+Modified for UDP Client mode - 2024
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+using System;
+using System.Net;
+using System.Threading;
+using System.Net.Sockets;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+
+namespace MavLinkNet
+{
+    /// <summary>
+    /// UDP Client Transport for MAVLink - connects as a client to a remote endpoint
+    /// Unlike MavLinkUdpTransport which acts as a server/listener, this class
+    /// actively connects to a specified target IP and port.
+    /// </summary>
+    public class MavLinkUdpClientTransport : MavLinkGenericTransport
+    {
+        public int LocalPort = 0;  // 0 = Any available port
+        public int TargetPort = 14550;
+        public IPAddress TargetIpAddress = new IPAddress(new byte[] { 127, 0, 0, 1 });
+        public int HeartBeatUpdateRateMs = 1000;
+
+        private ConcurrentQueue<byte[]> mReceiveQueue = new ConcurrentQueue<byte[]>();
+        private ConcurrentQueue<UasMessage> mSendQueue = new ConcurrentQueue<UasMessage>();
+        private AutoResetEvent mReceiveSignal = new AutoResetEvent(true);
+        private AutoResetEvent mSendSignal = new AutoResetEvent(true);
+        private MavLinkAsyncWalker mMavLink = new MavLinkAsyncWalker();
+        private UdpClient mUdpClient;
+        private IPEndPoint mRemoteEndPoint;
+        private bool mIsActive = true;
+        private Thread mReceiveThread;
+
+        public override void Initialize()
+        {
+            InitializeMavLink();
+            InitializeUdpClient();
+            StartReceiveThread();
+            StartSendThread();
+        }
+
+        public override void Dispose()
+        {
+            mIsActive = false;
+            
+            try
+            {
+                mUdpClient?.Close();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[UDP Client] Error closing socket: {ex.Message}");
+            }
+            
+            mReceiveSignal.Set();
+            mSendSignal.Set();
+        }
+
+        private void InitializeMavLink()
+        {
+            mMavLink.PacketReceived += HandlePacketReceived;
+        }
+
+        private void InitializeUdpClient()
+        {
+            // Create UDP client bound to local port
+            if (LocalPort > 0)
+            {
+                mUdpClient = new UdpClient(LocalPort);
+            }
+            else
+            {
+                mUdpClient = new UdpClient();
+            }
+
+            // Set up the remote endpoint we want to communicate with
+            mRemoteEndPoint = new IPEndPoint(TargetIpAddress, TargetPort);
+
+            // Connect the UDP client to the remote endpoint
+            // This doesn't actually establish a connection (UDP is connectionless)
+            // but it sets the default remote endpoint for Send/Receive operations
+            mUdpClient.Connect(mRemoteEndPoint);
+
+            Debug.WriteLine($"[UDP Client] Initialized - Target: {mRemoteEndPoint}");
+        }
+
+        private void StartReceiveThread()
+        {
+            mReceiveThread = new Thread(ReceiveLoop)
+            {
+                Name = "MavLink UDP Client Receive",
+                IsBackground = true
+            };
+            mReceiveThread.Start();
+
+            ThreadPool.QueueUserWorkItem(new WaitCallback(ProcessReceiveQueue), null);
+        }
+
+        private void StartSendThread()
+        {
+            ThreadPool.QueueUserWorkItem(new WaitCallback(ProcessSendQueue), null);
+        }
+
+        // __ Receive _________________________________________________________
+
+        private void ReceiveLoop()
+        {
+            while (mIsActive)
+            {
+                try
+                {
+                    // Receive data from any endpoint (since we're connected, it should be from our target)
+                    IPEndPoint remoteEp = null;
+                    byte[] data = mUdpClient.Receive(ref remoteEp);
+
+                    if (data != null && data.Length > 0)
+                    {
+                        mReceiveQueue.Enqueue(data);
+                        mReceiveSignal.Set();
+                    }
+                }
+                catch (SocketException ex)
+                {
+                    if (mIsActive)
+                    {
+                        Debug.WriteLine($"[UDP Client] Socket error: {ex.Message}");
+                    }
+                    break;
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Socket was closed, exit gracefully
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[UDP Client] Receive error: {ex.Message}");
+                }
+            }
+
+            HandleReceptionEnded(this);
+        }
+
+        private void ProcessReceiveQueue(object state)
+        {
+            while (mIsActive)
+            {
+                byte[] buffer;
+
+                if (mReceiveQueue.TryDequeue(out buffer))
+                {
+                    try
+                    {
+                        mMavLink.ProcessReceivedBytes(buffer, 0, buffer.Length);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[UDP Client] Error processing packet: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    // Empty queue, sleep until signalled
+                    mReceiveSignal.WaitOne(1000); // Timeout to check mIsActive periodically
+                }
+            }
+        }
+
+        // __ Send ____________________________________________________________
+
+        private void ProcessSendQueue(object state)
+        {
+            while (mIsActive)
+            {
+                UasMessage msg;
+
+                if (mSendQueue.TryDequeue(out msg))
+                {
+                    SendMavlinkMessage(msg);
+                }
+                else
+                {
+                    // Queue is empty, sleep until signalled
+                    mSendSignal.WaitOne(1000); // Timeout to check mIsActive periodically
+                }
+            }
+        }
+
+        private void SendMavlinkMessage(UasMessage msg)
+        {
+            try
+            {
+                byte[] buffer = mMavLink.SerializeMessage(msg, MavlinkSystemId, MavlinkComponentId, true);
+                mUdpClient.Send(buffer, buffer.Length);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[UDP Client] Error sending message: {ex.Message}");
+            }
+        }
+
+        // __ Heartbeat _______________________________________________________
+
+        public void BeginHeartBeatLoop()
+        {
+            ThreadPool.QueueUserWorkItem(new WaitCallback(HeartBeatLoop), null);
+        }
+
+        private void HeartBeatLoop(object state)
+        {
+            while (mIsActive)
+            {
+                try
+                {
+                    foreach (UasMessage m in UavState.GetHeartBeatObjects())
+                    {
+                        SendMessage(m);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[UDP Client] Error in heartbeat loop: {ex.Message}");
+                }
+
+                Thread.Sleep(HeartBeatUpdateRateMs);
+            }
+        }
+
+        // __ API _____________________________________________________________
+
+        public override void SendMessage(UasMessage msg)
+        {
+            mSendQueue.Enqueue(msg);
+
+            // Signal send thread
+            mSendSignal.Set();
+        }
+
+        /// <summary>
+        /// Check if the UDP client is connected (has remote endpoint set)
+        /// </summary>
+        public bool IsConnected
+        {
+            get
+            {
+                try
+                {
+                    return mUdpClient != null && mUdpClient.Client != null && mUdpClient.Client.Connected;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+        }
+    }
+}

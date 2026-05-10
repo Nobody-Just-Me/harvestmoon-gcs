@@ -1,0 +1,237 @@
+<UserControl x:Class="Pigeon_Uno.Controls.TrackerControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:local="using:Pigeon_Uno.Controls"
+             xmlns:controls="using:Pigeon_Uno.Controls"
+             mc:Ignorable="d"
+             Background="Transparent">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Row 0: Header -->
+        <Border Grid.Row="0"
+                Background="{ThemeResource CardBrush}"
+                BorderBrush="{ThemeResource BorderBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid>
+                <!-- Accent Line -->
+                <Rectangle Width="4"
+                           HorizontalAlignment="Left"
+                           Fill="{ThemeResource NavTrackerBrush}" />
+                <Grid ColumnDefinitions="*,Auto"
+                      Padding="16">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="16"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="TRACKER SYSTEM"
+                                   Foreground="{ThemeResource NavTrackerBrush}"
+                                   FontWeight="Bold"
+                                   FontSize="20"
+                                   CharacterSpacing="100" />
+                        <Border Background="{ThemeResource SuccessBrush20}"
+                                BorderBrush="{ThemeResource SuccessBrush}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="8,4">
+                            <TextBlock Text="ONLINE"
+                                       Foreground="{ThemeResource SuccessBrush}"
+                                       FontSize="12"
+                                       FontWeight="Bold" />
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- Row 1: Map -->
+        <controls:SkiaMapControl x:Name="mapControl"
+                                 Grid.Row="1" />
+
+        <!-- Row 2: Bottom Status -->
+        <Border Grid.Row="2"
+                Background="{ThemeResource CardBrush}"
+                BorderBrush="{ThemeResource BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="24">
+            <Grid ColumnDefinitions="*,*,*"
+                  ColumnSpacing="32">
+
+                <!-- Col 0: Status Tracker -->
+                <StackPanel Grid.Column="0"
+                            Spacing="8">
+                    <TextBlock Text="Status Tracker"
+                               FontSize="18"
+                               FontWeight="Bold"
+                               Margin="0,0,0,8" />
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="8"
+                                VerticalAlignment="Center">
+                        <Grid>
+                            <!-- PulseAnimation dinonaktifkan untuk performance -->
+                            <Ellipse x:Name="StatusEllipse"
+                                     Width="12"
+                                     Height="12"
+                                     Fill="{ThemeResource SuccessBrush}" />
+                        </Grid>
+                        <TextBlock Text="System Normal"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"
+                                   FontSize="14" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                 Spacing="8"
+                                 VerticalAlignment="Center">
+                        <Ellipse Width="12"
+                                 Height="12"
+                                 Fill="{ThemeResource InfoBrush}" />
+                        <TextBlock Text="Target Locked"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"
+                                   FontSize="14" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Col 1: Koordinat Tracker -->
+                <StackPanel Grid.Column="1"
+                            Spacing="8">
+                    <TextBlock Text="Koordinat Tracker"
+                               FontSize="18"
+                               FontWeight="Bold"
+                               Margin="0,0,0,8" />
+                    <Grid ColumnDefinitions="*,*,*,*"
+                          ColumnSpacing="8">
+                        <TextBlock Grid.Column="0"
+                                   Text="LATITUDE"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="LONGITUDE"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}" />
+                        <TextBlock Grid.Column="2"
+                                   Text="ALTI"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}" />
+                        <TextBlock Grid.Column="3"
+                                   Text="LATENCY"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,*,*,*"
+                          ColumnSpacing="8">
+                        <Border Grid.Column="0"
+                                Background="{ThemeResource MutedBrush}"
+                                CornerRadius="4"
+                                Padding="8">
+                            <TextBlock Text="{Binding TrackerLat, FallbackValue=0}"
+                                       FontFamily="Consolas"
+                                       HorizontalAlignment="Center" />
+                        </Border>
+                        <Border Grid.Column="1"
+                                Background="{ThemeResource MutedBrush}"
+                                CornerRadius="4"
+                                Padding="8">
+                            <TextBlock Text="{Binding TrackerLon, FallbackValue=0}"
+                                       FontFamily="Consolas"
+                                       HorizontalAlignment="Center" />
+                        </Border>
+                        <Border Grid.Column="2"
+                                Background="{ThemeResource MutedBrush}"
+                                CornerRadius="4"
+                                Padding="8">
+                            <TextBlock FontFamily="Consolas"
+                                       HorizontalAlignment="Center">
+                                <Run Text="{Binding TrackerAlt, FallbackValue=0}" />
+                                <Run Text="m" />
+                            </TextBlock>
+                        </Border>
+                        <Border Grid.Column="3"
+                                Background="{ThemeResource MutedBrush}"
+                                CornerRadius="4"
+                                Padding="8">
+                            <TextBlock FontFamily="Consolas"
+                                       HorizontalAlignment="Center">
+                                <Run Text="{Binding Latency, FallbackValue=0}" />
+                                <Run Text="ms" />
+                            </TextBlock>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+
+                <!-- Col 2: Koordinat Wahana -->
+                <StackPanel Grid.Column="2"
+                            Spacing="8">
+                    <TextBlock Text="Koordinat Wahana"
+                               FontSize="18"
+                               FontWeight="Bold"
+                               Margin="0,0,0,8" />
+                    <Grid ColumnDefinitions="*,*,*"
+                          ColumnSpacing="8">
+                        <TextBlock Grid.Column="0"
+                                   Text="LATITUDE"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="LONGITUDE"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}" />
+                        <TextBlock Grid.Column="2"
+                                   Text="ALTITUDE"
+                                   FontSize="10"
+                                   FontWeight="Bold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,*,*"
+                          ColumnSpacing="8">
+                        <Border Grid.Column="0"
+                                Background="{ThemeResource MutedBrush}"
+                                BorderBrush="{ThemeResource SuccessBrush20}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="8">
+                            <TextBlock Text="{Binding WahanaLat, FallbackValue=0}"
+                                       Foreground="{ThemeResource SuccessBrush}"
+                                       FontFamily="Consolas"
+                                       HorizontalAlignment="Center" />
+                        </Border>
+                        <Border Grid.Column="1"
+                                Background="{ThemeResource MutedBrush}"
+                                BorderBrush="{ThemeResource SuccessBrush20}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="8">
+                            <TextBlock Text="{Binding WahanaLon, FallbackValue=0}"
+                                       Foreground="{ThemeResource SuccessBrush}"
+                                       FontFamily="Consolas"
+                                       HorizontalAlignment="Center" />
+                        </Border>
+                        <Border Grid.Column="2"
+                                Background="{ThemeResource MutedBrush}"
+                                BorderBrush="{ThemeResource SuccessBrush20}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="8">
+                            <TextBlock Foreground="{ThemeResource SuccessBrush}"
+                                       FontFamily="Consolas"
+                                       HorizontalAlignment="Center">
+                                <Run Text="{Binding WahanaAlt, FallbackValue=0}" />
+                                <Run Text="m" />
+                            </TextBlock>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

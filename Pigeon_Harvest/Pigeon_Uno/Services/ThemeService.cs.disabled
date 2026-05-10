@@ -1,0 +1,245 @@
+using System;
+using System.Threading.Tasks;
+using Microsoft.UI;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
+using Windows.UI;
+using IThemeService = Pigeon_Uno.Core.Services.IThemeService;
+
+namespace Pigeon_Uno.Services;
+
+/// <summary>
+/// Implementation of theme management service
+/// </summary>
+public class ThemeService : IThemeService
+{
+    private readonly ISettingsService _settingsService;
+    private ThemeMode _currentTheme;
+    private bool _isHighContrastEnabled;
+    private double _fontSizeScale = 1.0;
+    private bool _animationsEnabled = true;
+
+    public ThemeService(ISettingsService settingsService)
+    {
+        _settingsService = settingsService;
+        LoadThemeSettings();
+    }
+
+    public ThemeMode CurrentTheme => _currentTheme;
+    public bool IsHighContrastEnabled => _isHighContrastEnabled;
+    public double FontSizeScale => _fontSizeScale;
+    public bool AnimationsEnabled => _animationsEnabled;
+
+    public event EventHandler<ThemeChangedEventArgs>? ThemeChanged;
+
+    public async Task SetThemeAsync(ThemeMode theme)
+    {
+        _currentTheme = theme;
+        await _settingsService.SetSettingAsync("Theme", theme.ToString());
+        ApplyTheme();
+        RaiseThemeChanged();
+    }
+
+    public async Task ToggleThemeAsync()
+    {
+        var newTheme = _currentTheme == ThemeMode.Dark ? ThemeMode.Light : ThemeMode.Dark;
+        await SetThemeAsync(newTheme);
+    }
+
+    public async Task SetHighContrastAsync(bool enabled)
+    {
+        _isHighContrastEnabled = enabled;
+        await _settingsService.SetSettingAsync("HighContrast", enabled);
+        ApplyHighContrast();
+        RaiseThemeChanged();
+    }
+
+    public async Task SetFontSizeScaleAsync(double scale)
+    {
+        _fontSizeScale = Math.Clamp(scale, 0.8, 2.0);
+        await _settingsService.SetSettingAsync("FontSizeScale", _fontSizeScale);
+        ApplyFontSizeScale();
+        RaiseThemeChanged();
+    }
+
+    public async Task SetAnimationsEnabledAsync(bool enabled)
+    {
+        _animationsEnabled = enabled;
+        await _settingsService.SetSettingAsync("AnimationsEnabled", enabled);
+        ApplyAnimationSettings();
+    }
+
+    public async Task ApplyCustomColorsAsync(ThemeColors colors)
+    {
+        if (colors == null) return;
+
+        var resources = Application.Current.Resources;
+
+        if (!string.IsNullOrEmpty(colors.PrimaryColor))
+        {
+            resources["PrimaryColor"] = new SolidColorBrush(ParseColor(colors.PrimaryColor));
+        }
+
+        if (!string.IsNullOrEmpty(colors.SecondaryColor))
+        {
+            resources["SecondaryColor"] = new SolidColorBrush(ParseColor(colors.SecondaryColor));
+        }
+
+        if (!string.IsNullOrEmpty(colors.BackgroundColor))
+        {
+            resources["DarkBackgroundColor"] = new SolidColorBrush(ParseColor(colors.BackgroundColor));
+        }
+
+        if (!string.IsNullOrEmpty(colors.AccentColor))
+        {
+            resources["AccentColor"] = new SolidColorBrush(ParseColor(colors.AccentColor));
+        }
+
+        await _settingsService.SetSettingAsync("CustomColors", colors);
+    }
+
+    public async Task ResetThemeAsync()
+    {
+        await SetThemeAsync(ThemeMode.Dark);
+        await SetHighContrastAsync(false);
+        await SetFontSizeScaleAsync(1.0);
+        await SetAnimationsEnabledAsync(true);
+    }
+
+    private void LoadThemeSettings()
+    {
+        var themeStr = _settingsService.GetSetting<string>("Theme", "Dark");
+        _currentTheme = Enum.TryParse<ThemeMode>(themeStr, out var theme) ? theme : ThemeMode.Dark;
+
+        _isHighContrastEnabled = _settingsService.GetSetting<bool>("HighContrast", false);
+        _fontSizeScale = _settingsService.GetSetting<double>("FontSizeScale", 1.0);
+        _animationsEnabled = _settingsService.GetSetting<bool>("AnimationsEnabled", true);
+
+        ApplyTheme();
+        ApplyHighContrast();
+        ApplyFontSizeScale();
+        ApplyAnimationSettings();
+    }
+
+    private void ApplyTheme()
+    {
+        if (App.MainWindow == null) return;
+
+        var requestedTheme = _currentTheme switch
+        {
+            ThemeMode.Light => ElementTheme.Light,
+            ThemeMode.Dark => ElementTheme.Dark,
+            _ => ElementTheme.Default
+        };
+
+        if (App.MainWindow.Content is FrameworkElement rootElement)
+        {
+            rootElement.RequestedTheme = requestedTheme;
+        }
+
+        // Update theme-specific colors
+        var resources = Application.Current.Resources;
+        
+        if (_currentTheme == ThemeMode.Light)
+        {
+            // Light theme colors
+            resources["DarkBackgroundColor"] = new SolidColorBrush(Color.FromArgb(255, 245, 245, 245));
+            resources["LightBackgroundColor"] = new SolidColorBrush(Color.FromArgb(255, 255, 255, 255));
+            resources["PrimaryTextColor"] = new SolidColorBrush(Color.FromArgb(255, 33, 33, 33));
+            resources["SecondaryTextColor"] = new SolidColorBrush(Color.FromArgb(255, 97, 97, 97));
+            resources["BorderColor"] = new SolidColorBrush(Color.FromArgb(255, 224, 224, 224));
+            resources["PanelBackgroundColor"] = new SolidColorBrush(Color.FromArgb(255, 250, 250, 250));
+            resources["PanelHeaderColor"] = new SolidColorBrush(Color.FromArgb(255, 238, 238, 238));
+            resources["ButtonBackgroundColor"] = new SolidColorBrush(Color.FromArgb(255, 240, 240, 240));
+        }
+        else
+        {
+            // Dark theme colors (default)
+            resources["DarkBackgroundColor"] = new SolidColorBrush(Color.FromArgb(255, 22, 33, 62));
+            resources["LightBackgroundColor"] = new SolidColorBrush(Color.FromArgb(255, 30, 42, 71));
+            resources["PrimaryTextColor"] = new SolidColorBrush(Color.FromArgb(255, 255, 255, 255));
+            resources["SecondaryTextColor"] = new SolidColorBrush(Color.FromArgb(255, 176, 190, 197));
+            resources["BorderColor"] = new SolidColorBrush(Color.FromArgb(255, 55, 71, 79));
+            resources["PanelBackgroundColor"] = new SolidColorBrush(Color.FromArgb(255, 26, 35, 50));
+            resources["PanelHeaderColor"] = new SolidColorBrush(Color.FromArgb(255, 13, 17, 23));
+            resources["ButtonBackgroundColor"] = new SolidColorBrush(Color.FromArgb(255, 38, 50, 56));
+        }
+    }
+
+    private void ApplyHighContrast()
+    {
+        if (!_isHighContrastEnabled) return;
+
+        var resources = Application.Current.Resources;
+
+        // High contrast colors
+        if (_currentTheme == ThemeMode.Light)
+        {
+            resources["PrimaryTextColor"] = new SolidColorBrush(Colors.Black);
+            resources["DarkBackgroundColor"] = new SolidColorBrush(Colors.White);
+            resources["BorderColor"] = new SolidColorBrush(Colors.Black);
+        }
+        else
+        {
+            resources["PrimaryTextColor"] = new SolidColorBrush(Colors.White);
+            resources["DarkBackgroundColor"] = new SolidColorBrush(Colors.Black);
+            resources["BorderColor"] = new SolidColorBrush(Colors.White);
+        }
+    }
+
+    private void ApplyFontSizeScale()
+    {
+        var resources = Application.Current.Resources;
+
+        // Scale font sizes
+        if (resources.ContainsKey("BaseFontSize"))
+        {
+            var baseFontSize = (double)resources["BaseFontSize"];
+            resources["ScaledFontSize"] = baseFontSize * _fontSizeScale;
+        }
+    }
+
+    private void ApplyAnimationSettings()
+    {
+        // This would require modifying animation durations throughout the app
+        // For now, we'll just store the setting
+    }
+
+    private void RaiseThemeChanged()
+    {
+        ThemeChanged?.Invoke(this, new ThemeChangedEventArgs
+        {
+            Theme = _currentTheme,
+            IsHighContrast = _isHighContrastEnabled,
+            FontSizeScale = _fontSizeScale
+        });
+    }
+
+    private Color ParseColor(string colorString)
+    {
+        if (string.IsNullOrEmpty(colorString)) return Colors.Transparent;
+
+        // Remove # if present
+        colorString = colorString.TrimStart('#');
+
+        if (colorString.Length == 6)
+        {
+            // RGB format
+            var r = Convert.ToByte(colorString.Substring(0, 2), 16);
+            var g = Convert.ToByte(colorString.Substring(2, 2), 16);
+            var b = Convert.ToByte(colorString.Substring(4, 2), 16);
+            return Color.FromArgb(255, r, g, b);
+        }
+        else if (colorString.Length == 8)
+        {
+            // ARGB format
+            var a = Convert.ToByte(colorString.Substring(0, 2), 16);
+            var r = Convert.ToByte(colorString.Substring(2, 2), 16);
+            var g = Convert.ToByte(colorString.Substring(4, 2), 16);
+            var b = Convert.ToByte(colorString.Substring(6, 2), 16);
+            return Color.FromArgb(a, r, g, b);
+        }
+
+        return Colors.Transparent;
+    }
+}

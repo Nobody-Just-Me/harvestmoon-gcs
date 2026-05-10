@@ -1,0 +1,380 @@
+name: Release Pipeline
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: true
+        default: '1.0.0'
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  SOLUTION_PATH: 'Pigeon_Uno.sln'
+
+jobs:
+  create-installers:
+    name: Create Platform Installers
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: win-x64
+            installer: msi
+          - os: ubuntu-latest
+            target: linux-x64
+            installer: deb
+          - os: macos-latest
+            target: osx-x64
+            installer: dmg
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Get version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" == "release" ]; then
+          echo "version=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        fi
+      shell: bash
+
+    - name: Restore and build
+      run: |
+        dotnet restore ${{ env.SOLUTION_PATH }}
+        dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
+
+    - name: Publish application
+      run: |
+        dotnet publish Pigeon_Uno/Pigeon_Uno/Pigeon_Uno.csproj \
+          -c Release \
+          -r ${{ matrix.target }} \
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:PublishTrimmed=true \
+          -p:Version=${{ steps.version.outputs.version }} \
+          -o ./publish/${{ matrix.target }}
+
+    - name: Create Windows MSI installer
+      if: matrix.os == 'windows-latest'
+      run: |
+        # Install WiX toolset
+        dotnet tool install --global wix --version 4.0.0
+        
+        # Create WiX source file
+        mkdir -p ./installer/windows
+        cat > ./installer/windows/Product.wxs << 'EOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+          <Product Id="*" Name="Pigeon Uno GCS" Language="1033" Version="${{ steps.version.outputs.version }}" 
+                   Manufacturer="Pigeon GCS Team" UpgradeCode="12345678-1234-1234-1234-123456789012">
+            <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+            
+            <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
+            <MediaTemplate EmbedCab="yes" />
+            
+            <Feature Id="ProductFeature" Title="Pigeon Uno GCS" Level="1">
+              <ComponentGroupRef Id="ProductComponents" />
+            </Feature>
+            
+            <Directory Id="TARGETDIR" Name="SourceDir">
+              <Directory Id="ProgramFilesFolder">
+                <Directory Id="INSTALLFOLDER" Name="Pigeon Uno GCS" />
+              </Directory>
+              <Directory Id="ProgramMenuFolder">
+                <Directory Id="ApplicationProgramsFolder" Name="Pigeon Uno GCS"/>
+              </Directory>
+            </Directory>
+            
+            <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+              <Component Id="MainExecutable">
+                <File Id="PigeonUnoExe" Source="./publish/${{ matrix.target }}/Pigeon_Uno.exe" KeyPath="yes">
+                  <Shortcut Id="ApplicationStartMenuShortcut" Directory="ApplicationProgramsFolder" 
+                           Name="Pigeon Uno GCS" WorkingDirectory="INSTALLFOLDER" Icon="PigeonIcon.exe" IconIndex="0" Advertise="yes" />
+                </File>
+              </Component>
+            </ComponentGroup>
+            
+            <Icon Id="PigeonIcon.exe" SourceFile="./publish/${{ matrix.target }}/Pigeon_Uno.exe" />
+            <Property Id="ARPPRODUCTICON" Value="PigeonIcon.exe" />
+          </Product>
+        </Wix>
+        EOF
+        
+        # Build MSI
+        wix build ./installer/windows/Product.wxs -o pigeon-uno-${{ steps.version.outputs.version }}-windows.msi
+      shell: bash
+
+    - name: Create Linux DEB package
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        mkdir -p ./installer/linux/pigeon-uno/DEBIAN
+        mkdir -p ./installer/linux/pigeon-uno/usr/bin
+        mkdir -p ./installer/linux/pigeon-uno/usr/share/applications
+        mkdir -p ./installer/linux/pigeon-uno/usr/share/pixmaps
+        mkdir -p ./installer/linux/pigeon-uno/usr/share/doc/pigeon-uno
+        
+        # Copy application files
+        cp -r ./publish/${{ matrix.target }}/* ./installer/linux/pigeon-uno/usr/bin/
+        chmod +x ./installer/linux/pigeon-uno/usr/bin/Pigeon_Uno
+        
+        # Create control file
+        cat > ./installer/linux/pigeon-uno/DEBIAN/control << EOF
+        Package: pigeon-uno
+        Version: ${{ steps.version.outputs.version }}
+        Section: utils
+        Priority: optional
+        Architecture: amd64
+        Depends: libgtk-3-0, libwebkit2gtk-4.0-37, libgdiplus
+        Maintainer: Pigeon GCS Team <dev@pigeon-gcs.com>
+        Description: Pigeon Ground Control Station
+         Cross-platform ground control station for UAV/drone operations built with Uno Platform.
+         Supports flight control, mission planning, telemetry monitoring, and more.
+        EOF
+        
+        # Create desktop entry
+        cat > ./installer/linux/pigeon-uno/usr/share/applications/pigeon-uno.desktop << EOF
+        [Desktop Entry]
+        Name=Pigeon Uno GCS
+        Comment=Ground Control Station for UAV/Drone Operations
+        Exec=/usr/bin/Pigeon_Uno
+        Icon=pigeon-uno
+        Terminal=false
+        Type=Application
+        Categories=Utility;Science;
+        Keywords=drone;uav;gcs;mavlink;flight;
+        EOF
+        
+        # Create copyright file
+        cat > ./installer/linux/pigeon-uno/usr/share/doc/pigeon-uno/copyright << EOF
+        Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+        Upstream-Name: pigeon-uno
+        Source: https://github.com/pigeon-gcs/pigeon-uno
+        
+        Files: *
+        Copyright: 2024 Pigeon GCS Team
+        License: MIT
+        EOF
+        
+        # Build DEB package
+        dpkg-deb --build ./installer/linux/pigeon-uno pigeon-uno_${{ steps.version.outputs.version }}_amd64.deb
+        
+        # Create AppImage
+        wget -O linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+        chmod +x linuxdeploy
+        
+        mkdir -p AppDir/usr/bin
+        mkdir -p AppDir/usr/share/applications
+        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+        
+        cp ./publish/${{ matrix.target }}/Pigeon_Uno AppDir/usr/bin/
+        cp ./installer/linux/pigeon-uno/usr/share/applications/pigeon-uno.desktop AppDir/usr/share/applications/
+        
+        # Create AppImage
+        ./linuxdeploy --appdir AppDir --output appimage
+        mv Pigeon_Uno-*.AppImage pigeon-uno-${{ steps.version.outputs.version }}-x86_64.AppImage
+
+    - name: Create macOS DMG
+      if: matrix.os == 'macos-latest'
+      run: |
+        # Create app bundle structure
+        mkdir -p "Pigeon Uno.app/Contents/MacOS"
+        mkdir -p "Pigeon Uno.app/Contents/Resources"
+        
+        # Copy application files
+        cp -r ./publish/${{ matrix.target }}/* "Pigeon Uno.app/Contents/MacOS/"
+        chmod +x "Pigeon Uno.app/Contents/MacOS/Pigeon_Uno"
+        
+        # Create Info.plist
+        cat > "Pigeon Uno.app/Contents/Info.plist" << EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key>
+            <string>Pigeon_Uno</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.pigeongcs.pigeonuno</string>
+            <key>CFBundleName</key>
+            <string>Pigeon Uno</string>
+            <key>CFBundleDisplayName</key>
+            <string>Pigeon Uno GCS</string>
+            <key>CFBundleVersion</key>
+            <string>${{ steps.version.outputs.version }}</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${{ steps.version.outputs.version }}</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleSignature</key>
+            <string>PGNU</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.15</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>NSRequiresAquaSystemAppearance</key>
+            <false/>
+        </dict>
+        </plist>
+        EOF
+        
+        # Create DMG
+        mkdir -p dmg-staging
+        cp -R "Pigeon Uno.app" dmg-staging/
+        ln -s /Applications dmg-staging/Applications
+        
+        hdiutil create -volname "Pigeon Uno GCS" -srcfolder dmg-staging -ov -format UDZO "pigeon-uno-${{ steps.version.outputs.version }}-macos.dmg"
+
+    - name: Upload installer artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: installer-${{ matrix.target }}
+        path: |
+          *.msi
+          *.deb
+          *.AppImage
+          *.dmg
+
+  deploy-web:
+    name: Deploy WebAssembly
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Install WASM tools
+      run: dotnet workload install wasm-tools
+
+    - name: Build WebAssembly
+      run: |
+        dotnet restore ${{ env.SOLUTION_PATH }}
+        dotnet publish Pigeon_Uno/Pigeon_Uno/Pigeon_Uno.csproj \
+          -c Release \
+          -f net10.0-browserwasm \
+          -o ./publish/wasm
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./publish/wasm
+        cname: app.pigeon-gcs.com
+
+    - name: Deploy to Azure Static Web Apps
+      if: secrets.AZURE_STATIC_WEB_APPS_API_TOKEN != ''
+      uses: Azure/static-web-apps-deploy@v1
+      with:
+        azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        action: "upload"
+        app_location: "./publish/wasm"
+        output_location: ""
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [create-installers, deploy-web]
+    if: github.event_name == 'release'
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+
+    - name: Create release assets
+      run: |
+        mkdir -p release-assets
+        
+        # Organize installer files
+        find . -name "*.msi" -exec cp {} release-assets/ \;
+        find . -name "*.deb" -exec cp {} release-assets/ \;
+        find . -name "*.AppImage" -exec cp {} release-assets/ \;
+        find . -name "*.dmg" -exec cp {} release-assets/ \;
+        
+        # Create checksums
+        cd release-assets
+        sha256sum * > checksums.txt
+
+    - name: Upload release assets
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release-assets/*
+        token: ${{ secrets.GITHUB_TOKEN }}
+        body: |
+          ## Pigeon Uno GCS Release ${{ github.event.release.tag_name }}
+          
+          ### Installation
+          
+          **Windows:**
+          - Download `pigeon-uno-${{ github.event.release.tag_name }}-windows.msi`
+          - Run the installer as administrator
+          
+          **Linux:**
+          - **Ubuntu/Debian:** Download and install `pigeon-uno_${{ github.event.release.tag_name }}_amd64.deb`
+          - **AppImage:** Download `pigeon-uno-${{ github.event.release.tag_name }}-x86_64.AppImage`, make executable, and run
+          
+          **macOS:**
+          - Download `pigeon-uno-${{ github.event.release.tag_name }}-macos.dmg`
+          - Mount the DMG and drag Pigeon Uno to Applications
+          
+          **Web Version:**
+          - Visit [app.pigeon-gcs.com](https://app.pigeon-gcs.com)
+          
+          ### Verification
+          - Verify downloads using `checksums.txt`
+          
+          ### What's New
+          - Complete migration from WPF to Uno Platform
+          - Cross-platform support (Windows, Linux, macOS, Web)
+          - Modern UI with improved performance
+          - Enhanced MAVLink communication
+          - Advanced flight planning and geofencing
+          - Real-time telemetry and statistics
+          
+          For detailed changes, see the [Migration Notes](MIGRATION_NOTES.md).
+
+  notify-release:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    if: always()
+
+    steps:
+    - name: Notify Discord (Success)
+      if: needs.create-release.result == 'success'
+      uses: Ilshidur/action-discord@master
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      with:
+        args: |
+          🚀 **Pigeon Uno GCS ${{ github.event.release.tag_name }} Released!**
+          
+          📦 **Downloads available:**
+          - Windows MSI installer
+          - Linux DEB package & AppImage
+          - macOS DMG
+          - Web version at app.pigeon-gcs.com
+          
+          🔗 **Release:** ${{ github.event.release.html_url }}
+
+    - name: Notify Discord (Failure)
+      if: needs.create-release.result == 'failure'
+      uses: Ilshidur/action-discord@master
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      with:
+        args: '❌ Release pipeline failed for ${{ github.event.release.tag_name }}. Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'

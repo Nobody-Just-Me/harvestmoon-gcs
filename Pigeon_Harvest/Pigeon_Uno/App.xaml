@@ -1,0 +1,32 @@
+<Application x:Class="Pigeon_Uno.App"
+       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <!-- Load WinUI resources -->
+        <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+        <ResourceDictionary Source="Styles/ModernStyles.xaml"/>
+      </ResourceDictionary.MergedDictionaries>
+
+      <!-- Add resources here -->
+      <LinearGradientBrush x:Key="WindowColor2" StartPoint="0,0" EndPoint="1,1">
+          <GradientStop Color="#A32CC4" Offset="0.2"/>
+          <GradientStop Color="#00CED1" Offset="1.0"/>
+      </LinearGradientBrush>
+      <FontFamily x:Key="RalewayFont">ms-appx:///Assets/fonts/Raleway/Raleway-Regular.ttf#Raleway</FontFamily>
+      <FontFamily x:Key="CommandoFont">ms-appx:///Assets/fonts/commando.ttf#Commando</FontFamily>
+      
+      <Style x:Key="LeftPaneButtonStyle" TargetType="Button">
+          <Setter Property="Background" Value="Transparent"/>
+          <Setter Property="BorderThickness" Value="0"/>
+          <Setter Property="HorizontalAlignment" Value="Stretch"/>
+          <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+          <Setter Property="Padding" Value="0"/>
+          <Setter Property="Height" Value="80"/>
+      </Style>
+    </ResourceDictionary>
+  </Application.Resources>
+
+</Application>

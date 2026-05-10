@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.suo
+.ruff_cache/
+node_modules/
+dist/
+*.pid
+logs/
+.venv-camera/
+.git_backup/

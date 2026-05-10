@@ -1,0 +1,6 @@
+# Integration tests will be added here
+# - ConnectionToFlightTests.cs
+# - MissionPlanningToUploadTests.cs
+# - CalibrationWorkflowTests.cs
+# - TlogWorkflowTests.cs
+# - AlertToSpeechTests.cs
