@@ -1,0 +1,113 @@
+<UserControl x:Class="HarvestmoonGCS.Controls.SimpleMapControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="800">
+    <Grid x:Name="MapContainer" Background="#FF2C3E50">
+        <!-- WebView2 for map display -->
+        <WebView2 x:Name="mapWebView" 
+                  Visibility="Collapsed"
+                  NavigationCompleted="MapWebView_NavigationCompleted"/>
+        
+        <!-- Placeholder when map is not loaded -->
+        <Grid x:Name="mapPlaceholder" Background="#FF34495E">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="🗺️" FontSize="72" HorizontalAlignment="Center" Margin="0,0,0,20"/>
+                <TextBlock Text="Map View" 
+                          FontSize="24" 
+                          FontWeight="Bold" 
+                          Foreground="White" 
+                          HorizontalAlignment="Center"
+                          Margin="0,0,0,10"/>
+                <TextBlock x:Name="mapStatusText"
+                          Text="Initializing map..." 
+                          FontSize="14" 
+                          Foreground="#FFBDC3C7" 
+                          HorizontalAlignment="Center"
+                          TextWrapping="Wrap"
+                          TextAlignment="Center"
+                          MaxWidth="400"/>
+                <ProgressRing x:Name="mapLoadingRing" 
+                             IsActive="True" 
+                             Width="40" 
+                             Height="40" 
+                             Margin="0,20,0,0"
+                             Foreground="White"/>
+            </StackPanel>
+        </Grid>
+        
+        <!-- Map overlay controls -->
+        <Canvas x:Name="mapOverlay" Visibility="Collapsed">
+            <!-- Vehicle marker -->
+            <Border x:Name="vehicleMarker" 
+                    Width="30" 
+                    Height="30" 
+                    Background="#FFFF4444"
+                    CornerRadius="15"
+                    BorderBrush="White"
+                    BorderThickness="2"
+                    Visibility="Collapsed">
+                <TextBlock Text="✈" 
+                          FontSize="16" 
+                          Foreground="White" 
+                          HorizontalAlignment="Center" 
+                          VerticalAlignment="Center"/>
+            </Border>
+        </Canvas>
+        
+        <!-- Map controls overlay -->
+        <StackPanel VerticalAlignment="Top" HorizontalAlignment="Right" Margin="10">
+            <Button x:Name="btnZoomIn" 
+                    Content="+" 
+                    Width="40" 
+                    Height="40" 
+                    FontSize="20"
+                    Background="#CC2C3E50"
+                    Foreground="White"
+                    Margin="0,0,0,5"
+                    Click="BtnZoomIn_Click"/>
+            <Button x:Name="btnZoomOut" 
+                    Content="-" 
+                    Width="40" 
+                    Height="40" 
+                    FontSize="20"
+                    Background="#CC2C3E50"
+                    Foreground="White"
+                    Margin="0,0,0,5"
+                    Click="BtnZoomOut_Click"/>
+            <Button x:Name="btnCenterMap" 
+                    Content="⊙" 
+                    Width="40" 
+                    Height="40" 
+                    FontSize="20"
+                    Background="#CC2C3E50"
+                    Foreground="White"
+                    Click="BtnCenterMap_Click"
+                    ToolTipService.ToolTip="Center on vehicle"/>
+        </StackPanel>
+        
+        <!-- Coordinates display -->
+        <Border Background="#CC000000" 
+                Padding="10,5" 
+                CornerRadius="5"
+                HorizontalAlignment="Left" 
+                VerticalAlignment="Bottom" 
+                Margin="10">
+            <StackPanel>
+                <TextBlock x:Name="txtMapCoordinates" 
+                          Text="Lat: -7.2754, Lon: 112.7947" 
+                          Foreground="White" 
+                          FontSize="12"
+                          FontFamily="Consolas"/>
+                <TextBlock x:Name="txtMapZoom" 
+                          Text="Zoom: 15" 
+                          Foreground="#FFBDC3C7" 
+                          FontSize="10"
+                          FontFamily="Consolas"
+                          Margin="0,2,0,0"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

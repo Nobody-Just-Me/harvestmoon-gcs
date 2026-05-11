@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = ROOT / ".venv-camera" / "bin" / "python"
-SCRIPT = ROOT / "Pigeon_Uno" / "camera_service.py"
+SCRIPT = ROOT / "HarvestmoonGCS" / "camera_service.py"
 
 
 def main() -> int:

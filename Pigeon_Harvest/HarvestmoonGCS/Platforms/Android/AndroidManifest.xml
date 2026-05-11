@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  
+  <!-- Camera for live video + YOLO detection -->
+  <uses-permission android:name="android.permission.CAMERA" />
+  <uses-feature android:name="android.hardware.camera" android:required="false" />
+  <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+  
+  <!-- Network for MAVLink UDP/TCP, map tiles, telemetry -->
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+  
+  <!-- Storage for reports, TLOG, screenshots -->
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+  
+  <!-- GPS for geofence and position -->
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  
+  <!-- USB for serial MAVLink connection -->
+  <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+  
+  <!-- Keep screen on during mission -->
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+  <application 
+    android:allowBackup="true" 
+    android:supportsRtl="true"
+    android:label="Harvestmoon GCS"
+    android:theme="@style/Maui.SplashTheme"
+    android:hardwareAccelerated="true"
+    android:largeHeap="true">
+  </application>
+</manifest>

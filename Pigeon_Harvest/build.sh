@@ -16,9 +16,9 @@ COVERAGE=false
 VERBOSE=false
 
 # Configuration
-SOLUTION_PATH="Pigeon_Uno.sln"
-MAIN_PROJECT="Pigeon_Uno/Pigeon_Uno/Pigeon_Uno.csproj"
-TEST_PROJECT="Pigeon_Uno.Tests/Pigeon_Uno.Tests.csproj"
+SOLUTION_PATH="HarvestmoonGCS.sln"
+MAIN_PROJECT="HarvestmoonGCS/HarvestmoonGCS/HarvestmoonGCS.csproj"
+TEST_PROJECT="HarvestmoonGCS.Tests/HarvestmoonGCS.Tests.csproj"
 OUTPUT_DIR="bin/$CONFIGURATION"
 PUBLISH_DIR="publish"
 
@@ -308,7 +308,7 @@ EOF
 [Desktop Entry]
 Name=Pigeon Uno
 Comment=Ground Control Station
-Exec=/usr/bin/Pigeon_Uno
+Exec=/usr/bin/HarvestmoonGCS
 Icon=pigeon-uno
 Terminal=false
 Type=Application

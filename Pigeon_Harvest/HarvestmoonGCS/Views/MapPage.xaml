@@ -1,0 +1,612 @@
+<Page x:Class="HarvestmoonGCS.Views.MapPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+      xmlns:local="using:HarvestmoonGCS.Views"
+      xmlns:controls="using:HarvestmoonGCS.Controls"
+      mc:Ignorable="d" 
+      d:DesignHeight="632" d:DesignWidth="1132" 
+      HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+      Background="{ThemeResource BackgroundBrush}">
+    
+    <Page.Resources>
+        <!-- Pill Style Border -->
+        <Style TargetType="Border" x:Key="PillBorder">
+            <Setter Property="Background" Value="{ThemeResource BackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="16"/>
+            <Setter Property="Padding" Value="8,4"/>
+        </Style>
+        
+        <!-- Settings Bar Style -->
+        <Style TargetType="Border" x:Key="SettingsBar">
+            <Setter Property="Background" Value="{ThemeResource CardBrush}"/>
+            <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="Height" Value="52"/>
+            <Setter Property="Padding" Value="8"/>
+        </Style>
+        
+        <!-- Icon Button Style -->
+        <Style TargetType="Button" x:Key="IconButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="6"/>
+            <Setter Property="Width" Value="34"/>
+            <Setter Property="Height" Value="34"/>
+        </Style>
+        
+        <!-- Control Panel Style -->
+        <Style TargetType="Border" x:Key="ControlPanel">
+            <Setter Property="Background" Value="{ThemeResource CardBrush80}"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+    </Page.Resources>
+
+    <Grid x:Name="MapRootGrid" Background="{ThemeResource BackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Settings Bar (Top) -->
+        <Border Grid.Row="0" Style="{StaticResource SettingsBar}" Canvas.ZIndex="20">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ScrollViewer Grid.Column="0"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled"
+                              HorizontalScrollMode="Enabled"
+                              VerticalScrollMode="Disabled">
+                <StackPanel x:Name="MapToolbar" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <!-- Map Style Selector -->
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="Map Style:" Foreground="{ThemeResource MutedForegroundBrush}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="12"/>
+                        <ComboBox x:Name="cb_map_type" 
+                                  SelectionChanged="ChooseMap" 
+                                  SelectedIndex="0" 
+                                  MinWidth="120">
+                            <ComboBoxItem Content="ArcGIS Imagery"/>
+                            <ComboBoxItem Content="OpenStreetMap"/>
+                            <ComboBoxItem Content="Google Map"/>
+                            <ComboBoxItem Content="Google Satellite"/>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <!-- WP RADIUS -->
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="WP RADIUS:" Foreground="{ThemeResource MutedForegroundBrush}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="12"/>
+                        <TextBox x:Name="tb_wp_radius" Text="2" Width="50" TextAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Single-Tap Waypoint Mode Toggle -->
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ToggleButton x:Name="btn_single_tap_wp" 
+                                      Click="ToggleSingleTapWP_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                <FontIcon Glyph="&#xE7C1;" FontSize="14"/>
+                                <TextBlock Text="SINGLE-TAP WP" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </ToggleButton>
+                    </StackPanel>
+
+                    <!-- Clear -->
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="Clear" Foreground="{ThemeResource MutedForegroundBrush}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="12"/>
+                        <Button x:Name="btn_clear_waypoints" Click="ResetMarkers_Click" Padding="4" Background="Transparent" BorderThickness="1" BorderBrush="{ThemeResource BorderBrush}">
+                            <FontIcon Glyph="&#xE74D;" FontSize="14"/>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Total Distance -->
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="Total Distance:" Foreground="{ThemeResource MutedForegroundBrush}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="12"/>
+                        <TextBlock x:Name="tb_total_distance" Text="0.00 Km" Foreground="{ThemeResource ForegroundBrush}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="12"/>
+                    </StackPanel>
+
+                    <!-- Offline Mode Toggle -->
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ToggleButton x:Name="btn_offline_mode" 
+                                      IsChecked="{x:Bind ViewModel.IsOfflineMode, Mode=TwoWay}"
+                                      Command="{x:Bind ViewModel.ToggleOfflineModeCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE7B8;" FontSize="14"/>
+                                <TextBlock Text="OFFLINE" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </ToggleButton>
+                    </StackPanel>
+
+                    <!-- Storage Info -->
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="Storage:" Foreground="{ThemeResource MutedForegroundBrush}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="12"/>
+                        <TextBlock Text="{x:Bind ViewModel.StorageSizeText, Mode=OneWay}" Foreground="{ThemeResource ForegroundBrush}" VerticalAlignment="Center" FontSize="12"/>
+                    </StackPanel>
+
+                    <!-- Download Regions -->
+                    <Button x:Name="btn_download_regions" Click="ShowDownloadPanel_Click" Style="{StaticResource ModernButtonStyle}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE896;" FontSize="14"/>
+                            <TextBlock Text="Download" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                </ScrollViewer>
+
+                <!-- Right side: Geofence Active badge -->
+                <Border x:Name="geofence_status_border" 
+                        Grid.Column="1"
+                        Style="{StaticResource PillBorder}" 
+                        HorizontalAlignment="Right"
+                        Margin="8,0,0,0"
+                        Tapped="ToggleGeofencePanel_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Ellipse x:Name="geofence_status_dot" Width="8" Height="8" Fill="{ThemeResource SuccessBrush}"/>
+                        <TextBlock x:Name="geofence_status_text" 
+                                   Text="Geofence Active" 
+                                   Foreground="{ThemeResource ForegroundBrush}" 
+                                   FontWeight="Bold" 
+                                   FontSize="10" 
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Map Area -->
+        <Grid Grid.Row="1">
+            <controls:SkiaMapControl x:Name="mapControl" 
+                                     DoubleTapped="MapControl_DoubleTapped"
+                                     Tapped="MapControl_Tapped"/>
+
+            <!-- Bottom Overlay: Markers Button -->
+            <Button x:Name="wp_dock_btn" 
+                    Style="{StaticResource ModernButtonStyle}"
+                    Click="ToggleWPDock"
+                    VerticalAlignment="Bottom"
+                    HorizontalAlignment="Left"
+                    Margin="16"
+                    Canvas.ZIndex="400">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="tb_markers_count" Text="Markers: 0 ▲"/>
+                </StackPanel>
+            </Button>
+
+            <!-- Waypoint List Panel (Expanded) -->
+            <Border x:Name="wp_list_panel"
+                    Background="{ThemeResource CardBrush80}"
+                    BorderBrush="{ThemeResource BorderBrush}"
+                    BorderThickness="1"
+                    VerticalAlignment="Bottom"
+                    HorizontalAlignment="Left"
+                    Margin="16,0,16,80"
+                    MaxHeight="260"
+                    MinWidth="260"
+                    CornerRadius="8"
+                    Padding="12"
+                    Visibility="Collapsed"
+                    Canvas.ZIndex="400">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="btn_send_mission"
+                                    Style="{StaticResource ModernButtonStyle}"
+                                    Click="SendWaypointCommand"
+                                    ToolTipService.ToolTip="Send Mission"
+                                    Padding="12,6">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE724;" FontSize="13"/>
+                                    <TextBlock Text="SEND MISSION" FontSize="11" FontWeight="Bold"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="btn_start_mission"
+                                    Style="{StaticResource ModernButtonStyle}"
+                                    Command="{Binding UploadMissionCommand}"
+                                    ToolTipService.ToolTip="Start Mission"
+                                    Padding="12,6">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE768;" FontSize="13"/>
+                                    <TextBlock Text="START MISSION" FontSize="11" FontWeight="Bold"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                            <Button x:Name="Undo" Style="{StaticResource IconButton}" Click="Undo_Click" ToolTipService.ToolTip="Undo">
+                                <FontIcon Glyph="&#xE7A7;" FontSize="14"/>
+                            </Button>
+                            <Button x:Name="Redo" Style="{StaticResource IconButton}" Click="Redo_Click" ToolTipService.ToolTip="Redo">
+                                <FontIcon Glyph="&#xE7A6;" FontSize="14"/>
+                            </Button>
+                            <Button x:Name="Import" Style="{StaticResource IconButton}" Click="ImportWaypoints_Click" ToolTipService.ToolTip="Import">
+                                <FontIcon Glyph="&#xE8E5;" FontSize="14"/>
+                            </Button>
+                            <Button x:Name="Export" Style="{StaticResource IconButton}" Click="ExportWaypoints_Click" ToolTipService.ToolTip="Export">
+                                <FontIcon Glyph="&#xE74E;" FontSize="14"/>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="wp_dock_stack" Spacing="8">
+                            <TextBlock x:Name="wp_empty_message" 
+                                       Text="Double-click on map to add waypoint" 
+                                       Foreground="{ThemeResource MutedForegroundBrush}" 
+                                       FontStyle="Italic" 
+                                       FontSize="12"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <!-- Geofence Panel (Right Side) -->
+            <Border x:Name="geofence_panel" 
+                    Style="{StaticResource ControlPanel}"
+                    HorizontalAlignment="Right" 
+                    VerticalAlignment="Top" 
+                    Margin="20"
+                    MinWidth="300"
+                    MaxWidth="340"
+                    Visibility="Collapsed"
+                    Canvas.ZIndex="500">
+                <StackPanel Spacing="12">
+                    <!-- Header -->
+                    <Grid>
+                        <TextBlock Text="GEOFENCE SETTINGS" 
+                                   FontSize="16" 
+                                   FontWeight="Bold" 
+                                   Foreground="{ThemeResource ForegroundBrush}"/>
+                        <Button Click="ToggleGeofencePanel_Click" HorizontalAlignment="Right" Style="{StaticResource IconButton}">
+                            <FontIcon Glyph="&#xE711;" FontSize="14"/>
+                        </Button>
+                    </Grid>
+                    
+                    <Border Height="1" Background="{ThemeResource BorderBrush}"/>
+                    
+                    <!-- Type & Parameters -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        
+                        <!-- Type -->
+                        <StackPanel Grid.Column="0" Grid.Row="0" Spacing="4">
+                            <TextBlock Text="Type" Foreground="{ThemeResource MutedForegroundBrush}" FontSize="11"/>
+                            <ComboBox x:Name="cb_geofence_type" 
+                                      SelectedIndex="0"
+                                      HorizontalAlignment="Stretch"
+                                      SelectionChanged="GeofenceType_SelectionChanged">
+                                <ComboBoxItem Content="Circular"/>
+                                <ComboBoxItem Content="Polygon"/>
+                            </ComboBox>
+                        </StackPanel>
+                        
+                        <!-- Radius -->
+                        <StackPanel Grid.Column="1" Grid.Row="0" Spacing="4" Margin="8,0,0,0">
+                            <TextBlock Text="Radius (m)" Foreground="{ThemeResource MutedForegroundBrush}" FontSize="11"/>
+                            <TextBox x:Name="tb_geofence_radius" 
+                                     Text="500"
+                                     TextChanged="GeofenceRadius_TextChanged"/>
+                        </StackPanel>
+                        
+                        <!-- Max Altitude -->
+                        <StackPanel Grid.Column="0" Grid.Row="1" Spacing="4" Margin="0,8,0,0">
+                            <TextBlock Text="Max Alt (m)" Foreground="{ThemeResource MutedForegroundBrush}" FontSize="11"/>
+                            <TextBox x:Name="tb_geofence_altitude" 
+                                     Text="100"
+                                     TextChanged="GeofenceAltitude_TextChanged"/>
+                        </StackPanel>
+                    </Grid>
+                    
+                    <!-- Info Display -->
+                    <Border Background="{ThemeResource MutedBrush}" 
+                            CornerRadius="8" 
+                            Padding="12"
+                            BorderBrush="{ThemeResource BorderBrush}"
+                            BorderThickness="1">
+                        <StackPanel Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE707;" FontSize="14" VerticalAlignment="Center"/>
+                                <TextBlock Text="GEOFENCE INFO" 
+                                           Foreground="{ThemeResource MutedForegroundBrush}" 
+                                           FontSize="11" 
+                                           FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Center:" Foreground="{ThemeResource ForegroundBrush}" FontSize="12"/>
+                                <TextBlock x:Name="txt_geofence_center" 
+                                           Text="Not set" 
+                                           Foreground="{ThemeResource NavMapBrush}" 
+                                           FontSize="12" 
+                                           FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Area:" Foreground="{ThemeResource ForegroundBrush}" FontSize="12"/>
+                                <TextBlock x:Name="txt_geofence_area" 
+                                           Text="0 m²" 
+                                           Foreground="{ThemeResource SuccessBrush}" 
+                                           FontSize="12" 
+                                           FontWeight="Bold"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- Coordinate Input -->
+                    <Border Background="{ThemeResource MutedBrush}" 
+                            CornerRadius="8" 
+                            Padding="12"
+                            BorderBrush="{ThemeResource BorderBrush}"
+                            BorderThickness="1">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="SET CENTER BY COORDINATES" 
+                                       Foreground="{ThemeResource MutedForegroundBrush}" 
+                                       FontSize="11" 
+                                       FontWeight="Bold"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <StackPanel Grid.Column="0" Spacing="4">
+                                    <TextBlock Text="Latitude" Foreground="{ThemeResource MutedForegroundBrush}" FontSize="10"/>
+                                    <TextBox x:Name="tb_geofence_lat" PlaceholderText="-7.2754"/>
+                                </StackPanel>
+                                
+                                <StackPanel Grid.Column="1" Spacing="4" Margin="8,0,0,0">
+                                    <TextBlock Text="Longitude" Foreground="{ThemeResource MutedForegroundBrush}" FontSize="10"/>
+                                    <TextBox x:Name="tb_geofence_lon" PlaceholderText="112.7947"/>
+                                </StackPanel>
+                                
+                                <Button Grid.Column="2" 
+                                        Content="SET" 
+                                        Style="{StaticResource ModernButtonStyle}"
+                                        Padding="12,4"
+                                        VerticalAlignment="Bottom"
+                                        Margin="8,0,0,0"
+                                        Click="SetGeofenceCenter_Click"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- Polygon Vertices List -->
+                    <Border x:Name="geofence_points_border" 
+                            Background="{ThemeResource MutedBrush}" 
+                            CornerRadius="8" 
+                            Padding="12"
+                            BorderBrush="{ThemeResource BorderBrush}"
+                            BorderThickness="1"
+                            MaxHeight="150"
+                            Visibility="Collapsed">
+                        <StackPanel Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE809;" FontSize="14" VerticalAlignment="Center"/>
+                                <TextBlock Text="POLYGON VERTICES" 
+                                           Foreground="{ThemeResource MutedForegroundBrush}" 
+                                           FontSize="11" 
+                                           FontWeight="Bold"/>
+                            </StackPanel>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="100">
+                                <ItemsControl x:Name="geofence_points_list">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{ThemeResource BackgroundBrush}" 
+                                                    CornerRadius="4" 
+                                                    Margin="0,4" 
+                                                    Padding="8,4">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding Index}" 
+                                                               Foreground="{ThemeResource NavMapBrush}" 
+                                                               FontWeight="Bold"
+                                                               FontSize="11"/>
+                                                    <TextBlock Text="Lat:" Foreground="{ThemeResource ForegroundBrush}" FontSize="10"/>
+                                                    <TextBlock Text="{Binding LatFormatted}" 
+                                                               Foreground="{ThemeResource SuccessBrush}" 
+                                                               FontSize="10"/>
+                                                    <TextBlock Text="Lon:" Foreground="{ThemeResource ForegroundBrush}" FontSize="10"/>
+                                                    <TextBlock Text="{Binding LonFormatted}" 
+                                                               Foreground="{ThemeResource SuccessBrush}" 
+                                                               FontSize="10"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Action Buttons -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <ToggleButton x:Name="btn_geofence_mode" 
+                                      Grid.Column="0"
+                                      HorizontalAlignment="Stretch"
+                                      Click="ToggleGeofenceMode_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                <FontIcon Glyph="&#xE70F;" FontSize="14"/>
+                                <TextBlock Text="DRAW" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </ToggleButton>
+                        
+                        <Button x:Name="btn_complete_geofence" 
+                                Grid.Column="1"
+                                Width="40"
+                                Margin="8,0"
+                                Visibility="Collapsed"
+                                Click="CompleteGeofence_Click">
+                            <FontIcon Glyph="&#xE73E;" FontSize="14"/>
+                        </Button>
+                        
+                        <Button x:Name="btn_send_geofence" 
+                                Grid.Column="2"
+                                HorizontalAlignment="Stretch"
+                                IsEnabled="False"
+                                Click="SendGeofence_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                <FontIcon Glyph="&#xE724;" FontSize="14"/>
+                                <TextBlock Text="SEND" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        
+                        <Button x:Name="btn_clear_geofence" 
+                                Grid.Column="3"
+                                Width="40"
+                                Margin="8,0,0,0"
+                                IsEnabled="False"
+                                Click="ClearGeofence_Click">
+                            <FontIcon Glyph="&#xE711;" FontSize="14"/>
+                        </Button>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Offline Maps Download Panel -->
+            <Border x:Name="download_panel"
+                    Background="{ThemeResource CardBrush80}"
+                    BorderBrush="{ThemeResource BorderBrush}"
+                    BorderThickness="1"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Margin="16"
+                    MaxWidth="360"
+                    CornerRadius="8"
+                    Padding="12"
+                    Visibility="Collapsed"
+                    Canvas.ZIndex="500">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Download Offline Maps" 
+                               FontSize="16" FontWeight="Bold" 
+                               HorizontalAlignment="Center"/>
+                    
+                    <TextBlock Text="Download map tiles for offline use" 
+                               FontSize="12" Opacity="0.7" 
+                               HorizontalAlignment="Center"/>
+
+                    <!-- Jawa Region -->
+                    <Border Background="{ThemeResource CardBrush}" 
+                            BorderBrush="{ThemeResource BorderBrush}" 
+                            BorderThickness="1" 
+                            CornerRadius="8" 
+                            Padding="12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Spacing="4">
+                                <TextBlock Text="Jawa (Java)" FontWeight="Bold"/>
+                                <TextBlock Text="~400 MB • Zoom 12-15" FontSize="11" Opacity="0.7"/>
+                                <TextBlock Text="Ready to download" FontSize="11"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" 
+                                    Command="{x:Bind ViewModel.DownloadJawaCommand}"
+                                    Style="{StaticResource ModernButtonStyle}">
+                                <FontIcon Glyph="&#xE896;" FontSize="14"/>
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- Kalimantan Region -->
+                    <Border Background="{ThemeResource CardBrush}" 
+                            BorderBrush="{ThemeResource BorderBrush}" 
+                            BorderThickness="1" 
+                            CornerRadius="8" 
+                            Padding="12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Spacing="4">
+                                <TextBlock Text="Kalimantan (Borneo)" FontWeight="Bold"/>
+                                <TextBlock Text="~600 MB • Zoom 12-15" FontSize="11" Opacity="0.7"/>
+                                <TextBlock Text="Ready to download" FontSize="11"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" 
+                                    Command="{x:Bind ViewModel.DownloadKalimantanCommand}"
+                                    Style="{StaticResource ModernButtonStyle}">
+                                <FontIcon Glyph="&#xE896;" FontSize="14"/>
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- Progress Section -->
+                    <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.IsDownloading, Mode=OneWay}">
+                        <ProgressBar Value="{x:Bind ViewModel.DownloadProgressValue, Mode=OneWay}" 
+                                    Maximum="100" Height="8"/>
+                        <TextBlock Text="{x:Bind ViewModel.DownloadProgressText, Mode=OneWay}" 
+                                  FontSize="11" HorizontalAlignment="Center"/>
+                        <Button Command="{x:Bind ViewModel.CancelDownloadCommand}" 
+                                HorizontalAlignment="Center"
+                                Background="{ThemeResource ErrorBrush}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE711;" FontSize="14"/>
+                                <TextBlock Text="Cancel"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Storage Info -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                        <TextBlock Text="Storage Used:" FontSize="11" Opacity="0.7"/>
+                        <TextBlock Text="{x:Bind ViewModel.StorageSizeText, Mode=OneWay}" FontSize="11" FontWeight="Bold"/>
+                        <TextBlock Text="•" FontSize="11" Opacity="0.5"/>
+                        <TextBlock Text="{x:Bind ViewModel.TotalTileCount, Mode=OneWay}" FontSize="11"/>
+                        <TextBlock Text="tiles" FontSize="11" Opacity="0.7"/>
+                    </StackPanel>
+
+                    <!-- Clear Cache Button -->
+                    <Button Command="{x:Bind ViewModel.ClearCacheCommand}" 
+                            HorizontalAlignment="Stretch"
+                            Background="{ThemeResource ErrorBrush20}"
+                            BorderBrush="{ThemeResource ErrorBrush}"
+                            BorderThickness="1">
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                            <FontIcon Glyph="&#xE74D;" FontSize="14"/>
+                            <TextBlock Text="Clear All Cache"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Close Button -->
+                    <Button Click="HideDownloadPanel_Click" 
+                            HorizontalAlignment="Stretch"
+                            Style="{StaticResource ModernButtonStyle}">
+                        <TextBlock Text="Close"/>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

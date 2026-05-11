@@ -1,8 +1,8 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Pigeon_Uno (Desktop)" type="LaunchSettings" factoryName=".NET Launch Settings Profile">
-    <option name="LAUNCH_PROFILE_PROJECT_FILE_PATH" value="$PROJECT_DIR$/Pigeon_Uno/Pigeon_Uno.csproj" />
+  <configuration default="false" name="HarvestmoonGCS (Desktop)" type="LaunchSettings" factoryName=".NET Launch Settings Profile">
+    <option name="LAUNCH_PROFILE_PROJECT_FILE_PATH" value="$PROJECT_DIR$/HarvestmoonGCS/HarvestmoonGCS.csproj" />
     <option name="LAUNCH_PROFILE_TFM" value="net10.0-desktop" />
-    <option name="LAUNCH_PROFILE_NAME" value="Pigeon_Uno (Desktop)" />
+    <option name="LAUNCH_PROFILE_NAME" value="HarvestmoonGCS (Desktop)" />
     <option name="USE_EXTERNAL_CONSOLE" value="0" />
     <option name="USE_MONO" value="0" />
     <option name="RUNTIME_ARGUMENTS" value="" />
@@ -14,10 +14,10 @@
       <option name="Build" />
     </method>
   </configuration>
-  <configuration default="false" name="Pigeon_Uno (WebAssembly IIS Express)" type="LaunchSettings" factoryName=".NET Launch Settings Profile">
-    <option name="LAUNCH_PROFILE_PROJECT_FILE_PATH" value="$PROJECT_DIR$/Pigeon_Uno/Pigeon_Uno.csproj" />
+  <configuration default="false" name="HarvestmoonGCS (WebAssembly IIS Express)" type="LaunchSettings" factoryName=".NET Launch Settings Profile">
+    <option name="LAUNCH_PROFILE_PROJECT_FILE_PATH" value="$PROJECT_DIR$/HarvestmoonGCS/HarvestmoonGCS.csproj" />
     <option name="LAUNCH_PROFILE_TFM" value="net10.0-browserwasm" />
-    <option name="LAUNCH_PROFILE_NAME" value="Pigeon_Uno (WebAssembly IIS Express)" />
+    <option name="LAUNCH_PROFILE_NAME" value="HarvestmoonGCS (WebAssembly IIS Express)" />
     <option name="USE_EXTERNAL_CONSOLE" value="0" />
     <option name="USE_MONO" value="0" />
     <option name="RUNTIME_ARGUMENTS" value="" />
@@ -29,10 +29,10 @@
       <option name="Build" />
     </method>
   </configuration>
-  <configuration default="false" name="Pigeon_Uno (WebAssembly)" type="LaunchSettings" factoryName=".NET Launch Settings Profile">
-    <option name="LAUNCH_PROFILE_PROJECT_FILE_PATH" value="$PROJECT_DIR$/Pigeon_Uno/Pigeon_Uno.csproj" />
+  <configuration default="false" name="HarvestmoonGCS (WebAssembly)" type="LaunchSettings" factoryName=".NET Launch Settings Profile">
+    <option name="LAUNCH_PROFILE_PROJECT_FILE_PATH" value="$PROJECT_DIR$/HarvestmoonGCS/HarvestmoonGCS.csproj" />
     <option name="LAUNCH_PROFILE_TFM" value="net10.0-browserwasm" />
-    <option name="LAUNCH_PROFILE_NAME" value="Pigeon_Uno (WebAssembly)" />
+    <option name="LAUNCH_PROFILE_NAME" value="HarvestmoonGCS (WebAssembly)" />
     <option name="USE_EXTERNAL_CONSOLE" value="0" />
     <option name="USE_MONO" value="0" />
     <option name="RUNTIME_ARGUMENTS" value="" />
@@ -44,10 +44,10 @@
       <option name="Build" />
     </method>
   </configuration>
-  <configuration default="false" name="Pigeon_Uno (WinAppSDK Unpackaged)" type="LaunchSettings" factoryName=".NET Launch Settings Profile">
-    <option name="LAUNCH_PROFILE_PROJECT_FILE_PATH" value="$PROJECT_DIR$/Pigeon_Uno/Pigeon_Uno.csproj" />
+  <configuration default="false" name="HarvestmoonGCS (WinAppSDK Unpackaged)" type="LaunchSettings" factoryName=".NET Launch Settings Profile">
+    <option name="LAUNCH_PROFILE_PROJECT_FILE_PATH" value="$PROJECT_DIR$/HarvestmoonGCS/HarvestmoonGCS.csproj" />
     <option name="LAUNCH_PROFILE_TFM" value="net10.0-windows10.0.26100.0" />
-    <option name="LAUNCH_PROFILE_NAME" value="Pigeon_Uno (WinAppSDK Unpackaged)" />
+    <option name="LAUNCH_PROFILE_NAME" value="HarvestmoonGCS (WinAppSDK Unpackaged)" />
     <option name="USE_EXTERNAL_CONSOLE" value="0" />
     <option name="USE_MONO" value="0" />
     <option name="RUNTIME_ARGUMENTS" value="" />

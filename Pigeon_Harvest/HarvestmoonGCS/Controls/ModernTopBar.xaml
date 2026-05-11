@@ -1,0 +1,337 @@
+<UserControl x:Class="HarvestmoonGCS.Controls.ModernTopBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="64"
+             d:DesignWidth="1200">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="../Styles/ModernStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <Storyboard x:Key="DotPulseAnimation" AutoReverse="True" RepeatBehavior="Forever">
+                <DoubleAnimation Storyboard.TargetName="PulseDot" Storyboard.TargetProperty="Opacity" From="1.0" To="0.3" Duration="0:0:0.8"/>
+                <DoubleAnimation Storyboard.TargetName="PulseDot" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" From="1.0" To="1.2" Duration="0:0:0.8"/>
+                <DoubleAnimation Storyboard.TargetName="PulseDot" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="1.0" To="1.2" Duration="0:0:0.8"/>
+            </Storyboard>
+
+            <SolidColorBrush x:Key="ConnectedBrush" Color="{ThemeResource SuccessColor}"/>
+            <SolidColorBrush x:Key="ConnectingBrush" Color="{ThemeResource WarningColor}"/>
+            <SolidColorBrush x:Key="DisconnectedBrush" Color="{ThemeResource ErrorColor}"/>
+            <SolidColorBrush x:Key="ConnectedBgBrush" Color="{ThemeResource SuccessColor20}"/>
+            <SolidColorBrush x:Key="ConnectingBgBrush" Color="{ThemeResource WarningColor20}"/>
+            <SolidColorBrush x:Key="DisconnectedBgBrush" Color="{ThemeResource ErrorColor20}"/>
+            <SolidColorBrush x:Key="ConnectedBorderBrush" Color="{ThemeResource SuccessColor40}"/>
+            <SolidColorBrush x:Key="ConnectingBorderBrush" Color="{ThemeResource WarningColor40}"/>
+            <SolidColorBrush x:Key="DisconnectedBorderBrush" Color="{ThemeResource ErrorColor40}"/>
+
+            <Style x:Key="ConnectionButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="{ThemeResource MutedBrush}"/>
+                <Setter Property="Foreground" Value="{ThemeResource ForegroundBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="12,8,16,8"/>
+                <Setter Property="CornerRadius" Value="12"/>
+                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid x:Name="RootGrid">
+                                <Border x:Name="RootBorder"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="{TemplateBinding CornerRadius}"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                                </Border>
+                                
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal"/>
+                                        <VisualState x:Name="PointerOver">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Opacity" To="0.8" Duration="0:0:0.1"/>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Opacity" To="0.6" Duration="0:0:0.1"/>
+                                            </Storyboard>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="ExitButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="{ThemeResource MutedBrush}"/>
+                <Setter Property="Opacity" Value="0.4"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="12,6"/>
+                <Setter Property="CornerRadius" Value="12"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="RootBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="{TemplateBinding CornerRadius}"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Border Height="56" Background="{ThemeResource CardBrush}" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,0">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT: Page Title -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <FontIcon x:Name="PageIcon" Glyph="&#xE80F;" FontSize="16" Foreground="{ThemeResource PrimaryBrush}" VerticalAlignment="Center"/>
+                <TextBlock x:Name="PageTitle" Text="Dashboard" FontSize="14" FontWeight="SemiBold" Foreground="{ThemeResource ForegroundBrush}" VerticalAlignment="Center"/>
+                <TextBlock x:Name="PageSubtitle" Text="/ Field Sector B · Bandung" FontSize="12" Foreground="{ThemeResource MutedForegroundBrush}" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- CENTER: Status Pills (Wifi, Battery, GPS, AI) -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
+                <!-- Wifi/Connection Pill -->
+                <Border x:Name="WifiPill" Padding="10,6" CornerRadius="6" Background="{ThemeResource SuccessBrush20}" BorderBrush="{ThemeResource SuccessBrush40}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon x:Name="WifiIcon" Glyph="&#xE701;" FontSize="12" Foreground="{ThemeResource SuccessBrush}" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="WifiLabel" Text="Connected" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource SuccessBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Battery Pill -->
+                <Border x:Name="BatteryPill" Padding="10,6" CornerRadius="6" Background="{ThemeResource SuccessBrush20}" BorderBrush="{ThemeResource SuccessBrush40}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon x:Name="BatteryIcon" Glyph="{StaticResource IconBattery}" FontSize="12" Foreground="{ThemeResource SuccessBrush}" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="BatteryText" Text="78%" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource SuccessBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- GPS Pill -->
+                <Border x:Name="GpsPill" Padding="10,6" CornerRadius="6" Background="{ThemeResource SuccessBrush20}" BorderBrush="{ThemeResource SuccessBrush40}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon x:Name="GpsIcon" Glyph="{StaticResource IconSatellite}" FontSize="12" Foreground="{ThemeResource SuccessBrush}" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="GpsText" Text="GPS 18" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource SuccessBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- AI FPS Pill -->
+                <Border x:Name="AIFpsPill" Padding="10,6" CornerRadius="6" Background="{ThemeResource InfoBrush20}" BorderBrush="{ThemeResource InfoBrush40}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon x:Name="AIIcon" Glyph="&#xE7C1;" FontSize="12" Foreground="{ThemeResource InfoBrush}" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="AIFpsText" Text="AI — FPS" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource InfoBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- RIGHT: RTL + Mission Buttons + Connection + Status -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <!-- RTL Button (Quick Action) -->
+                <Button x:Name="RTLButton" 
+                        Padding="10,8" 
+                        CornerRadius="8"
+                        Background="#D32F2F" 
+                        BorderThickness="0"
+                        Click="RTLButton_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE8B1;" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                        <TextBlock Text="RTL" FontSize="12" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <!-- Start/Stop Mission Button (Quick Action) -->
+                <Button x:Name="MissionButton" 
+                        Padding="10,8" 
+                        CornerRadius="8"
+                        Background="{ThemeResource PrimaryBrush}" 
+                        BorderThickness="0"
+                        Click="MissionButton_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon x:Name="MissionIcon" Glyph="&#xE768;" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="MissionLabel" Text="Stop Mission" FontSize="12" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <!-- Connection Button -->
+                <Button x:Name="ConnectButton" 
+                        Style="{StaticResource ConnectionButtonStyle}"
+                        VerticalAlignment="Center"
+                        Click="ConnectButton_Click"
+                        Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon x:Name="ConnectionIcon" Glyph="&#xE912;" FontSize="14" VerticalAlignment="Center">
+                            <FontIcon.RenderTransform>
+                                <RotateTransform CenterX="7" CenterY="7"/>
+                            </FontIcon.RenderTransform>
+                        </FontIcon>
+                        <TextBlock x:Name="ConnectionLabel" Text="DISCONNECTED" 
+                                   FontWeight="Bold" FontSize="11" CharacterSpacing="100" 
+                                   VerticalAlignment="Center"/>
+                        <Ellipse x:Name="PulseDot" Width="6" Height="6" VerticalAlignment="Center" Visibility="Collapsed" Opacity="1">
+                            <Ellipse.RenderTransform>
+                                <ScaleTransform CenterX="3" CenterY="3"/>
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                    </StackPanel>
+                </Button>
+
+                <!-- Endpoint + Mode + Voice -->
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Visibility="Collapsed">
+                    <Border x:Name="EndpointBadge" Padding="8,4" CornerRadius="6" Background="{ThemeResource MutedBrush}" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" Visibility="Collapsed">
+                        <TextBlock x:Name="EndpointText" Text="UDP 14550" FontSize="11" Foreground="{ThemeResource ForegroundBrush}"/>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <FontIcon x:Name="ModeIcon" Glyph="&#xE7C1;" FontSize="12" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBlock x:Name="ModeText" Text="AUTO" FontSize="11" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <FontIcon x:Name="VoiceIcon" Glyph="&#xE720;" FontSize="12" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBlock x:Name="VoiceStateText" Text="idle" FontSize="11" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Exit Button -->
+                <Button x:Name="ExitButton" Style="{StaticResource ExitButtonStyle}" Click="ExitButton_Click" Visibility="Collapsed">
+                    <TextBlock x:Name="ExitText" Text="EXIT" />
+                </Button>
+            </StackPanel>
+            <!-- Hidden legacy element for compatibility - placed inside Grid -->
+            <Border x:Name="ArmedBadge" Visibility="Collapsed" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <FontIcon Glyph="{StaticResource IconAlert}"/>
+                    <TextBlock Text="ARMED"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+        <VisualStateManager.VisualStateGroups>
+        <VisualStateGroup x:Name="ConnectionStates">
+            <VisualState x:Name="Disconnected">
+                <Storyboard>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectButton" Storyboard.TargetProperty="Background">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource DisconnectedBgBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectButton" Storyboard.TargetProperty="BorderBrush">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource DisconnectedBorderBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectionIcon" Storyboard.TargetProperty="Foreground">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource DisconnectedBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectionLabel" Storyboard.TargetProperty="Foreground">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource DisconnectedBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectionLabel" Storyboard.TargetProperty="Text">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="DISCONNECTED"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="PulseDot" Storyboard.TargetProperty="Visibility">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="Collapsed"/>
+                    </ObjectAnimationUsingKeyFrames>
+                </Storyboard>
+            </VisualState>
+            <VisualState x:Name="Connecting">
+                <Storyboard>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectButton" Storyboard.TargetProperty="Background">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ConnectingBgBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectButton" Storyboard.TargetProperty="BorderBrush">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ConnectingBorderBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectionIcon" Storyboard.TargetProperty="Foreground">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ConnectingBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectionLabel" Storyboard.TargetProperty="Foreground">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ConnectingBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectionLabel" Storyboard.TargetProperty="Text">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="CONNECTING"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="PulseDot" Storyboard.TargetProperty="Visibility">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="Visible"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="PulseDot" Storyboard.TargetProperty="Fill">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ConnectingBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <DoubleAnimation Storyboard.TargetName="ConnectionIcon" 
+                                     Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                     From="0" To="360" Duration="0:0:2" RepeatBehavior="Forever"/>
+                </Storyboard>
+            </VisualState>
+            <VisualState x:Name="Connected">
+                <Storyboard>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectButton" Storyboard.TargetProperty="Background">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ConnectedBgBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectButton" Storyboard.TargetProperty="BorderBrush">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ConnectedBorderBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectionIcon" Storyboard.TargetProperty="Foreground">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ConnectedBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectionLabel" Storyboard.TargetProperty="Foreground">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ConnectedBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ConnectionLabel" Storyboard.TargetProperty="Text">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="CONNECTED"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="PulseDot" Storyboard.TargetProperty="Visibility">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="Visible"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="PulseDot" Storyboard.TargetProperty="Fill">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource ConnectedBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <DoubleAnimation Storyboard.TargetName="PulseDot" Storyboard.TargetProperty="Opacity" From="1.0" To="0.3" Duration="0:0:0.8" AutoReverse="True" RepeatBehavior="Forever"/>
+                    <DoubleAnimation Storyboard.TargetName="PulseDot" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" From="1.0" To="1.2" Duration="0:0:0.8" AutoReverse="True" RepeatBehavior="Forever"/>
+                    <DoubleAnimation Storyboard.TargetName="PulseDot" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="1.0" To="1.2" Duration="0:0:0.8" AutoReverse="True" RepeatBehavior="Forever"/>
+                </Storyboard>
+            </VisualState>
+        </VisualStateGroup>
+        <VisualStateGroup x:Name="ExitStates">
+            <VisualState x:Name="ExitNormal"/>
+            <VisualState x:Name="ExitConfirm">
+                <Storyboard>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ExitButton" Storyboard.TargetProperty="Background">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource DisconnectedBgBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ExitButton" Storyboard.TargetProperty="BorderBrush">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource DisconnectedBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ExitButton" Storyboard.TargetProperty="Opacity">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="1.0"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ExitText" Storyboard.TargetProperty="Text">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="CONFIRM?"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ExitText" Storyboard.TargetProperty="Foreground">
+                        <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource DisconnectedBrush}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <DoubleAnimation Storyboard.TargetName="ExitButton" Storyboard.TargetProperty="Opacity" From="1.0" To="0.7" AutoReverse="True" RepeatBehavior="Forever" Duration="0:0:0.5"/>
+                </Storyboard>
+            </VisualState>
+        </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+    </Border>
+</UserControl>

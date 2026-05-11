@@ -13,7 +13,7 @@
 
 ## Required Files
 
-Place these files in `Pigeon_Uno/Assets/models/` or beside the runtime executable:
+Place these files in `HarvestmoonGCS/Assets/models/` or beside the runtime executable:
 
 1. `yolov8n-agri.onnx` + `classes-yolov8n-agri-basic.txt` for agriculture-specific detection, or
 2. `yolov8n.onnx` + `classes-yolov8n-coco.txt` for the included lightweight COCO baseline model.
@@ -27,7 +27,7 @@ When no ONNX model is found, the app still runs with HSV/OpenCV vegetation analy
 
 ## Included ONNX Model
 
-The project includes `Pigeon_Uno/Assets/models/yolov8n.onnx`, a lightweight YOLOv8 nano baseline model. It uses COCO labels (`classes-yolov8n-coco.txt`) and can detect general objects such as person, car, truck, bird, cow, bottle, chair, potted plant, etc. For agriculture-specific classes such as `crop_stress`, `dry_soil`, and `water_stress`, train/export `yolov8n-agri.onnx` with the agriculture class file.
+The project includes `HarvestmoonGCS/Assets/models/yolov8n.onnx`, a lightweight YOLOv8 nano baseline model. It uses COCO labels (`classes-yolov8n-coco.txt`) and can detect general objects such as person, car, truck, bird, cow, bottle, chair, potted plant, etc. For agriculture-specific classes such as `crop_stress`, `dry_soil`, and `water_stress`, train/export `yolov8n-agri.onnx` with the agriculture class file.
 
 ## Basic Detection Classes
 

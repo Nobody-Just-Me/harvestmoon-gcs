@@ -1,0 +1,449 @@
+<Page x:Class="HarvestmoonGCS.Views.FlightPage"
+      x:Name="flightPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:local="using:HarvestmoonGCS.Views"
+      xmlns:controls="using:HarvestmoonGCS.Controls"
+      xmlns:avionics="using:HarvestmoonGCS.Controls.Avionics"
+      mc:Ignorable="d"
+      d:DesignHeight="825" d:DesignWidth="1505"
+       Background="{ThemeResource BackgroundBrush}">
+
+    <Page.Resources>
+        <x:String x:Key="String1">N/A</x:String>
+    </Page.Resources>
+
+    <Grid>
+        <!-- Layer 0: Full Screen Map (Bottom-most) -->
+        <controls:SkiaMapControl x:Name="mapControl"/>
+
+        <!-- Layer 1: HUD Overlay -->
+        <Grid x:Name="hudOverlay">
+            <!-- Top Bar (ConnectionBar) -->
+
+            <!-- Left Panel: Buttons (Maximize, Settings) -->
+            <StackPanel x:Name="LeftHudActionsPanel" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="4,68,0,0" Spacing="4">
+                <Button x:Name="btn_maximize" Width="32" Height="32" CornerRadius="4" 
+                        Background="{ThemeResource CardBrush80}" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1"
+                        Padding="4" ToolTipService.ToolTip="Maximize">
+                    <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="{ThemeResource IconMaximize}" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Button>
+                <Button x:Name="btn_settings" Width="32" Height="32" CornerRadius="4"
+                        Background="{ThemeResource CardBrush80}" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1"
+                        Padding="4" ToolTipService.ToolTip="Settings">
+                    <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="{ThemeResource IconSettings}" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Button>
+            </StackPanel>
+
+            <!-- Right Panel: HUD Instruments (Attitude, Airspeed, Heading) -->
+            <StackPanel x:Name="RightHudInstrumentsPanel" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,72,4,0" Spacing="4">
+                <Border x:Name="AttitudeHost" Background="{ThemeResource CardBrush80}" CornerRadius="32" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="2" Width="64" Height="64">
+                    <avionics:AttitudeIndicator x:Name="ind_attitude" Width="64" Height="64" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+
+                <Border x:Name="AirspeedHost" Background="{ThemeResource CardBrush80}" CornerRadius="32" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="2" Width="64" Height="64">
+                    <avionics:AirspeedIndicator x:Name="ind_airspeed" Width="64" Height="64" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+
+                <Border x:Name="HeadingHost" Background="{ThemeResource CardBrush80}" CornerRadius="32" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="2" Width="64" Height="64">
+                    <avionics:HeadingIndicator x:Name="ind_heading" Width="64" Height="64" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+            </StackPanel>
+
+            <!-- MAVLink Console (PIGEON style - matching React MAVLinkConsole.tsx) -->
+            <Border x:Name="MavConsoleHost"
+                    VerticalAlignment="Top"
+                    HorizontalAlignment="Right"
+                    Margin="0,0,0,0"
+                    
+                    MaxHeight="200"
+                    Background="{ThemeResource CardBrush80}"
+                    BorderBrush="{ThemeResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Canvas.ZIndex="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header with Terminal icon + Wifi + filtered count + expand/collapse -->
+                    <Border Grid.Row="0" Background="{ThemeResource MutedBrush}" Padding="6,4" CornerRadius="8,8,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <!-- Terminal Icon with pulse -->
+                                <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE756;" FontSize="12" Foreground="{ThemeResource SuccessBrush}"/>
+                                <TextBlock Text="MAVLink Console" FontWeight="SemiBold" FontSize="11"/>
+                                <!-- Wifi Icon + count badge -->
+                                <Border Background="{ThemeResource LayerFillColorDefaultBrush}" CornerRadius="3" Padding="4,1">
+                                    <StackPanel Orientation="Horizontal" Spacing="3">
+                                        <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE701;" FontSize="9" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                                        <TextBlock x:Name="tb_console_count" Text="0" FontSize="9" FontFamily="Consolas" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                <!-- Filtered count indicator (when collapsed) -->
+                                <Border x:Name="ConsoleFilterCount" Background="{ThemeResource LayerFillColorDefaultBrush}" CornerRadius="3" Padding="4,1" Visibility="Collapsed">
+                                    <StackPanel Orientation="Horizontal" Spacing="3">
+                                        <Ellipse Width="5" Height="5" Fill="{ThemeResource SuccessBrush}"/>
+                                        <TextBlock x:Name="tb_filtered_count" Text="0" FontSize="9" FontFamily="Consolas" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                                <!-- Expand/Collapse button -->
+                                <Button x:Name="btn_console_toggle"
+                                        Width="24"
+                                        Height="22"
+                                        CornerRadius="4"
+                                        Padding="0"
+                                        Background="{ThemeResource InputBrush}"
+                                        BorderBrush="{ThemeResource BorderBrush}"
+                                        BorderThickness="1">
+                                    <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE70D;" FontSize="12"/>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Expanded Content: Toolbar + Messages + Footer -->
+                    <Grid x:Name="ConsoleContent" Grid.Row="1" Grid.RowSpan="3">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Toolbar: Search + Filter + AutoScroll + Export + Clear -->
+                        <Grid Grid.Row="0" Padding="6,4" ColumnSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Search -->
+                            <TextBox x:Name="tb_console_search"
+                                     Grid.Column="0"
+                                     PlaceholderText="Search messages..."
+                                     FontSize="10"
+                                     Height="24"
+                                     Background="{ThemeResource InputBrush}"/>
+
+                            <!-- Filter ComboBox (hidden but functional for filter selection) -->
+                            <ComboBox x:Name="cb_console_filter"
+                                      Grid.Column="1"
+                                      Width="0"
+                                      Height="0"
+                                      Opacity="0"
+                                      SelectedIndex="0">
+                                <ComboBoxItem Content="ALL"/>
+                                <ComboBoxItem Content="HEARTBEAT"/>
+                                <ComboBoxItem Content="SYS_STATUS"/>
+                                <ComboBoxItem Content="GPS_RAW_INT"/>
+                                <ComboBoxItem Content="ATTITUDE"/>
+                                <ComboBoxItem Content="VFR_HUD"/>
+                                <ComboBoxItem Content="COMMAND_ACK"/>
+                                <ComboBoxItem Content="STATUSTEXT"/>
+                                <ComboBoxItem Content="MISSION_ITEM"/>
+                                <ComboBoxItem Content="PARAM_VALUE"/>
+                                <ComboBoxItem Content="BATTERY_STATUS"/>
+                            </ComboBox>
+
+                            <!-- Filter Button (visual trigger for filter dropdown) -->
+                            <Button x:Name="btn_console_filter"
+                                    Grid.Column="1"
+                                    Width="24"
+                                    Height="24"
+                                    FontSize="10"
+                                    CornerRadius="4"
+                                    Background="{ThemeResource InputBrush}"
+                                    ToolTipService.ToolTip="Filter by type"
+                                    Click="OnConsoleFilterButtonClicked">
+                                <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE71C;" FontSize="12"/>
+                            </Button>
+
+                            <!-- Auto-Scroll Toggle (matches React's ChevronDown icon) -->
+                            <Button x:Name="btn_console_autoscroll"
+                                    Grid.Column="2"
+                                    Width="24"
+                                    Height="24"
+                                    FontSize="10"
+                                    CornerRadius="4"
+                                    Background="{ThemeResource CardBrush80}"
+                                    BorderBrush="{ThemeResource BorderBrush}"
+                                    BorderThickness="1"
+                                    ToolTipService.ToolTip="Auto scroll">
+                                <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE70D;" FontSize="12" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                            </Button>
+
+                            <!-- Export -->
+                            <Button x:Name="btn_console_export"
+                                    Grid.Column="3"
+                                    Width="24"
+                                    Height="24"
+                                    FontSize="10"
+                                    CornerRadius="4"
+                                    Background="{ThemeResource InputBrush}"
+                                    ToolTipService.ToolTip="Export log">
+                                <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xEDE1;" FontSize="12"/>
+                            </Button>
+
+                            <!-- Clear -->
+                            <Button x:Name="btn_console_clear"
+                                    Grid.Column="4"
+                                    Width="24"
+                                    Height="24"
+                                    FontSize="10"
+                                    CornerRadius="4"
+                                    Background="{ThemeResource InputBrush}"
+                                    ToolTipService.ToolTip="Clear messages">
+                                <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE74D;" FontSize="12"/>
+                            </Button>
+                        </Grid>
+
+                        <!-- Messages List with colored left border based on severity -->
+                        <ListView x:Name="ConsoleMessagesList"
+                                  Grid.Row="1"
+                                  Margin="6,0,6,4"
+                                  SelectionMode="None"
+                                  IsItemClickEnabled="False"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  Background="{ThemeResource LayerFillColorDefaultBrush}">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Border x:Name="MessageBorder" BorderThickness="3,0,0,0" Padding="4,2" Margin="0,1"
+                                            Background="{Binding BackgroundBrush}" BorderBrush="{Binding BorderBrush}">
+                                        <StackPanel Spacing="1">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock Text="{Binding TimeText}" FontFamily="Consolas" FontSize="9" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                                                <!-- Severity icon -->
+                                                <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="{Binding SeverityIcon}" FontSize="10" Foreground="{Binding TypeBrush}"/>
+                                                <TextBlock Text="{Binding Type}" FontFamily="Consolas" FontSize="9" FontWeight="SemiBold" Foreground="{Binding TypeBrush}"/>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Message}" FontSize="10" TextWrapping="WrapWholeWords"/>
+                                            <!-- Details field (matching React's msg.details) -->
+                                            <TextBlock Text="{Binding Details}" FontSize="9" Foreground="{ThemeResource MutedForegroundBrush}" Visibility="{Binding DetailsVisibility}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <!-- Footer Stats: Info/Warn/Error counts + Total -->
+                        <Border Grid.Row="2" Background="{ThemeResource MutedBrush}" Padding="6,4" CornerRadius="0,0,8,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <!-- Info count -->
+                                    <StackPanel Orientation="Horizontal" Spacing="3">
+                                        <Ellipse Width="6" Height="6" Fill="#3B82F6"/>
+                                        <TextBlock x:Name="tb_info_count" Text="Info: 0" FontSize="9" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                                    </StackPanel>
+                                    <!-- Warn count -->
+                                    <StackPanel Orientation="Horizontal" Spacing="3">
+                                        <Ellipse Width="6" Height="6" Fill="#EAB308"/>
+                                        <TextBlock x:Name="tb_warn_count" Text="Warn: 0" FontSize="9" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                                    </StackPanel>
+                                    <!-- Error count -->
+                                    <StackPanel Orientation="Horizontal" Spacing="3">
+                                        <Ellipse Width="6" Height="6" Fill="#EF4444"/>
+                                        <TextBlock x:Name="tb_error_count" Text="Error: 0" FontSize="9" Foreground="{ThemeResource MutedForegroundBrush}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <TextBlock x:Name="tb_console_footer"
+                                           Grid.Column="1"
+                                           Text="Total: 0/0"
+                                           FontSize="9"
+                                           Foreground="{ThemeResource MutedForegroundBrush}"/>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Border x:Name="LiveCamHost" VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="16,0,0,16"
+                    Width="140" Height="105" CornerRadius="6" Background="{ThemeResource CardBrush80}"
+                    BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" Padding="4"
+                    Visibility="Visible" Canvas.ZIndex="10">
+                <Grid CornerRadius="8">
+                    <controls:VideoStreamControl x:Name="liveCam" ShowFps="False"/>
+                    
+                    <Border VerticalAlignment="Top" HorizontalAlignment="Left" Margin="8" 
+                            Background="#dc2626" CornerRadius="2" Padding="8,2">
+                        <TextBlock Text="LIVE" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                    </Border>
+                    
+                    <!-- Camera info -->
+                    <Border VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="10"
+                            Background="{ThemeResource CardBrush80}" CornerRadius="4" Padding="6,2">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="{ThemeResource IconCamera}" FontSize="10" VerticalAlignment="Center" Foreground="White"/>
+                            <TextBlock Text="CAM_01 · 720p" FontSize="9" Foreground="White" Opacity="0.8"/>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- Shortcut -->
+                    <Button x:Name="btn_camera_shortcut" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="8"
+                            Width="28" Height="28" CornerRadius="6" Background="{ThemeResource CardBrush80}"
+                            BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" Padding="0">
+                        <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="{ThemeResource IconCamera}" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- Bottom Center: Stats Bar (Telemetry) -->
+            <ScrollViewer x:Name="TelemetryScrollHost"
+                          VerticalAlignment="Bottom"
+                          HorizontalAlignment="Stretch"
+                          Margin="8,0,8,8"
+                          HorizontalScrollMode="Enabled"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollMode="Disabled"
+                          VerticalScrollBarVisibility="Disabled"
+                          ZoomMode="Disabled">
+            <ItemsControl x:Name="TelemetryBar" VerticalAlignment="Bottom" HorizontalAlignment="Center">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="4"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                
+                <Border Background="{ThemeResource CardBrush80}" CornerRadius="6" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" Padding="6" MinWidth="60">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="ALTITUDE" FontSize="10" Foreground="{ThemeResource MutedForegroundBrush}" HorizontalAlignment="Center" CharacterSpacing="120"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="tb_alt" Text="0" FontSize="16" FontWeight="Bold" FontFamily="Consolas" Foreground="{ThemeResource ForegroundBrush}"/>
+                            <TextBlock Text="m" FontSize="10" VerticalAlignment="Bottom" Foreground="{ThemeResource MutedForegroundBrush}" Margin="0,0,0,1"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                
+                <Border Background="{ThemeResource CardBrush80}" CornerRadius="6" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" Padding="6" MinWidth="60">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="SPEED" FontSize="10" Foreground="{ThemeResource MutedForegroundBrush}" HorizontalAlignment="Center" CharacterSpacing="120"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="tb_speed" Text="0.0" FontSize="16" FontWeight="Bold" FontFamily="Consolas" Foreground="{ThemeResource ForegroundBrush}"/>
+                            <TextBlock Text="m/s" FontSize="10" VerticalAlignment="Bottom" Foreground="{ThemeResource MutedForegroundBrush}" Margin="0,0,0,1"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource CardBrush80}" CornerRadius="6" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" Padding="6" MinWidth="60">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="ROLL" FontSize="10" Foreground="{ThemeResource MutedForegroundBrush}" HorizontalAlignment="Center" CharacterSpacing="120"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="tb_roll" Text="0.0" FontSize="16" FontWeight="Bold" FontFamily="Consolas" Foreground="{ThemeResource ForegroundBrush}"/>
+                            <TextBlock Text="deg" FontSize="10" VerticalAlignment="Bottom" Foreground="{ThemeResource MutedForegroundBrush}" Margin="0,0,0,1"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                
+                <Border Background="{ThemeResource CardBrush80}" CornerRadius="6" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" Padding="6" MinWidth="60">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="PITCH" FontSize="10" Foreground="{ThemeResource MutedForegroundBrush}" HorizontalAlignment="Center" CharacterSpacing="120"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="tb_pitch" Text="0.0" FontSize="16" FontWeight="Bold" FontFamily="Consolas" Foreground="{ThemeResource ForegroundBrush}"/>
+                            <TextBlock Text="deg" FontSize="10" VerticalAlignment="Bottom" Foreground="{ThemeResource MutedForegroundBrush}" Margin="0,0,0,1"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource CardBrush80}" CornerRadius="6" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" Padding="6" MinWidth="60">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="HEADING" FontSize="10" Foreground="{ThemeResource MutedForegroundBrush}" HorizontalAlignment="Center" CharacterSpacing="120"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="tb_heading" Text="0" FontSize="16" FontWeight="Bold" FontFamily="Consolas" Foreground="{ThemeResource ForegroundBrush}"/>
+                            <TextBlock Text="°" FontSize="10" VerticalAlignment="Bottom" Foreground="{ThemeResource MutedForegroundBrush}" Margin="0,0,0,1"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{ThemeResource CardBrush80}" CornerRadius="6" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" Padding="6" MinWidth="60">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="RSSI" FontSize="10" Foreground="{ThemeResource MutedForegroundBrush}" HorizontalAlignment="Center" CharacterSpacing="120"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="2">
+                            <TextBlock x:Name="tb_rssi" Text="0" FontSize="16" FontWeight="Bold" FontFamily="Consolas" Foreground="{ThemeResource ForegroundBrush}"/>
+                            <TextBlock Text="%" FontSize="10" VerticalAlignment="Bottom" Foreground="{ThemeResource MutedForegroundBrush}" Margin="0,0,0,1"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </ItemsControl>
+            </ScrollViewer>
+
+            <Border x:Name="QuickActionsHost" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="0,0,4,4"
+                    Width="180" CornerRadius="6" Background="{ThemeResource CardBrush80}" 
+                    BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" Padding="12"
+                    Canvas.ZIndex="10">
+                <StackPanel x:Name="QuickActionsPanel" Spacing="12">
+                    <Border Background="{ThemeResource MutedBrush}" CornerRadius="6" Padding="8,6">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Quick Actions" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
+                            <Button x:Name="btn_toggle_quick_actions" Grid.Column="1" Height="24" Content="▾" Width="28" Padding="0"
+                                    HorizontalAlignment="Right" Margin="0,0,4,0" CornerRadius="4"
+                                    Background="{ThemeResource InputBrush}"
+                                    BorderBrush="{ThemeResource BorderBrush}"
+                                    BorderThickness="1"/>
+                            <Ellipse Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource ErrorBrush}" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <StackPanel x:Name="QuickActionsContent" Spacing="8">
+                        <ComboBox x:Name="cb_flight_mode" HorizontalAlignment="Stretch" Header="Flight Mode" SelectedIndex="0" FontSize="12"
+                                  Background="{ThemeResource InputBrush}" Foreground="{ThemeResource ForegroundBrush}">
+                            <ComboBoxItem Content="STABILIZE"/>
+                            <ComboBoxItem Content="LOITER"/>
+                            <ComboBoxItem Content="AUTO"/>
+                            <ComboBoxItem Content="RTL"/>
+                            <ComboBoxItem Content="LAND"/>
+                        </ComboBox>
+
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Button x:Name="btn_arm_disarm" Grid.Row="0" Grid.ColumnSpan="2" HorizontalAlignment="Stretch" 
+                                    Content="ARM" Background="{ThemeResource ErrorBrush}" Foreground="{ThemeResource PrimaryForegroundBrush}" FontWeight="Bold" Margin="0,0,0,6"
+                                    CornerRadius="6"/>
+
+                            <Button x:Name="btn_send_mission" Grid.Row="1" Grid.Column="0" HorizontalAlignment="Stretch" Content="START MISSION" Margin="0,0,3,6" CornerRadius="6"
+                                    Background="{ThemeResource SecondaryBrush}" Foreground="{ThemeResource ForegroundBrush}"/>
+                            <Button x:Name="btn_rtl" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" Content="RTL" Margin="3,0,0,6" CornerRadius="6"
+                                    Background="{ThemeResource SecondaryBrush}" Foreground="{ThemeResource ForegroundBrush}"/>
+
+                            <Button x:Name="btn_takeoff" Grid.Row="2" Grid.Column="0" HorizontalAlignment="Stretch" Content="TAKEOFF" Margin="0,0,3,0" CornerRadius="6"
+                                    Background="{ThemeResource SecondaryBrush}" Foreground="{ThemeResource ForegroundBrush}"/>
+                            <Button x:Name="btn_land" Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch" Content="LAND" Margin="3,0,0,0" CornerRadius="6"
+                                    Background="{ThemeResource SecondaryBrush}" Foreground="{ThemeResource ForegroundBrush}"/>
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

@@ -1,0 +1,161 @@
+<ContentDialog
+    x:Class="HarvestmoonGCS.Views.WaypointEditDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:HarvestmoonGCS.Views"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Edit Waypoint"
+    PrimaryButtonText="Save"
+    CloseButtonText="Cancel"
+    DefaultButton="Primary"
+    PrimaryButtonClick="ContentDialog_PrimaryButtonClick">
+
+    <ContentDialog.Resources>
+        <Style TargetType="TextBlock" x:Key="LabelStyle">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,10,0"/>
+            <Setter Property="MinWidth" Value="100"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style TargetType="TextBox" x:Key="InputStyle">
+            <Setter Property="Margin" Value="0,5"/>
+            <Setter Property="Padding" Value="8,5"/>
+        </Style>
+        <Style TargetType="ComboBox" x:Key="ComboStyle">
+            <Setter Property="Margin" Value="0,5"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+    </ContentDialog.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="10" MinWidth="420">
+            
+            <!-- Sequence -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Sequence:" Style="{StaticResource LabelStyle}"/>
+                <TextBox x:Name="SequenceTextBox" 
+                         Width="280" 
+                         IsReadOnly="True"
+                         Background="{ThemeResource SystemControlBackgroundBaseLowBrush}"/>
+            </StackPanel>
+            
+            <!-- Latitude -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Latitude:" Style="{StaticResource LabelStyle}"/>
+                <TextBox x:Name="LatitudeTextBox" 
+                         Width="280"
+                         PlaceholderText="e.g., -6.123456"
+                         InputScope="Number"/>
+            </StackPanel>
+            
+            <!-- Longitude -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Longitude:" Style="{StaticResource LabelStyle}"/>
+                <TextBox x:Name="LongitudeTextBox" 
+                         Width="280"
+                         PlaceholderText="e.g., 106.123456"
+                         InputScope="Number"/>
+            </StackPanel>
+            
+            <!-- Altitude -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Altitude (m):" Style="{StaticResource LabelStyle}"/>
+                <TextBox x:Name="AltitudeTextBox" 
+                         Width="280"
+                         PlaceholderText="e.g., 100"
+                         InputScope="Number"/>
+            </StackPanel>
+            
+            <!-- Command Type -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Command:" Style="{StaticResource LabelStyle}"/>
+                <ComboBox x:Name="CommandComboBox" Width="280" SelectionChanged="CommandComboBox_SelectionChanged">
+                    <ComboBoxItem Content="Waypoint (16)" Tag="16"/>
+                    <ComboBoxItem Content="Loiter (17)" Tag="17"/>
+                    <ComboBoxItem Content="Loiter Turns (18)" Tag="18"/>
+                    <ComboBoxItem Content="Loiter Time (19)" Tag="19"/>
+                    <ComboBoxItem Content="Return to Launch (20)" Tag="20"/>
+                    <ComboBoxItem Content="Land (21)" Tag="21"/>
+                    <ComboBoxItem Content="Takeoff (22)" Tag="22"/>
+                    <ComboBoxItem Content="Spline Waypoint (82)" Tag="82"/>
+                    <ComboBoxItem Content="VTOL Takeoff (84)" Tag="84"/>
+                    <ComboBoxItem Content="VTOL Land (85)" Tag="85"/>
+                    <ComboBoxItem Content="Change Speed (178)" Tag="178"/>
+                    <ComboBoxItem Content="Set Home (179)" Tag="179"/>
+                    <ComboBoxItem Content="VTOL Transition (3000)" Tag="3000"/>
+                </ComboBox>
+            </StackPanel>
+            
+            <MenuFlyoutSeparator Margin="0,10"/>
+            
+            <TextBlock Text="Command Parameters" 
+                       FontSize="16" 
+                       FontWeight="SemiBold"/>
+            
+            <!-- Param1 -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="Param1Label" Text="Param 1:" Style="{StaticResource LabelStyle}"/>
+                <TextBox x:Name="Param1TextBox" 
+                         Width="280"
+                         PlaceholderText="Value"
+                         InputScope="Number"/>
+            </StackPanel>
+            
+            <!-- Param2 -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="Param2Label" Text="Param 2:" Style="{StaticResource LabelStyle}"/>
+                <TextBox x:Name="Param2TextBox" 
+                         Width="280"
+                         PlaceholderText="Value"
+                         InputScope="Number"/>
+            </StackPanel>
+            
+            <!-- Param3 -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="Param3Label" Text="Param 3:" Style="{StaticResource LabelStyle}"/>
+                <TextBox x:Name="Param3TextBox" 
+                         Width="280"
+                         PlaceholderText="Value"
+                         InputScope="Number"/>
+            </StackPanel>
+            
+            <!-- Param4 -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="Param4Label" Text="Param 4:" Style="{StaticResource LabelStyle}"/>
+                <TextBox x:Name="Param4TextBox" 
+                         Width="280"
+                         PlaceholderText="Value"
+                         InputScope="Number"/>
+            </StackPanel>
+            
+            <MenuFlyoutSeparator Margin="0,10"/>
+            
+            <!-- Name -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Name:" Style="{StaticResource LabelStyle}"/>
+                <TextBox x:Name="NameTextBox" 
+                         Width="280"
+                         PlaceholderText="Optional name"/>
+            </StackPanel>
+            
+            <!-- Description -->
+            <StackPanel>
+                <TextBlock Text="Description:" Margin="0,0,0,5" FontWeight="SemiBold"/>
+                <TextBox x:Name="DescriptionTextBox" 
+                         Height="80"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         PlaceholderText="Optional description"/>
+            </StackPanel>
+            
+            <!-- Error Message -->
+            <TextBlock x:Name="ErrorTextBlock" 
+                       Foreground="Red" 
+                       TextWrapping="Wrap" 
+                       Visibility="Collapsed"/>
+        </StackPanel>
+    </ScrollViewer>
+</ContentDialog>
