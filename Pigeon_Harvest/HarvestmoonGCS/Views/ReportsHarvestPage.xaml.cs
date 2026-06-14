@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -21,15 +22,22 @@ public sealed partial class ReportsHarvestPage : Page
         public required string Duration { get; init; }
         public required int Detections { get; init; }
         public required string Priority { get; init; }
+        public bool IsDemo { get; init; }
+        public string TlogPath { get; init; } = string.Empty;
+        public string GeofenceAlertsJson { get; init; } = "[]";
+        public string YoloBenchmarkJson { get; init; } = string.Empty;
+        public string EvidenceBundlePath { get; init; } = string.Empty;
+        public string VideoRecordingPath { get; init; } = string.Empty;
+        public string IncidentTimelineJson { get; init; } = string.Empty;
     }
 
     private static readonly IReadOnlyList<ReportEntry> SeedReports = new List<ReportEntry>
     {
-        new() { Id = "MH-20260501-014", DateTime = "2026-05-01 12:30", Area = "Sector B · Bandung", Duration = "00:42:11", Detections = 23, Priority = "High" },
-        new() { Id = "MH-20260430-013", DateTime = "2026-04-30 09:15", Area = "Sector A · Bandung", Duration = "00:36:02", Detections = 17, Priority = "Medium" },
-        new() { Id = "MH-20260428-012", DateTime = "2026-04-28 15:48", Area = "Sector C · Garut", Duration = "00:51:30", Detections = 31, Priority = "High" },
-        new() { Id = "MH-20260425-011", DateTime = "2026-04-25 10:02", Area = "Sector A · Bandung", Duration = "00:28:44", Detections = 9, Priority = "Low" },
-        new() { Id = "MH-20260420-010", DateTime = "2026-04-20 14:11", Area = "Sector D · Lembang", Duration = "00:39:12", Detections = 22, Priority = "Medium" }
+        new() { Id = "DEMO-MH-20260501-014", DateTime = "2026-05-01 12:30", Area = "Demo Sector B · Bandung", Duration = "00:42:11", Detections = 23, Priority = "High", IsDemo = true },
+        new() { Id = "DEMO-MH-20260430-013", DateTime = "2026-04-30 09:15", Area = "Demo Sector A · Bandung", Duration = "00:36:02", Detections = 17, Priority = "Medium", IsDemo = true },
+        new() { Id = "DEMO-MH-20260428-012", DateTime = "2026-04-28 15:48", Area = "Demo Sector C · Garut", Duration = "00:51:30", Detections = 31, Priority = "High", IsDemo = true },
+        new() { Id = "DEMO-MH-20260425-011", DateTime = "2026-04-25 10:02", Area = "Demo Sector A · Bandung", Duration = "00:28:44", Detections = 9, Priority = "Low", IsDemo = true },
+        new() { Id = "DEMO-MH-20260420-010", DateTime = "2026-04-20 14:11", Area = "Demo Sector D · Lembang", Duration = "00:39:12", Detections = 22, Priority = "Medium", IsDemo = true }
     };
 
     private readonly DispatcherTimer _feedbackTimer;
@@ -180,9 +188,33 @@ public sealed partial class ReportsHarvestPage : Page
             Foreground = GetThemeBrush("ForegroundBrush")
         };
 
+        var badges = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+
+        if (report.IsDemo)
+        {
+            badges.Children.Add(new Border
+            {
+                Padding = new Thickness(8, 2, 8, 2),
+                CornerRadius = new CornerRadius(5),
+                Background = Brush("#332E7D32"),
+                BorderBrush = Brush("#664CAF50"),
+                BorderThickness = new Thickness(1),
+                Child = new TextBlock
+                {
+                    Text = "DEMO",
+                    FontSize = 11,
+                    Foreground = Brush("#2E7D32")
+                }
+            });
+        }
+
         var priorityBadge = new Border
         {
-            HorizontalAlignment = HorizontalAlignment.Right,
             Padding = new Thickness(8, 2, 8, 2),
             CornerRadius = new CornerRadius(5),
             Background = pillBg,
@@ -195,11 +227,12 @@ public sealed partial class ReportsHarvestPage : Page
                 Foreground = pillFg
             }
         };
+        badges.Children.Add(priorityBadge);
 
         Grid.SetColumn(idText, 0);
-        Grid.SetColumn(priorityBadge, 1);
+        Grid.SetColumn(badges, 1);
         headGrid.Children.Add(idText);
-        headGrid.Children.Add(priorityBadge);
+        headGrid.Children.Add(badges);
 
         stack.Children.Add(headGrid);
         stack.Children.Add(new TextBlock
@@ -242,9 +275,20 @@ public sealed partial class ReportsHarvestPage : Page
         DetailPriorityBadge.Background = pillBg;
         DetailPriorityBadge.BorderBrush = pillBorder;
         DetailPriorityText.Foreground = pillFg;
-        DetailPriorityText.Text = selected.Priority;
+        DetailPriorityText.Text = selected.IsDemo ? $"DEMO · {selected.Priority}" : selected.Priority;
 
         DetailLocationText.Text = $"Lokasi: {selected.Area}";
+        DetailTlogText.Text = string.IsNullOrWhiteSpace(selected.TlogPath)
+            ? "Belum ada TLOG tersambung"
+            : selected.TlogPath;
+        DetailGeofenceAlertsText.Text = FormatGeofenceAlerts(selected.GeofenceAlertsJson);
+        DetailEvidenceText.Text = string.IsNullOrWhiteSpace(selected.EvidenceBundlePath)
+            ? "Belum ada bundle bukti"
+            : selected.EvidenceBundlePath;
+        DetailBenchmarkText.Text = $"Benchmark YOLO: {FormatBenchmark(selected.YoloBenchmarkJson)}";
+        DetailVideoText.Text = string.IsNullOrWhiteSpace(selected.VideoRecordingPath)
+            ? "Video: belum tersedia"
+            : $"Video: {selected.VideoRecordingPath}";
         MapPreviewText.Text = $"Map preview · {selected.Area}";
     }
 
@@ -286,7 +330,13 @@ public sealed partial class ReportsHarvestPage : Page
             Duration = report.Duration,
             Detections = report.Detections,
             Priority = report.Priority,
-            OperatorNote = _operatorNote
+            OperatorNote = _operatorNote,
+            TlogPath = report.TlogPath,
+            GeofenceAlertsJson = report.GeofenceAlertsJson,
+            YoloBenchmarkJson = report.YoloBenchmarkJson,
+            EvidenceBundlePath = report.EvidenceBundlePath,
+            VideoRecordingPath = report.VideoRecordingPath,
+            IncidentTimelineJson = report.IncidentTimelineJson
         };
     }
 
@@ -299,8 +349,57 @@ public sealed partial class ReportsHarvestPage : Page
             Area = record.Area,
             Duration = record.Duration,
             Detections = record.Detections,
-            Priority = record.Priority
+            Priority = record.Priority,
+            IsDemo = false,
+            TlogPath = record.TlogPath,
+            GeofenceAlertsJson = record.GeofenceAlertsJson,
+            YoloBenchmarkJson = record.YoloBenchmarkJson,
+            EvidenceBundlePath = record.EvidenceBundlePath,
+            VideoRecordingPath = record.VideoRecordingPath,
+            IncidentTimelineJson = record.IncidentTimelineJson
         };
+    }
+
+    private static string FormatBenchmark(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return "belum tersedia";
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var fps = root.TryGetProperty("FramesPerSecond", out var fpsProp) ? fpsProp.GetDouble() : 0;
+            var latency = root.TryGetProperty("AverageLatencyMs", out var latencyProp) ? latencyProp.GetDouble() : 0;
+            var detections = root.TryGetProperty("AverageDetections", out var detectionProp) ? detectionProp.GetDouble() : 0;
+            return $"{fps:F1} FPS · {latency:F1} ms · avg {detections:F1} det";
+        }
+        catch
+        {
+            return json.Length > 120 ? json[..120] + "..." : json;
+        }
+    }
+
+    private static string FormatGeofenceAlerts(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json == "[]")
+        {
+            return "Tidak ada alert geofence";
+        }
+
+        try
+        {
+            var alerts = JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+            return alerts.Count == 0
+                ? "Tidak ada alert geofence"
+                : string.Join(Environment.NewLine, alerts.Take(5));
+        }
+        catch
+        {
+            return json;
+        }
     }
 
     private static (Brush background, Brush border, Brush foreground) GetPriorityBrushes(string priority)

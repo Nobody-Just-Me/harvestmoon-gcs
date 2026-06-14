@@ -594,8 +594,31 @@ public partial class MapViewModel : ViewModelBase
     
     public double CalculateMissionDuration() 
     {
-        // TODO: Calculate based on waypoint speeds and distances
-        return 0;
+        const double defaultCruiseSpeedMetersPerSecond = 8.0;
+        if (TotalDistance <= 0)
+        {
+            CalculateTotalDistance();
+        }
+
+        var distanceMeters = TotalDistance * 1000.0;
+        if (distanceMeters <= 0)
+        {
+            return 0;
+        }
+
+        var loiterSeconds = Waypoints.Count(waypoint =>
+            waypoint.Command is WaypointCommand.Loiter or
+                WaypointCommand.LoiterTime or
+                WaypointCommand.LoiterTurns or
+                WaypointCommand.LoiterUnlimited) * 10.0;
+
+        var takeoffLandingSeconds = Waypoints.Count(waypoint =>
+            waypoint.Command is WaypointCommand.TakeOff or
+                WaypointCommand.Land or
+                WaypointCommand.NavVtolTakeoff or
+                WaypointCommand.NavVtolLand) * 20.0;
+
+        return (distanceMeters / defaultCruiseSpeedMetersPerSecond) + loiterSeconds + takeoffLandingSeconds;
     }
 
     /// <summary>

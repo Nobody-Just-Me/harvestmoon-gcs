@@ -2,12 +2,17 @@ using Xunit;
 using HarvestmoonGCS.Core.Models.AI;
 using HarvestmoonGCS.Core.Services;
 using HarvestmoonGCS.Core.Models;
+using System;
+using System.IO;
 using System.Threading.Tasks;
 
 namespace HarvestmoonGCS.Tests.Services.AI;
 
 public class AISettingsTests
 {
+    private static string CreateSettingsPath()
+        => Path.Combine(Path.GetTempPath(), "HarvestmoonGCS.Tests", Guid.NewGuid().ToString("N"), "settings.json");
+
     [Fact]
     public void AISettings_HasCorrectDefaults()
     {
@@ -109,7 +114,7 @@ public class AISettingsTests
     [Fact]
     public async Task SetSettingAsync_AISettings_StoresAndRetrievesCorrectly()
     {
-        var settingsService = new JsonSettingsService();
+        var settingsService = new JsonSettingsService(CreateSettingsPath());
         await settingsService.LoadSettingsAsync();
 
         var aiSettings = new AISettings
@@ -137,7 +142,8 @@ public class AISettingsTests
     [Fact]
     public async Task AISettings_RoundTrip_PreservesAllValues()
     {
-        var settingsService1 = new JsonSettingsService();
+        var settingsPath = CreateSettingsPath();
+        var settingsService1 = new JsonSettingsService(settingsPath);
         await settingsService1.LoadSettingsAsync();
 
         var original = new AISettings
@@ -186,7 +192,7 @@ public class AISettingsTests
 
         await settingsService1.SetSettingAsync("AISettings", original);
 
-        var settingsService2 = new JsonSettingsService();
+        var settingsService2 = new JsonSettingsService(settingsPath);
         await settingsService2.LoadSettingsAsync();
 
         var restored = settingsService2.GetSetting<AISettings>("AISettings", new AISettings());

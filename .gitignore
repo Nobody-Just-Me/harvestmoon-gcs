@@ -10,4 +10,23 @@ dist/
 *.pid
 logs/
 .venv-camera/
+.venv-yolo/
 .git_backup/
+
+# Large files - videos, models, datasets
+*.mp4
+*.avi
+*.mov
+*.pt
+*.onnx
+runs/
+derr.mp4
+yolo*.pt
+
+# Dataset folders
+/datasheet/
+RedEdge/
+Sequoia/
+
+# Temporary outputs
+AFTER_CLEANUP_STATUS.txt

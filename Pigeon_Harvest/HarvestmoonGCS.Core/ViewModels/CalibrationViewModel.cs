@@ -5,13 +5,17 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace HarvestmoonGCS.Core.ViewModels
 {
     public class CalibrationViewModel : INotifyPropertyChanged
     {
+        private const int SimulatedCalibrationStepDelayMs = 50;
+        private const int SimulatedCompassProgressDelayMs = 50;
         private readonly IMavLinkService _mavlinkService;
+        private CancellationTokenSource? _compassCalibrationCts;
         private int _currentCalibrationStep = 0;
         private bool _isLoading;
         private float _currentModePWM;
@@ -293,7 +297,7 @@ namespace HarvestmoonGCS.Core.ViewModels
             // For now, simulate the 6 calibration steps
             for (int i = 1; i <= 6; i++)
             {
-                await Task.Delay(5000); // Wait 5 seconds per step
+                await Task.Delay(SimulatedCalibrationStepDelayMs);
                 _currentCalibrationStep = i;
                 CalibrationStepCompleted?.Invoke(this, i);
             }
@@ -392,6 +396,11 @@ namespace HarvestmoonGCS.Core.ViewModels
         {
             try
             {
+                _compassCalibrationCts?.Cancel();
+                _compassCalibrationCts?.Dispose();
+                _compassCalibrationCts = new CancellationTokenSource();
+                var cancellationToken = _compassCalibrationCts.Token;
+
                 IsLoading = true;
                 StatusMessageChanged?.Invoke(this, "Starting compass calibration...");
                 
@@ -418,14 +427,27 @@ namespace HarvestmoonGCS.Core.ViewModels
                 // In real implementation, this would listen to MAG_CAL_PROGRESS messages
                 _ = Task.Run(async () =>
                 {
-                    for (int i = 0; i <= 100; i += 5)
+                    try
                     {
-                        await Task.Delay(500);
-                        CalibrationProgressChanged?.Invoke(this, (i, i));
+                        for (int i = 0; i <= 100; i += 5)
+                        {
+                            await Task.Delay(SimulatedCompassProgressDelayMs, cancellationToken);
+                            if (cancellationToken.IsCancellationRequested)
+                            {
+                                return;
+                            }
+
+                            CalibrationProgressChanged?.Invoke(this, (i, i));
+                        }
+
+                        IsLoading = false;
+                        StatusMessageChanged?.Invoke(this, "Compass calibration data collected. Click Accept to save or Cancel to abort.");
                     }
-                    IsLoading = false;
-                    StatusMessageChanged?.Invoke(this, "Compass calibration data collected. Click Accept to save or Cancel to abort.");
-                });
+                    catch (OperationCanceledException)
+                    {
+                        // Cancellation is the normal path when the user aborts calibration.
+                    }
+                }, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -439,6 +461,7 @@ namespace HarvestmoonGCS.Core.ViewModels
         {
             try
             {
+                _compassCalibrationCts?.Cancel();
                 StatusMessageChanged?.Invoke(this, "Accepting compass calibration...");
                 
                 // Send MAVLink command to accept compass calibration
@@ -468,6 +491,7 @@ namespace HarvestmoonGCS.Core.ViewModels
         {
             try
             {
+                _compassCalibrationCts?.Cancel();
                 StatusMessageChanged?.Invoke(this, "Cancelling compass calibration...");
                 
                 // Send MAVLink command to cancel compass calibration

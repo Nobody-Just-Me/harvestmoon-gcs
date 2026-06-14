@@ -67,6 +67,7 @@ public sealed partial class MainPage_Modern : Page
             _pageCacheManager = App.Current.Services.GetService<PageCacheManager>();
             _mavLinkService = App.Current.Services.GetService<IMavLinkService>();
             _observabilityService = App.Current.Services.GetService<ObservabilityService>();
+            App.Current.Services.GetService<MissionLoggingService>();
             if (_mavLinkService != null)
             {
                 _mavLinkService.TelemetryReceived += OnTelemetryReceived;
@@ -323,6 +324,12 @@ public sealed partial class MainPage_Modern : Page
 
     private void Sidebar_NavigationRequested(object sender, string target)
     {
+        if (string.Equals(target, "Connection", StringComparison.Ordinal))
+        {
+            _ = ShowConnectDialogAsync();
+            return;
+        }
+
         NavigateToPage(target);
     }
 
@@ -513,6 +520,7 @@ public sealed partial class MainPage_Modern : Page
         yield return typeof(CameraPage);
         yield return typeof(MissionPlannerPage);
         yield return typeof(StatsPage);
+        yield return typeof(AIHarvestPage);
         yield return typeof(AISettingsPage);
         yield return typeof(ReportsHarvestPage);
         yield return typeof(SettingsPage);
@@ -527,8 +535,10 @@ public sealed partial class MainPage_Modern : Page
             "Map" => typeof(MapPage),
             "MissionPlanner" => typeof(MissionPlannerPage),
             "Stats" => typeof(StatsPage),
+            "AIHarvest" => typeof(AIHarvestPage),
             "AISettings" => typeof(AISettingsPage),
             "Tlog" => typeof(ReportsHarvestPage),
+            "LoRa" => typeof(LoRaPage),
             "Settings" => typeof(SettingsPage),
             "FlightClassic" => typeof(FlightPage),
             "ClassicMap" => typeof(MapPage),
@@ -553,6 +563,12 @@ public sealed partial class MainPage_Modern : Page
         if (page is MapPage mapPage)
         {
             mapPage.OnPageActivated();
+            return;
+        }
+
+        if (page is LoRaPage loRaPage)
+        {
+            loRaPage.OnPageActivated();
         }
     }
 
@@ -576,6 +592,9 @@ public sealed partial class MainPage_Modern : Page
             case "Stats":
                 TopBar.UpdatePageTitle("Crop Analysis", "/ AI Monitoring · Real-time", "\uE9D9");
                 break;
+            case "AIHarvest":
+                TopBar.UpdatePageTitle("AI Vision", "/ Zero-Internet Edge AI · YOLOv8n ONNX", "\uE950");
+                break;
             case "AISettings":
                 TopBar.UpdatePageTitle("AI Settings", "/ Diagnostics & Models", "\uE7C1");
                 break;
@@ -596,6 +615,9 @@ public sealed partial class MainPage_Modern : Page
                 break;
             case "TlogPlayer":
                 TopBar.UpdatePageTitle("TLOG Player", "/ Telemetry playback", "\uE102");
+                break;
+            case "LoRa":
+                TopBar.UpdatePageTitle("LoRa Relay", "/ Long-range field telemetry", "\uE704");
                 break;
             case "Parameter":
                 TopBar.UpdatePageTitle("Parameters", "/ Vehicle configuration", "\uE9D9");
@@ -634,6 +656,11 @@ public sealed partial class MainPage_Modern : Page
     private async void TopBar_ConnectClicked(object sender, EventArgs e)
     {
         Log.Information("Connect clicked on TopBar");
+        await ShowConnectDialogAsync();
+    }
+
+    private async Task ShowConnectDialogAsync()
+    {
         try
         {
             MainLoadingIndicator.IsLoading = false;

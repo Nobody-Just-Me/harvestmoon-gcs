@@ -71,6 +71,11 @@ public interface IGeofenceService
     double CalculateDistanceToBoundary(double latitude, double longitude, double altitude);
 
     /// <summary>
+    /// Menghitung jarak posisi ke batas geofence tertentu.
+    /// </summary>
+    double CalculateDistanceToBoundary(GeofenceData geofence, double latitude, double longitude, double altitude);
+
+    /// <summary>
     /// Mengecek apakah posisi berada di dalam geofence
     /// </summary>
     /// <param name="latitude">Latitude posisi</param>

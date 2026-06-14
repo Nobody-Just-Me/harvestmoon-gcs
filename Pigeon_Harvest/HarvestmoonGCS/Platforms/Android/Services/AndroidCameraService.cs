@@ -46,6 +46,11 @@ public class AndroidCameraService : ICameraService
     private CaptureRequest? _previewRequest;
     private MediaRecorder? _mediaRecorder;
     private byte[]? _latestJpegFrame;
+    private readonly object _recordingSync = new();
+    private StreamWriter? _recordingManifest;
+    private string _recordingPath = string.Empty;
+    private string _recordingFramesDirectory = string.Empty;
+    private int _recordingFrameCount;
     private bool _isRecording;
 
     public bool IsStreaming { get; private set; }
@@ -259,21 +264,84 @@ public class AndroidCameraService : ICameraService
 
     public async Task<bool> StartRecordingAsync(string? filename = null)
     {
-        ConnectionError?.Invoke(this, "Perekaman video Android belum aktif pada build ini.");
-        await Task.CompletedTask;
-        return false;
+        if (!IsStreaming)
+        {
+            ConnectionError?.Invoke(this, "Mulai kamera dulu sebelum recording.");
+            return false;
+        }
+
+        if (_isRecording)
+        {
+            return true;
+        }
+
+        try
+        {
+            var outputPath = ResolveRecordingPath(filename);
+            var outputDir = IOPath.GetDirectoryName(outputPath);
+            if (!string.IsNullOrWhiteSpace(outputDir))
+            {
+                Directory.CreateDirectory(outputDir);
+            }
+
+            lock (_recordingSync)
+            {
+                _recordingPath = outputPath;
+                _recordingFramesDirectory = IOPath.Combine(
+                    outputDir ?? IOPath.Combine(AndroidCompatibility.GetAppStoragePath(), "Camera"),
+                    $"{IOPath.GetFileNameWithoutExtension(outputPath)}_frames");
+                Directory.CreateDirectory(_recordingFramesDirectory);
+
+                _recordingManifest?.Dispose();
+                _recordingManifest = new StreamWriter(new FileStream(outputPath + ".frames.txt", FileMode.Create, FileAccess.Write, FileShare.Read))
+                {
+                    AutoFlush = true
+                };
+                _recordingManifest.WriteLine("# HarvestmoonGCS Android camera recording");
+                _recordingManifest.WriteLine($"started_utc={DateTime.UtcNow:O}");
+                _recordingManifest.WriteLine($"frames_directory={_recordingFramesDirectory}");
+                _recordingFrameCount = 0;
+                _isRecording = true;
+            }
+
+            RecordingStatusChanged?.Invoke(this, true);
+            await Task.CompletedTask;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ConnectionError?.Invoke(this, $"Gagal memulai recording: {ex.Message}");
+            return false;
+        }
     }
 
     public async Task<bool> StopRecordingAsync()
     {
-        if (_isRecording)
+        if (!_isRecording)
         {
-            _isRecording = false;
-            RecordingStatusChanged?.Invoke(this, false);
+            return true;
         }
 
-        await Task.CompletedTask;
-        return true;
+        try
+        {
+            lock (_recordingSync)
+            {
+                _isRecording = false;
+                _recordingManifest?.WriteLine($"stopped_utc={DateTime.UtcNow:O}");
+                _recordingManifest?.Flush();
+                _recordingManifest?.Dispose();
+                _recordingManifest = null;
+            }
+
+            RecordingStatusChanged?.Invoke(this, false);
+            await Task.CompletedTask;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ConnectionError?.Invoke(this, $"Gagal menghentikan recording: {ex.Message}");
+            return false;
+        }
     }
 
     public async Task SendCameraControlAsync(CameraControlCommand command, float value)
@@ -471,6 +539,19 @@ public class AndroidCameraService : ICameraService
         return IOPath.Combine(baseDirectory, filename);
     }
 
+    private static string ResolveRecordingPath(string? filename)
+    {
+        var baseDirectory = IOPath.Combine(AndroidCompatibility.GetAppStoragePath(), "Camera");
+        if (string.IsNullOrWhiteSpace(filename))
+        {
+            return IOPath.Combine(baseDirectory, $"VID_{DateTime.Now:yyyyMMdd_HHmmss}.mp4");
+        }
+
+        return IOPath.IsPathRooted(filename)
+            ? filename
+            : IOPath.Combine(baseDirectory, filename);
+    }
+
     private void OnFrameAvailable(byte[] jpegBytes)
     {
         lock (_latestFrameSync)
@@ -478,7 +559,37 @@ public class AndroidCameraService : ICameraService
             _latestJpegFrame = jpegBytes;
         }
 
+        WriteRecordingFrame(jpegBytes);
         FrameReceived?.Invoke(this, jpegBytes);
+    }
+
+    private void WriteRecordingFrame(byte[] jpegBytes)
+    {
+        if (!_isRecording || jpegBytes.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            lock (_recordingSync)
+            {
+                if (!_isRecording)
+                {
+                    return;
+                }
+
+                var frameNumber = ++_recordingFrameCount;
+                var frameName = $"frame_{frameNumber:D06}.jpg";
+                var framePath = IOPath.Combine(_recordingFramesDirectory, frameName);
+                File.WriteAllBytes(framePath, jpegBytes);
+                _recordingManifest?.WriteLine($"{frameNumber},{DateTime.UtcNow:O},{frameName},{jpegBytes.Length}");
+            }
+        }
+        catch (Exception ex)
+        {
+            ConnectionError?.Invoke(this, $"Gagal menulis frame recording: {ex.Message}");
+        }
     }
 
     private sealed class CameraStateCallback : CameraDevice.StateCallback

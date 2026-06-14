@@ -87,8 +87,11 @@ public partial class App : Application
         services.AddSingleton<ILayoutService, LayoutService>();
         services.AddSingleton<ObservabilityService>();
         services.AddSingleton<PageCacheManager>();
+        services.AddSingleton<Serilog.ILogger>(_ => Log.Logger);
+        services.AddSingleton<ILoggingService, SerilogLoggingService>();
 
         services.AddSingleton<IMavLinkService, HarvestmoonGCS.Core.Services.MavLinkService>();
+        services.AddSingleton<IWaypointService, WaypointService>();
         services.AddSingleton<IMissionService, MissionService>();
         services.AddSingleton<IStatisticsService, StatisticsService>();
         services.AddSingleton<IGeofenceService, GeofenceService>();
@@ -107,11 +110,17 @@ public partial class App : Application
 #if __ANDROID__
         // Android needs Context for camera, file, and other platform services
         services.AddSingleton<Android.Content.Context>(Android.App.Application.Context);
+        services.AddSingleton<ISerialPortService, HarvestmoonGCS.Platforms.Android.Services.AndroidSerialPortService>();
         services.AddSingleton<ICameraService, HarvestmoonGCS.Platforms.Android.Services.AndroidCameraService>();
+        services.AddSingleton<IVideoPlayerService, HarvestmoonGCS.Platforms.Android.Services.AndroidVideoPlayerService>();
 #else
+        services.AddSingleton<ISerialPortService, DesktopSerialPortService>();
         services.AddSingleton<ICameraService, PythonCameraService>();
+        services.AddSingleton<IVideoPlayerService, DesktopVideoPlayerService>();
 #endif
         services.AddSingleton<IVideoRecorderService, VideoRecorderService>();
+        services.AddSingleton<IncidentTimelineService>();
+        services.AddSingleton<MissionLoggingService>();
         services.AddSingleton<ILoRaService, LoRaService>();
         services.AddSingleton<ITlogPlayerService, TlogPlayerService>();
 

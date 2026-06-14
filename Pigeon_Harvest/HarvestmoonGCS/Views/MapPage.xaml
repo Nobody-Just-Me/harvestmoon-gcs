@@ -137,6 +137,14 @@
                             <TextBlock Text="Download" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
+
+                    <!-- Quick Geofence Polygon -->
+                    <Button x:Name="btn_quick_geofence_polygon" Click="QuickPolygonGeofence_Click" Style="{StaticResource ModernButtonStyle}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE734;" FontSize="14"/>
+                            <TextBlock Text="Quick Polygon" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
                 </ScrollViewer>
 

@@ -435,6 +435,11 @@ public class ProjectStructureTests
             return 0.0;
         }
 
+        public double CalculateDistanceToBoundary(Core.Models.GeofenceData geofence, double latitude, double longitude, double altitude)
+        {
+            return 0.0;
+        }
+
         public bool IsInsideGeofence(double latitude, double longitude, double altitude)
         {
             return true;

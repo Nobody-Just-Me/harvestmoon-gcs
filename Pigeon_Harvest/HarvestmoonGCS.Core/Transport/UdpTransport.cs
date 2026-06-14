@@ -43,29 +43,30 @@ public class UdpTransport : ITransport
                 return true;
             }
 
-            var resolveTask = Task.Run(() =>
+            IPAddress? ipAddress;
+            if (IPAddress.TryParse(_host, out IPAddress? parsedAddress))
             {
-                if (IPAddress.TryParse(_host, out IPAddress? parsed))
+                ipAddress = parsedAddress;
+            }
+            else
+            {
+                var resolveTask = Dns.GetHostAddressesAsync(_host);
+                var completedTask = await Task.WhenAny(resolveTask, Task.Delay(ConnectTimeoutMs));
+                if (completedTask != resolveTask)
                 {
-                    return parsed;
+                    return false;
                 }
 
-                var addresses = Dns.GetHostAddresses(_host);
-                return addresses.Length > 0 ? addresses[0] : null;
-            });
-
-            var completedTask = await Task.WhenAny(resolveTask, Task.Delay(ConnectTimeoutMs));
-            if (completedTask != resolveTask)
-            {
-                return false;
+                var addresses = await resolveTask;
+                ipAddress = addresses.Length > 0 ? addresses[0] : null;
             }
 
-            var ipAddress = await resolveTask;
             if (ipAddress == null)
             {
                 return false;
             }
 
+            _udpClient?.Dispose();
             _remoteEndPoint = new IPEndPoint(ipAddress, _port);
             _udpClient = new UdpClient();
             _udpClient.Connect(_remoteEndPoint);

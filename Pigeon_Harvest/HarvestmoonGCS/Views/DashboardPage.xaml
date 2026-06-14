@@ -129,6 +129,12 @@
                                                FontSize="13" FontWeight="SemiBold" Foreground="#0F3024" VerticalAlignment="Center"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Button x:Name="StartDemoButton" Style="{StaticResource HarvestPrimaryButton}" Padding="10,5" Click="StartDemoButton_Click">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE768;" FontSize="11"/>
+                                            <TextBlock Text="Start Demo"/>
+                                        </StackPanel>
+                                    </Button>
                                     <Border x:Name="AiStatusPill" Style="{StaticResource PillSuccessStyle}">
                                         <TextBlock x:Name="AiStatusText" Text="AI ON" FontSize="11" Foreground="#065F46" FontWeight="SemiBold"/>
                                     </Border>
@@ -692,6 +698,74 @@
                                 <TextBlock Text="Lihat Detail Crop Analysis"/>
                             </Button>
                         </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Edge Offline Mode -->
+                <Border Style="{StaticResource HarvestCardStyle}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" Style="{StaticResource HarvestCardHeaderStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="#2E7D32"/>
+                                <TextBlock Text="Edge Offline Mode" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Grid.Row="1" Padding="14" Spacing="6">
+                            <TextBlock x:Name="OfflineModeText" Text="Running offline · AI local model active · No cloud dependency" FontSize="12" FontWeight="SemiBold" Foreground="#065F46" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="ModelRuntimeText" Text="Model: bundled-auto" FontSize="11" Foreground="#64766B" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="RecorderRuntimeText" Text="Recorder: standby" FontSize="11" Foreground="#64766B" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Mission Readiness Checklist -->
+                <Border Style="{StaticResource HarvestCardStyle}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" Style="{StaticResource HarvestCardHeaderStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE9D5;" FontSize="14" Foreground="#2E7D32"/>
+                                <TextBlock Text="Mission Readiness" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Grid.Row="1" Padding="14" Spacing="4">
+                            <TextBlock x:Name="ReadyTelemetryText" Text="○ Telemetry connected" FontSize="12" Foreground="#64766B"/>
+                            <TextBlock x:Name="ReadyGpsText" Text="○ GPS fix" FontSize="12" Foreground="#64766B"/>
+                            <TextBlock x:Name="ReadyBatteryText" Text="○ Battery" FontSize="12" Foreground="#64766B"/>
+                            <TextBlock x:Name="ReadyCameraText" Text="○ Camera active" FontSize="12" Foreground="#64766B"/>
+                            <TextBlock x:Name="ReadyYoloText" Text="○ YOLO ready" FontSize="12" Foreground="#64766B"/>
+                            <TextBlock x:Name="ReadyGeofenceText" Text="○ Geofence loaded" FontSize="12" Foreground="#64766B"/>
+                            <TextBlock x:Name="ReadyWaypointText" Text="○ Waypoint loaded" FontSize="12" Foreground="#64766B"/>
+                            <TextBlock x:Name="ReadyRecorderText" Text="○ Recorder ready" FontSize="12" Foreground="#64766B"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Incident Timeline -->
+                <Border Style="{StaticResource HarvestCardStyle}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" Style="{StaticResource HarvestCardHeaderStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE81C;" FontSize="14" Foreground="#F59E0B"/>
+                                <TextBlock Text="Incident Timeline" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
+                            </StackPanel>
+                        </Border>
+                        <ScrollViewer Grid.Row="1" Padding="14" MaxHeight="180">
+                            <StackPanel x:Name="IncidentTimelineStack" Spacing="5">
+                                <TextBlock Text="Belum ada event misi." FontSize="12" Foreground="#94A3B8"/>
+                            </StackPanel>
+                        </ScrollViewer>
                     </Grid>
                 </Border>
 

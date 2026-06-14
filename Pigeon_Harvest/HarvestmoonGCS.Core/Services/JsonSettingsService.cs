@@ -23,11 +23,17 @@ public class JsonSettingsService : ISettingsService
     /// </summary>
     public AppSettings Settings => _appSettings;
 
-    public JsonSettingsService()
+    public JsonSettingsService(string? settingsFilePath = null)
     {
         // Determine settings file location
-        var appDataPath = GetAppDataPath();
-        _settingsFilePath = Path.Combine(appDataPath, "settings.json");
+        _settingsFilePath = string.IsNullOrWhiteSpace(settingsFilePath)
+            ? Path.Combine(GetAppDataPath(), "settings.json")
+            : settingsFilePath;
+        var settingsDirectory = Path.GetDirectoryName(_settingsFilePath);
+        if (!string.IsNullOrWhiteSpace(settingsDirectory))
+        {
+            Directory.CreateDirectory(settingsDirectory);
+        }
         
         // Configure JSON serializer
         _jsonOptions = new JsonSerializerOptions

@@ -99,6 +99,20 @@ public class MapViewModelWaypointTests
     }
 
     [Fact]
+    public void CalculateMissionDuration_WithMultipleWaypoints_UsesDistanceSimulation()
+    {
+        var viewModel = CreateViewModel();
+
+        viewModel.AddWaypointCommand.Execute((-7.2754, 112.7947));
+        viewModel.AddWaypointCommand.Execute((-7.2764, 112.7957));
+
+        var durationSeconds = viewModel.CalculateMissionDuration();
+
+        durationSeconds.Should().BeGreaterThan(10);
+        durationSeconds.Should().BeLessThan(60);
+    }
+
+    [Fact]
     public void TotalDistance_WithSingleWaypoint_IsZero()
     {
         var viewModel = CreateViewModel();

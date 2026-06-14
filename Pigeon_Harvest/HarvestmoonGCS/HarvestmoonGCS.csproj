@@ -87,6 +87,10 @@
     <None Include="camera_service.py">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="SITL\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>SITL\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
   </ItemGroup>
 
   <Target Name="EnsureAssetOutputDirs" BeforeTargets="CopyFilesToOutputDirectory">

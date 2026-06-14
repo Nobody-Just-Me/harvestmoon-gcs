@@ -21,6 +21,7 @@ public interface IVideoRecorderService
     
     // Methods
     Task<bool> StartRecordingAsync(string outputPath, int width = 1920, int height = 1080, int fps = 30);
+    bool WriteFrame(byte[] encodedFrame);
     Task StopRecordingAsync();
     Task<bool> IsRecordingAvailableAsync();
     Task<string> GetDefaultRecordingPathAsync();

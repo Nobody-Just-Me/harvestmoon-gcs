@@ -30,6 +30,11 @@ public class BoolToColorConverter : IValueConverter
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)
     {
-        throw new NotImplementedException();
+        if (value is SolidColorBrush brush)
+        {
+            return brush.Color.A > 0;
+        }
+
+        return false;
     }
 }

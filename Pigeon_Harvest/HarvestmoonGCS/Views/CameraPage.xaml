@@ -76,6 +76,8 @@
                                    FontFamily="Consolas" FontSize="10" Foreground="White"/>
                         <TextBlock x:Name="MetadataDeviceText" Text="DEV: NONE" 
                                    FontFamily="Consolas" FontSize="10" Foreground="White" Margin="0,4,0,0"/>
+                        <TextBlock x:Name="YoloStatusText" Text="YOLO: IDLE"
+                                   FontFamily="Consolas" FontSize="10" Foreground="White" Margin="0,4,0,0"/>
                     </StackPanel>
                 </Border>
 
@@ -142,6 +144,14 @@
                                              Content="RTSP Stream" 
                                              GroupName="SourceTabs"
                                              Checked="RtspTab_Checked"/>
+                                <RadioButton x:Name="VideoFileTab"
+                                             Content="Video File"
+                                             GroupName="SourceTabs"
+                                             Checked="VideoFileTab_Checked"/>
+                                <RadioButton x:Name="PythonBridgeTab"
+                                             Content="Python Bridge"
+                                             GroupName="SourceTabs"
+                                             Checked="PythonBridgeTab_Checked"/>
                             </StackPanel>
 
                             <!-- Local Config -->
@@ -167,6 +177,26 @@
                                 <TextBox x:Name="RtspUrlTextBox" 
                                          PlaceholderText="rtsp://username:password@ip:554/stream"
                                          Text="rtsp://"/>
+                            </Grid>
+
+                            <!-- Video File Config -->
+                            <Grid x:Name="VideoFileConfigGrid" Visibility="Collapsed" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="VideoFilePathTextBox"
+                                         PlaceholderText="/home/user/video/testkamera.mp4"/>
+                                <Button Grid.Column="1"
+                                        Content="Browse"
+                                        Click="BrowseVideoFileButton_Click"/>
+                            </Grid>
+
+                            <!-- Python Bridge Config -->
+                            <Grid x:Name="PythonBridgeConfigGrid" Visibility="Collapsed">
+                                <TextBox x:Name="PythonBridgeSourceTextBox"
+                                         PlaceholderText="0, /path/video.mp4, rtsp://..."
+                                         Text="0"/>
                             </Grid>
 
                             <!-- Action Buttons -->

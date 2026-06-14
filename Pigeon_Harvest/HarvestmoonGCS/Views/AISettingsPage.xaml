@@ -111,6 +111,64 @@
                                    TextWrapping="Wrap"
                                    Foreground="{ThemeResource MutedForegroundBrush}"/>
 
+                        <TextBlock Text="Vision Runtime"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource ForegroundBrush}"
+                                   Margin="0,8,0,0"/>
+                        <Rectangle Height="1" Fill="{ThemeResource BorderBrush}"/>
+
+                        <TextBlock Text="ONNX Model Path"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="VisionModelPathBox"
+                                     PlaceholderText="Assets/models/yolov8n-crop-weed-416.onnx"/>
+                            <Button Grid.Column="1"
+                                    Content="Browse"
+                                    Click="BrowseVisionModelButton_Click"/>
+                        </Grid>
+
+                        <TextBlock Text="Class File Path"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="VisionClassPathBox"
+                                     PlaceholderText="Assets/models/classes-crop-weed.txt"/>
+                            <Button Grid.Column="1"
+                                    Content="Browse"
+                                    Click="BrowseVisionClassButton_Click"/>
+                        </Grid>
+
+                        <TextBlock Text="YOLO Confidence Threshold (0.1 - 1.0)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="VisionConfidenceBox"
+                                 Text="0.40"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock Text="YOLO NMS Threshold (0.1 - 1.0)"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+                        <TextBox x:Name="VisionNmsBox"
+                                 Text="0.40"
+                                 MinWidth="140"
+                                 HorizontalAlignment="Left"/>
+
+                        <TextBlock x:Name="VisionRuntimeStatusText"
+                                   Text="Vision runtime belum diterapkan."
+                                   TextWrapping="Wrap"
+                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
+
                         <Button x:Name="AdvancedToggleButton"
                                 Content="Tampilkan Advanced Settings"
                                 Click="AdvancedToggleButton_Click"

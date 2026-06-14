@@ -101,11 +101,11 @@ namespace System.IO
         {
             get
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException("BlockingCircularStream does not support seeking.");
             }
             set
             {
-                throw new NotImplementedException();
+                throw new NotSupportedException("BlockingCircularStream does not support seeking.");
             }
         }
 
@@ -188,12 +188,12 @@ namespace System.IO
 
         public override long Seek(long offset, SeekOrigin origin)
         {
-            throw new NotImplementedException();
+            throw new NotSupportedException("BlockingCircularStream does not support seeking.");
         }
 
         public override void SetLength(long value)
         {
-            throw new NotImplementedException();
+            throw new NotSupportedException("BlockingCircularStream does not support changing length.");
         }
 
         public override void Write(byte[] buffer, int offset, int count)

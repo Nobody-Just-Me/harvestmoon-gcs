@@ -15,7 +15,8 @@ public class BoolToConnectTextConverter : IValueConverter
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)
     {
-        throw new NotImplementedException();
+        return value is string text &&
+               string.Equals(text, "Disconnect", StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -28,6 +29,12 @@ public class BoolToConnectColorConverter : IValueConverter
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)
     {
-        throw new NotImplementedException();
+        if (value is SolidColorBrush brush)
+        {
+            var color = brush.Color;
+            return color.R > color.G;
+        }
+
+        return false;
     }
 }

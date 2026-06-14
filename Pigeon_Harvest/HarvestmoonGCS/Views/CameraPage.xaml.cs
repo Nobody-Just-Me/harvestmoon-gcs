@@ -1,12 +1,15 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
 using HarvestmoonGCS.Core.Services;
 using HarvestmoonGCS.Core.Models;
+using HarvestmoonGCS.Services;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 using HarvestmoonGCS.Controls;
@@ -17,11 +20,17 @@ public sealed partial class CameraPage : Page
 {
     private readonly ICameraService _cameraService;
     private readonly IVideoRecorderService _videoRecorderService;
+    private readonly IFileService? _fileService;
+    private readonly IncidentTimelineService? _timelineService;
+    private readonly HarvestFunctionalService? _harvestFunctionalService;
     private DispatcherTimer _recordingTimer;
     private DateTime _recordingStartTime;
     private bool _isStreaming;
     private bool _isInitialized;
     private bool _serviceHandlersAttached;
+    private readonly CameraYoloProcessor _yoloProcessor = new();
+    private bool _yoloReady;
+    private string _lastYoloSummary = "YOLO: IDLE";
 
     public CameraPage()
     {
@@ -42,6 +51,9 @@ public sealed partial class CameraPage : Page
         {
             _cameraService = App.GetService<ICameraService>();
             _videoRecorderService = App.GetService<IVideoRecorderService>();
+            _fileService = App.Current.Services.GetService<IFileService>();
+            _timelineService = App.Current.Services.GetService<IncidentTimelineService>();
+            _harvestFunctionalService = App.Current.Services.GetService<HarvestFunctionalService>();
             
             if (_cameraService == null)
             {
@@ -71,6 +83,7 @@ public sealed partial class CameraPage : Page
         }
 
         _isInitialized = true;
+        EnsureYoloInitialized();
         AttachServiceHandlers();
         LoadCameraSources();
     }
@@ -80,6 +93,8 @@ public sealed partial class CameraPage : Page
         _isInitialized = false;
 
         DetachServiceHandlers();
+        _yoloProcessor.Dispose();
+        _yoloReady = false;
 
         if (_recordingTimer != null)
         {
@@ -113,6 +128,17 @@ public sealed partial class CameraPage : Page
         {
             Interval = TimeSpan.FromSeconds(1)
         };
+        VideoStream.ShowFps = true;
+    }
+
+    private void EnsureYoloInitialized()
+    {
+        _yoloReady = _yoloProcessor.Initialize();
+        _lastYoloSummary = _yoloReady ? "YOLO: READY" : $"YOLO: {_yoloProcessor.Status}";
+        if (YoloStatusText != null)
+        {
+            YoloStatusText.Text = _lastYoloSummary;
+        }
     }
 
     private void AttachServiceHandlers()
@@ -126,10 +152,11 @@ public sealed partial class CameraPage : Page
         {
             _cameraService.FrameReceived += OnFrameReceived;
             _cameraService.StreamingStatusChanged += OnStreamingStatusChanged;
-            _cameraService.RecordingStatusChanged += OnRecordingStatusChanged;
             _cameraService.ConnectionError += OnConnectionError;
         }
 
+        _videoRecorderService.RecordingStatusChanged += OnRecordingStatusChanged;
+        _videoRecorderService.RecordingError += OnRecordingError;
         _recordingTimer.Tick += RecordingTimer_Tick;
         _serviceHandlersAttached = true;
     }
@@ -145,10 +172,11 @@ public sealed partial class CameraPage : Page
         {
             _cameraService.FrameReceived -= OnFrameReceived;
             _cameraService.StreamingStatusChanged -= OnStreamingStatusChanged;
-            _cameraService.RecordingStatusChanged -= OnRecordingStatusChanged;
             _cameraService.ConnectionError -= OnConnectionError;
         }
 
+        _videoRecorderService.RecordingStatusChanged -= OnRecordingStatusChanged;
+        _videoRecorderService.RecordingError -= OnRecordingError;
         _recordingTimer.Tick -= RecordingTimer_Tick;
         _serviceHandlersAttached = false;
     }
@@ -188,11 +216,34 @@ public sealed partial class CameraPage : Page
         }
     }
 
-    private void OnFrameReceived(object sender, byte[] frameData)
+    private async void OnFrameReceived(object sender, byte[] frameData)
     {
+        if (_videoRecorderService.IsRecording)
+        {
+            _videoRecorderService.WriteFrame(frameData);
+        }
+
+        var yoloResult = _yoloReady
+            ? await _yoloProcessor.ProcessAsync(frameData)
+            : null;
+
         DispatcherQueue.TryEnqueue(() =>
         {
-            VideoStream.UpdateFrame(frameData);
+            if (yoloResult != null)
+            {
+                VideoStream.UpdateFrame(yoloResult.FrameData);
+                VideoStream.SetDetectionOverlays(yoloResult.Detections);
+                _lastYoloSummary = $"YOLO: {yoloResult.DetectionCount} | {yoloResult.Fps:F1} FPS | {yoloResult.Summary}";
+                YoloStatusText.Text = _lastYoloSummary;
+            }
+            else
+            {
+                VideoStream.UpdateFrame(frameData);
+                if (!_yoloReady)
+                {
+                    VideoStream.SetDetectionOverlays(Array.Empty<VideoDetectionOverlay>());
+                }
+            }
         });
     }
 
@@ -241,6 +292,15 @@ public sealed partial class CameraPage : Page
         });
     }
 
+    private void OnRecordingError(object sender, string error)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _timelineService?.Add("recording", $"Recording error: {error}", "warning");
+            ShowError(error);
+        });
+    }
+
     private async void StartStopButton_Click(object sender, RoutedEventArgs e)
     {
         if (_isStreaming)
@@ -257,19 +317,52 @@ public sealed partial class CameraPage : Page
     {
         if (RtspTab.IsChecked == true)
         {
-            // RTSP Logic - simulated for now or passed to service if supported
             string rtspUrl = RtspUrlTextBox.Text;
             if (string.IsNullOrEmpty(rtspUrl) || rtspUrl == "rtsp://")
             {
                 ShowError("Masukkan URL RTSP yang valid.");
                 return false;
             }
-            
-            // Assuming the service can handle URLs
-            // For now just show connecting status
-            await Task.Delay(1000); // Simulate connection
-            OnStreamingStatusChanged(this, true);
-            return true;
+
+            var connected = await _cameraService.StartCameraAsync(rtspUrl);
+            if (!connected)
+            {
+                ShowError("Gagal membuka RTSP stream. Periksa URL, jaringan, dan kredensial kamera.");
+            }
+
+            return connected;
+        }
+
+        if (VideoFileTab.IsChecked == true)
+        {
+            var path = VideoFilePathTextBox.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
+            {
+                ShowError("Pilih file video MP4/MOV/AVI yang valid.");
+                return false;
+            }
+
+            var connected = await _cameraService.StartCameraAsync(path);
+            if (!connected)
+            {
+                ShowError("Gagal membuka file video. Periksa format video dan codec OpenCV.");
+            }
+
+            _timelineService?.Add("camera", $"Video file source opened: {path}", connected ? "success" : "warning");
+            return connected;
+        }
+
+        if (PythonBridgeTab.IsChecked == true)
+        {
+            var source = PythonBridgeSourceTextBox.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                source = "0";
+            }
+
+            var connected = await _cameraService.StartCameraAsync(source);
+            _timelineService?.Add("camera", $"Python bridge source opened: {source}", connected ? "success" : "warning");
+            return connected;
         }
 
         var selectedSource = CameraSourceComboBox.SelectedItem as CameraSource;
@@ -282,6 +375,7 @@ public sealed partial class CameraPage : Page
         try
         {
             var success = await _cameraService.StartCameraAsync(selectedSource.Id);
+            _timelineService?.Add("camera", $"Local camera source opened: {selectedSource.Name}", success ? "success" : "warning");
             if (!success)
             {
                 ShowError("Gagal memulai kamera. Periksa izin kamera atau pilih source lain.");
@@ -300,11 +394,6 @@ public sealed partial class CameraPage : Page
         try
         {
             await _cameraService.StopCameraAsync();
-            // If it was RTSP simulation
-            if (RtspTab.IsChecked == true)
-            {
-                OnStreamingStatusChanged(this, false);
-            }
         }
         catch (Exception ex)
         {
@@ -317,6 +406,10 @@ public sealed partial class CameraPage : Page
         try
         {
             var success = await _cameraService.TakePictureAsync();
+            if (success)
+            {
+                _timelineService?.Add("snapshot", "Camera screenshot saved", "success");
+            }
             if (success)
             {
                 ShowInfo("Screenshot saved");
@@ -334,17 +427,32 @@ public sealed partial class CameraPage : Page
 
     private async void RecordButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_cameraService.IsRecording)
+        if (_videoRecorderService.IsRecording)
         {
-            await _cameraService.StopRecordingAsync();
-            ShowInfo("Recording stopped");
+            var outputPath = _videoRecorderService.CurrentRecordingPath;
+            await _videoRecorderService.StopRecordingAsync();
+            if (!string.IsNullOrWhiteSpace(outputPath) && _harvestFunctionalService != null)
+            {
+                await _harvestFunctionalService.AttachVideoRecordingToLatestReportAsync(outputPath);
+            }
+
+            _timelineService?.Add("recording", $"Video recording stopped: {outputPath}", "success");
+            ShowInfo($"Recording saved: {outputPath}");
         }
         else
         {
-            var success = await _cameraService.StartRecordingAsync();
+            if (!_isStreaming)
+            {
+                ShowError("Mulai kamera/video dulu sebelum recording.");
+                return;
+            }
+
+            var outputPath = await _videoRecorderService.GetDefaultRecordingPathAsync();
+            var success = await _videoRecorderService.StartRecordingAsync(outputPath, width: 1280, height: 720, fps: 30);
             if (success)
             {
-                ShowInfo("Recording started");
+                _timelineService?.Add("recording", $"Video recording started: {outputPath}", "success");
+                ShowInfo($"Recording started: {outputPath}");
             }
             else
             {
@@ -393,12 +501,24 @@ public sealed partial class CameraPage : Page
             MetadataSourceText.Text = "SRC: RTSP_STREAM";
             MetadataDeviceText.Text = $"URL: {RtspUrlTextBox.Text}";
         }
+        else if (VideoFileTab?.IsChecked == true)
+        {
+            MetadataSourceText.Text = "SRC: VIDEO_FILE";
+            MetadataDeviceText.Text = $"FILE: {System.IO.Path.GetFileName(VideoFilePathTextBox.Text)}";
+        }
+        else if (PythonBridgeTab?.IsChecked == true)
+        {
+            MetadataSourceText.Text = "SRC: PYTHON_BRIDGE";
+            MetadataDeviceText.Text = $"SRC: {PythonBridgeSourceTextBox.Text}";
+        }
         else
         {
             var selectedSource = CameraSourceComboBox.SelectedItem as CameraSource;
             MetadataSourceText.Text = "SRC: LOCAL_WEBCAM";
             MetadataDeviceText.Text = $"DEV: {selectedSource?.Name ?? "None"}";
         }
+
+        YoloStatusText.Text = _lastYoloSummary;
     }
 
     private void UpdateControlStates()
@@ -425,6 +545,8 @@ public sealed partial class CameraPage : Page
     {
         if (LocalConfigGrid != null) LocalConfigGrid.Visibility = Visibility.Visible;
         if (RtspConfigGrid != null) RtspConfigGrid.Visibility = Visibility.Collapsed;
+        if (VideoFileConfigGrid != null) VideoFileConfigGrid.Visibility = Visibility.Collapsed;
+        if (PythonBridgeConfigGrid != null) PythonBridgeConfigGrid.Visibility = Visibility.Collapsed;
         UpdateMetadata();
     }
 
@@ -432,7 +554,43 @@ public sealed partial class CameraPage : Page
     {
         if (LocalConfigGrid != null) LocalConfigGrid.Visibility = Visibility.Collapsed;
         if (RtspConfigGrid != null) RtspConfigGrid.Visibility = Visibility.Visible;
+        if (VideoFileConfigGrid != null) VideoFileConfigGrid.Visibility = Visibility.Collapsed;
+        if (PythonBridgeConfigGrid != null) PythonBridgeConfigGrid.Visibility = Visibility.Collapsed;
         UpdateMetadata();
+    }
+
+    private void VideoFileTab_Checked(object sender, RoutedEventArgs e)
+    {
+        if (LocalConfigGrid != null) LocalConfigGrid.Visibility = Visibility.Collapsed;
+        if (RtspConfigGrid != null) RtspConfigGrid.Visibility = Visibility.Collapsed;
+        if (VideoFileConfigGrid != null) VideoFileConfigGrid.Visibility = Visibility.Visible;
+        if (PythonBridgeConfigGrid != null) PythonBridgeConfigGrid.Visibility = Visibility.Collapsed;
+        UpdateMetadata();
+    }
+
+    private void PythonBridgeTab_Checked(object sender, RoutedEventArgs e)
+    {
+        if (LocalConfigGrid != null) LocalConfigGrid.Visibility = Visibility.Collapsed;
+        if (RtspConfigGrid != null) RtspConfigGrid.Visibility = Visibility.Collapsed;
+        if (VideoFileConfigGrid != null) VideoFileConfigGrid.Visibility = Visibility.Collapsed;
+        if (PythonBridgeConfigGrid != null) PythonBridgeConfigGrid.Visibility = Visibility.Visible;
+        UpdateMetadata();
+    }
+
+    private async void BrowseVideoFileButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_fileService == null)
+        {
+            ShowError("File picker tidak tersedia.");
+            return;
+        }
+
+        var file = await _fileService.PickFileAsync(new[] { ".mp4", ".mov", ".avi", ".mkv" });
+        if (!string.IsNullOrWhiteSpace(file))
+        {
+            VideoFilePathTextBox.Text = file;
+            UpdateMetadata();
+        }
     }
 
     private async void ShowError(string message)

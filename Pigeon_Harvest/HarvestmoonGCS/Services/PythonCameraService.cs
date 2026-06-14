@@ -32,6 +32,11 @@ public class PythonCameraService : ICameraService
     private readonly string? _pythonCommand;
     private readonly string _pythonLauncherArgs;
     private readonly bool _pythonScriptExists;
+    private readonly object _recordingSync = new();
+    private StreamWriter? _recordingManifest;
+    private string _recordingPath = string.Empty;
+    private string _recordingFramesDirectory = string.Empty;
+    private int _recordingFrameCount;
 
     public bool IsStreaming { get; private set; }
     public bool IsRecording { get; private set; }
@@ -265,16 +270,6 @@ public class PythonCameraService : ICameraService
         
         _streamCts?.Cancel();
 
-        if (_streamTask != null)
-        {
-            await _streamTask;
-        }
-
-        if (_stderrTask != null)
-        {
-            await _stderrTask;
-        }
-
         if (_streamProcess != null && !_streamProcess.HasExited)
         {
             try
@@ -285,6 +280,16 @@ public class PythonCameraService : ICameraService
             {
                 Serilog.Log.Debug(ex, "[PythonCameraService] Stream process kill failed");
             }
+        }
+
+        if (_streamTask != null)
+        {
+            await _streamTask;
+        }
+
+        if (_stderrTask != null)
+        {
+            await _stderrTask;
         }
 
         _streamProcess?.Dispose();
@@ -328,6 +333,7 @@ public class PythonCameraService : ICameraService
                             if (!string.IsNullOrEmpty(base64Data))
                             {
                                 var frameBytes = Convert.FromBase64String(base64Data);
+                                WriteRecordingFrame(frameBytes);
                                 FrameReceived?.Invoke(this, frameBytes);
                                 
                                 frameCount++;
@@ -708,15 +714,92 @@ public class PythonCameraService : ICameraService
 
     public async Task<bool> StartRecordingAsync(string? filename = null)
     {
-        // TODO: Implement video recording
-        Serilog.Log.Warning("[PythonCameraService] Video recording not yet implemented");
-        return await Task.FromResult(false);
+        if (!IsStreaming)
+        {
+            ConnectionError?.Invoke(this, "Mulai kamera/video dulu sebelum recording.");
+            return false;
+        }
+
+        if (IsRecording)
+        {
+            return true;
+        }
+
+        try
+        {
+            var outputPath = ResolveRecordingPath(filename);
+            var outputDir = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrWhiteSpace(outputDir))
+            {
+                Directory.CreateDirectory(outputDir);
+            }
+
+            lock (_recordingSync)
+            {
+                _recordingPath = outputPath;
+                _recordingFramesDirectory = Path.Combine(
+                    outputDir ?? _outputDirectory,
+                    $"{Path.GetFileNameWithoutExtension(outputPath)}_frames");
+                Directory.CreateDirectory(_recordingFramesDirectory);
+
+                _recordingManifest?.Dispose();
+                _recordingManifest = new StreamWriter(new FileStream(outputPath + ".frames.txt", FileMode.Create, FileAccess.Write, FileShare.Read))
+                {
+                    AutoFlush = true
+                };
+                _recordingManifest.WriteLine("# HarvestmoonGCS Python camera recording");
+                _recordingManifest.WriteLine($"started_utc={DateTime.UtcNow:O}");
+                _recordingManifest.WriteLine($"source={_currentSource ?? "unknown"}");
+                _recordingManifest.WriteLine($"frames_directory={_recordingFramesDirectory}");
+                _recordingFrameCount = 0;
+                IsRecording = true;
+            }
+
+            RecordingStatusChanged?.Invoke(this, true);
+            Serilog.Log.Information("[PythonCameraService] Recording started: {Path}", outputPath);
+            await Task.CompletedTask;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ConnectionError?.Invoke(this, $"Gagal memulai recording: {ex.Message}");
+            return false;
+        }
     }
 
     public async Task<bool> StopRecordingAsync()
     {
-        // TODO: Implement video recording
-        return await Task.FromResult(false);
+        if (!IsRecording)
+        {
+            return true;
+        }
+
+        string outputPath;
+        string framesDirectory;
+        try
+        {
+            lock (_recordingSync)
+            {
+                IsRecording = false;
+                outputPath = _recordingPath;
+                framesDirectory = _recordingFramesDirectory;
+                _recordingManifest?.WriteLine($"stopped_utc={DateTime.UtcNow:O}");
+                _recordingManifest?.Flush();
+                _recordingManifest?.Dispose();
+                _recordingManifest = null;
+            }
+
+            TryEncodeMp4(outputPath, framesDirectory, 30);
+            RecordingStatusChanged?.Invoke(this, false);
+            Serilog.Log.Information("[PythonCameraService] Recording stopped: {Path}", outputPath);
+            await Task.CompletedTask;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ConnectionError?.Invoke(this, $"Gagal menghentikan recording: {ex.Message}");
+            return false;
+        }
     }
 
     public async Task SendCameraControlAsync(CameraControlCommand command, float value)
@@ -724,5 +807,116 @@ public class PythonCameraService : ICameraService
         Serilog.Log.Information($"[PythonCameraService] Camera control: {command} = {value}");
         // TODO: Implement camera controls if needed
         await Task.CompletedTask;
+    }
+
+    private void WriteRecordingFrame(byte[] frameBytes)
+    {
+        if (!IsRecording || frameBytes.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            lock (_recordingSync)
+            {
+                if (!IsRecording)
+                {
+                    return;
+                }
+
+                var frameNumber = ++_recordingFrameCount;
+                var frameName = $"frame_{frameNumber:D06}.jpg";
+                var framePath = Path.Combine(_recordingFramesDirectory, frameName);
+                File.WriteAllBytes(framePath, frameBytes);
+                _recordingManifest?.WriteLine($"{frameNumber},{DateTime.UtcNow:O},{frameName},{frameBytes.Length}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[PythonCameraService] Failed to write recording frame");
+        }
+    }
+
+    private string ResolveRecordingPath(string? filename)
+    {
+        if (!string.IsNullOrWhiteSpace(filename))
+        {
+            return Path.IsPathRooted(filename)
+                ? filename
+                : Path.Combine(_outputDirectory, filename);
+        }
+
+        return Path.Combine(_outputDirectory, $"recording_{DateTime.Now:yyyyMMdd_HHmmss}.mp4");
+    }
+
+    private static void TryEncodeMp4(string outputPath, string framesDirectory, int fps)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath) ||
+            string.IsNullOrWhiteSpace(framesDirectory) ||
+            !Directory.Exists(framesDirectory) ||
+            Directory.GetFiles(framesDirectory, "frame_*.jpg").Length == 0)
+        {
+            return;
+        }
+
+        if (!IsCommandAvailable("ffmpeg"))
+        {
+            File.WriteAllText(outputPath, $"ffmpeg not available. Frames directory: {framesDirectory}{Environment.NewLine}");
+            return;
+        }
+
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "ffmpeg",
+                    Arguments = $"-y -hide_banner -loglevel error -framerate {fps} -i \"{Path.Combine(framesDirectory, "frame_%06d.jpg")}\" -c:v libx264 -pix_fmt yuv420p \"{outputPath}\"",
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.Start();
+            if (!process.WaitForExit(30_000))
+            {
+                try { process.Kill(); } catch { }
+                File.WriteAllText(outputPath, $"ffmpeg timeout. Frames directory: {framesDirectory}{Environment.NewLine}");
+            }
+            else if (process.ExitCode != 0 || !File.Exists(outputPath))
+            {
+                File.WriteAllText(outputPath, $"ffmpeg failed. Frames directory: {framesDirectory}{Environment.NewLine}{process.StandardError.ReadToEnd()}");
+            }
+        }
+        catch (Exception ex)
+        {
+            File.WriteAllText(outputPath, $"ffmpeg error. Frames directory: {framesDirectory}{Environment.NewLine}{ex.Message}");
+        }
+    }
+
+    private static bool IsCommandAvailable(string command)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = OperatingSystem.IsWindows() ? "where" : "which",
+                Arguments = command,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+            process?.WaitForExit(2000);
+            return process?.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

@@ -29,6 +29,7 @@ public sealed partial class MapPage : Page
     private List<(double Lat, double Lon)> _redoStack = new();
     private bool _isWPDockHidden = true;
     private readonly ObservabilityService? _observabilityService;
+    private readonly IncidentTimelineService? _timelineService;
     private bool _isInitialized;
     private NotifyCollectionChangedEventHandler? _waypointsCollectionChangedHandler;
 
@@ -68,6 +69,7 @@ public sealed partial class MapPage : Page
 
         this.InitializeComponent();
         _observabilityService = App.Current.Services.GetService<ObservabilityService>();
+        _timelineService = App.Current.Services.GetService<IncidentTimelineService>();
 
         Loaded += MapPage_Loaded;
         Unloaded += MapPage_Unloaded;
@@ -359,6 +361,43 @@ public sealed partial class MapPage : Page
     {
         _isSingleTapWaypointMode = btnSingleTapWP?.IsChecked ?? false;
         Serilog.Log.Information("[MapPage] Single-tap waypoint mode: {State}", _isSingleTapWaypointMode);
+    }
+
+    private void QuickPolygonGeofence_Click(object sender, RoutedEventArgs e)
+    {
+        var center = mapControl.ScreenToLatLon(Math.Max(mapControl.ActualWidth / 2.0, 1), Math.Max(mapControl.ActualHeight / 2.0, 1));
+        const double halfSizeMeters = 80.0;
+        var latDelta = halfSizeMeters / 111_320.0;
+        var lonDelta = halfSizeMeters / (111_320.0 * Math.Max(Math.Cos(center.Lat * Math.PI / 180.0), 0.1));
+
+        ViewModel.ClearGeofenceCommand.Execute(null);
+        ViewModel.SetGeofenceType(GeofenceType.Polygon);
+        ViewModel.StartDrawingGeofence();
+
+        var vertices = new[]
+        {
+            (center.Lat - latDelta, center.Lon - lonDelta),
+            (center.Lat - latDelta, center.Lon + lonDelta),
+            (center.Lat + latDelta, center.Lon + lonDelta),
+            (center.Lat + latDelta, center.Lon - lonDelta)
+        };
+
+        foreach (var vertex in vertices)
+        {
+            ViewModel.AddGeofenceVertexCommand.Execute(vertex);
+        }
+
+        ViewModel.CompleteGeofenceCommand.Execute(null);
+        UpdateGeofenceVerticesList();
+        UpdateGeofenceOnMap();
+        UpdateGeofenceInfo();
+
+        if (btnSendGeofence != null) btnSendGeofence.IsEnabled = true;
+        if (btnClearGeofence != null) btnClearGeofence.IsEnabled = true;
+        if (geofenceStatusText != null) geofenceStatusText.Text = "Geofence Active";
+        if (geofenceStatusDot != null) geofenceStatusDot.Fill = new SolidColorBrush(Color.FromArgb(0xFF, 0x10, 0xB9, 0x81));
+
+        _timelineService?.Add("geofence", $"Quick polygon geofence created at {center.Lat:F6}, {center.Lon:F6}", "success");
     }
 
     private void ChooseMap(object sender, SelectionChangedEventArgs e)

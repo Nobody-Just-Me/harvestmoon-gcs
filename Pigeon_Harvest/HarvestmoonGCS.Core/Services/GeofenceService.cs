@@ -99,55 +99,58 @@ public class GeofenceService : IGeofenceService
     }
 
     public double CalculateDistanceToBoundary(double latitude, double longitude, double altitude)
+        => CalculateDistanceToBoundary(_currentGeofence, latitude, longitude, altitude);
+
+    public double CalculateDistanceToBoundary(GeofenceData geofence, double latitude, double longitude, double altitude)
     {
         // Check altitude first
-        if (altitude > _currentGeofence.MaxAltitude)
+        if (altitude > geofence.MaxAltitude)
         {
-            return -(altitude - _currentGeofence.MaxAltitude);
+            return -(altitude - geofence.MaxAltitude);
         }
 
-        if (_currentGeofence.Type == GeofenceType.Circular)
+        if (geofence.Type == GeofenceType.Circular)
         {
-            return CalculateDistanceToCircularBoundary(latitude, longitude);
+            return CalculateDistanceToCircularBoundary(geofence, latitude, longitude);
         }
         else
         {
-            return CalculateDistanceToPolygonBoundary(latitude, longitude);
+            return CalculateDistanceToPolygonBoundary(geofence, latitude, longitude);
         }
     }
 
-    private double CalculateDistanceToCircularBoundary(double latitude, double longitude)
+    private static double CalculateDistanceToCircularBoundary(GeofenceData geofence, double latitude, double longitude)
     {
         // Calculate distance from center
         double distanceFromCenter = GeoMath.CalculateDistance(
-            _currentGeofence.CenterLatitude,
-            _currentGeofence.CenterLongitude,
+            geofence.CenterLatitude,
+            geofence.CenterLongitude,
             latitude,
             longitude);
 
         // Return distance to boundary (positive if inside, negative if outside)
-        return _currentGeofence.Radius - distanceFromCenter;
+        return geofence.Radius - distanceFromCenter;
     }
 
-    private double CalculateDistanceToPolygonBoundary(double latitude, double longitude)
+    private static double CalculateDistanceToPolygonBoundary(GeofenceData geofence, double latitude, double longitude)
     {
-        if (_currentGeofence.Vertices.Count < 3)
+        if (geofence.Vertices.Count < 3)
         {
             return double.MaxValue; // No valid polygon
         }
 
         // Check if point is inside polygon using ray casting algorithm
-        bool isInside = IsPointInPolygon(latitude, longitude);
+        bool isInside = IsPointInPolygon(geofence, latitude, longitude);
 
         if (!isInside)
         {
             // Calculate distance to nearest edge
             double minDistance = double.MaxValue;
             
-            for (int i = 0; i < _currentGeofence.Vertices.Count; i++)
+            for (int i = 0; i < geofence.Vertices.Count; i++)
             {
-                var v1 = _currentGeofence.Vertices[i];
-                var v2 = _currentGeofence.Vertices[(i + 1) % _currentGeofence.Vertices.Count];
+                var v1 = geofence.Vertices[i];
+                var v2 = geofence.Vertices[(i + 1) % geofence.Vertices.Count];
                 
                 double distance = CalculateDistanceToLineSegment(
                     latitude, longitude,
@@ -164,10 +167,10 @@ public class GeofenceService : IGeofenceService
             // Calculate distance to nearest edge (positive because inside)
             double minDistance = double.MaxValue;
             
-            for (int i = 0; i < _currentGeofence.Vertices.Count; i++)
+            for (int i = 0; i < geofence.Vertices.Count; i++)
             {
-                var v1 = _currentGeofence.Vertices[i];
-                var v2 = _currentGeofence.Vertices[(i + 1) % _currentGeofence.Vertices.Count];
+                var v1 = geofence.Vertices[i];
+                var v2 = geofence.Vertices[(i + 1) % geofence.Vertices.Count];
                 
                 double distance = CalculateDistanceToLineSegment(
                     latitude, longitude,
@@ -181,16 +184,16 @@ public class GeofenceService : IGeofenceService
         }
     }
 
-    private bool IsPointInPolygon(double latitude, double longitude)
+    private static bool IsPointInPolygon(GeofenceData geofence, double latitude, double longitude)
     {
         // Ray casting algorithm
         bool inside = false;
-        int j = _currentGeofence.Vertices.Count - 1;
+        int j = geofence.Vertices.Count - 1;
         
-        for (int i = 0; i < _currentGeofence.Vertices.Count; i++)
+        for (int i = 0; i < geofence.Vertices.Count; i++)
         {
-            var vi = _currentGeofence.Vertices[i];
-            var vj = _currentGeofence.Vertices[j];
+            var vi = geofence.Vertices[i];
+            var vj = geofence.Vertices[j];
             
             if ((vi.Lon > longitude) != (vj.Lon > longitude) &&
                 latitude < (vj.Lat - vi.Lat) * (longitude - vi.Lon) / (vj.Lon - vi.Lon) + vi.Lat)
@@ -204,7 +207,7 @@ public class GeofenceService : IGeofenceService
         return inside;
     }
 
-    private double CalculateDistanceToLineSegment(
+    private static double CalculateDistanceToLineSegment(
         double px, double py,
         double x1, double y1,
         double x2, double y2)
@@ -266,7 +269,7 @@ public class GeofenceService : IGeofenceService
         }
         else
         {
-            return IsPointInPolygon(latitude, longitude);
+            return IsPointInPolygon(_currentGeofence, latitude, longitude);
         }
     }
 

@@ -1,0 +1,5 @@
+bare_soil
+disease_stress_vegetation
+drought_stress
+healthy_crop
+stressed_crop

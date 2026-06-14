@@ -1,0 +1,10 @@
+path: ./dataset
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: green_healthy
+  1: yellow_stress
+  2: brown_drought
+  3: soil_crack

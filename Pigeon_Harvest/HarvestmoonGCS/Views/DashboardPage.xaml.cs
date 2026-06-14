@@ -9,10 +9,12 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI;
+using OpenCvSharp;
 using Windows.UI;
 using HarvestmoonGCS.Core.Models;
 using HarvestmoonGCS.Core.Services;
 using HarvestmoonGCS.Core.ViewModels;
+using HarvestmoonGCS.Helpers;
 using HarvestmoonGCS.ViewModels;
 using HarvestmoonGCS.Controls;
 using HarvestmoonGCS.Services;
@@ -29,8 +31,12 @@ public sealed partial class DashboardPage : Page
     private readonly HarvestFunctionalService? _harvestFunctionalService;
     private readonly IVideoRecorderService? _videoRecorderService;
     private readonly IOfflineMapService? _offlineMapService;
+    private readonly IGeofenceService? _geofenceService;
+    private readonly GeofenceMonitor? _geofenceMonitor;
+    private readonly IncidentTimelineService? _timelineService;
 
     private TelemetryData? _telemetry;
+    private byte[]? _lastFrameData;
     private bool _mapInitialized;
     private bool _mapViewModelSubscribed;
     private bool _cameraHandlersAttached;
@@ -70,6 +76,12 @@ public sealed partial class DashboardPage : Page
     private int _telemetryFrameCount;
     private int _lastDetectionCount;
     private double _lastConfidence;
+    private string? _lastAlertSignature;
+    private DateTime _lastGeofenceMonitorCheck = DateTime.MinValue;
+    private string? _lastGeofenceMonitorEvent;
+    private string _lastGeofenceMonitorSeverity = "info";
+    private DateTime _lastYoloTimelineEvent = DateTime.MinValue;
+    private HarvestFunctionalService.YoloBenchmarkResult? _lastBenchmarkResult;
 
     public DashboardPage()
     {
@@ -81,6 +93,9 @@ public sealed partial class DashboardPage : Page
         _harvestFunctionalService = App.Current.Services.GetService<HarvestFunctionalService>();
         _videoRecorderService = App.Current.Services.GetService<IVideoRecorderService>();
         _offlineMapService = App.Current.Services.GetService<IOfflineMapService>();
+        _geofenceService = App.Current.Services.GetService<IGeofenceService>();
+        _geofenceMonitor = App.Current.Services.GetService<GeofenceMonitor>();
+        _timelineService = App.Current.Services.GetService<IncidentTimelineService>();
 
         _imuTimer.Tick += OnImuTick;
         _missionTimer.Tick += OnMissionTick;
@@ -88,6 +103,11 @@ public sealed partial class DashboardPage : Page
         Loaded += DashboardPage_Loaded;
         Unloaded += DashboardPage_Unloaded;
         SizeChanged += DashboardPage_SizeChanged;
+
+        if (_timelineService != null)
+        {
+            _timelineService.TimelineChanged += OnTimelineChanged;
+        }
     }
 
     public void OnPageActivated()
@@ -102,13 +122,15 @@ public sealed partial class DashboardPage : Page
     {
         _isPageActive = true;
         SubscribeToTelemetry();
+        SubscribeToGeofenceMonitor();
         AttachCameraHandlers();
         SyncYoloStateFromService();
-        if (AlertsStack.Children.Count == 0) SeedAlerts();
+        if (AlertsStack.Children.Count == 0) UpdateAlertCenter(_flightViewModel?.Telemetry, _flightViewModel?.IsConnected == true);
         if (SummaryHealthyCount.Text == "0") SeedSummary();
         RebuildGridOverlay();
         ApplyLayerVisibility();
         RefreshDashboard();
+        RenderIncidentTimeline();
         if (!_missionTimerStarted)
         {
             _missionStart = DateTime.Now;
@@ -137,11 +159,17 @@ public sealed partial class DashboardPage : Page
         // Keep camera service running globally so user can switch menus without tearing down the stream.
         // Only stop this page's timers and telemetry binding.
         UnsubscribeFromTelemetry();
+        UnsubscribeFromGeofenceMonitor();
         // Leave camera handlers attached: events are idempotent and FrameReceived updates the cached
         // VideoStreamControl which is re-used when the page is reactivated from the page cache.
         // Detaching + reattaching creates a gap where frames are dropped and the control appears frozen.
         _imuTimer.Stop();
         _missionTimer.Stop();
+    }
+
+    private void OnTimelineChanged(object? sender, EventArgs e)
+    {
+        DispatcherQueue.TryEnqueue(RenderIncidentTimeline);
     }
 
     private void ResumeVideoRendering()
@@ -299,14 +327,23 @@ public sealed partial class DashboardPage : Page
         SetTextIfChanged(HeadingPillText, $"HDG {heading:F0}°", ref _lastHeadingPillText);
         SetTextIfChanged(FpsHudText, _aiOn ? $"YOLOv8 · {(connected ? "active" : "standby")}" : "YOLO paused", ref _lastFpsHudText);
 
-        var progress = connected ? 70.0 : 0.0;
+        var missionProgress = MissionProgressCalculator.Calculate(
+            telemetry,
+            _mapViewModel?.Waypoints,
+            _mapViewModel?.WaypointRadius ?? 2.0);
+        var progress = connected ? missionProgress.ProgressPercent : 0.0;
         if (_lastMissionProgressValue != progress)
         {
             MissionProgressBar.Value = progress;
             _lastMissionProgressValue = progress;
         }
-        SetTextIfChanged(MissionProgressText, connected ? "70%" : "0%", ref _lastMissionProgressText);
-        SetTextIfChanged(WaypointProgressText, connected ? "14/20" : "0/0", ref _lastWaypointProgressText);
+        SetTextIfChanged(MissionProgressText, connected ? $"{progress:F0}%" : "0%", ref _lastMissionProgressText);
+        SetTextIfChanged(
+            WaypointProgressText,
+            missionProgress.TotalWaypoints > 0
+                ? $"{(connected ? missionProgress.CurrentWaypoint : 0)}/{missionProgress.TotalWaypoints}"
+                : "0/0",
+            ref _lastWaypointProgressText);
 
         // Frames counter updates roughly once per telemetry packet, OK to always write since it changes.
         MissionFramesText.Text = $"{_telemetryFrameCount:N0} frames";
@@ -317,6 +354,76 @@ public sealed partial class DashboardPage : Page
             ? $"{telemetry.Latitude:F5}, {telemetry.Longitude:F5}"
             : $"{_centerLat:F5}, {_centerLon:F5}";
         SetTextIfChanged(GpsHudText, gpsHud, ref _lastGpsHudText);
+        UpdateAlertCenter(telemetry, connected);
+        UpdateOfflineAndReadiness(telemetry, connected);
+        _ = CheckGeofenceMonitorAsync(telemetry, connected);
+    }
+
+    private void SubscribeToGeofenceMonitor()
+    {
+        if (_geofenceMonitor == null)
+        {
+            return;
+        }
+
+        _geofenceMonitor.GeofenceViolated -= OnGeofenceViolated;
+        _geofenceMonitor.GeofenceRestored -= OnGeofenceRestored;
+        _geofenceMonitor.GeofenceViolated += OnGeofenceViolated;
+        _geofenceMonitor.GeofenceRestored += OnGeofenceRestored;
+    }
+
+    private void UnsubscribeFromGeofenceMonitor()
+    {
+        if (_geofenceMonitor == null)
+        {
+            return;
+        }
+
+        _geofenceMonitor.GeofenceViolated -= OnGeofenceViolated;
+        _geofenceMonitor.GeofenceRestored -= OnGeofenceRestored;
+    }
+
+    private void OnGeofenceViolated(object? sender, GeofenceViolationEventArgs e)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _lastGeofenceMonitorEvent = e.Message;
+            _lastGeofenceMonitorSeverity = "critical";
+            _lastAlertSignature = null;
+            UpdateAlertCenter(_flightViewModel?.Telemetry, _flightViewModel?.IsConnected == true);
+        });
+    }
+
+    private void OnGeofenceRestored(object? sender, GeofenceViolationEventArgs e)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _lastGeofenceMonitorEvent = e.Message;
+            _lastGeofenceMonitorSeverity = "info";
+            _lastAlertSignature = null;
+            UpdateAlertCenter(_flightViewModel?.Telemetry, _flightViewModel?.IsConnected == true);
+        });
+    }
+
+    private async Task CheckGeofenceMonitorAsync(TelemetryData? telemetry, bool connected)
+    {
+        if (_geofenceMonitor == null || !connected || telemetry == null ||
+            !IsValidCoordinate(telemetry.Latitude, telemetry.Longitude))
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if ((now - _lastGeofenceMonitorCheck).TotalMilliseconds < 1000)
+        {
+            return;
+        }
+
+        _lastGeofenceMonitorCheck = now;
+        await _geofenceMonitor.CheckGeofenceViolationAsync(new GeoCoordinate(
+            telemetry.Latitude,
+            telemetry.Longitude,
+            telemetry.Altitude));
     }
 
     private static void SetTextIfChanged(TextBlock target, string value, ref string? cache)
@@ -579,8 +686,13 @@ public sealed partial class DashboardPage : Page
             return;
         }
         _lastVideoFrameRender = now;
+        _lastFrameData = frameData;
 
         DashboardVideoStream?.UpdateFrame(frameData);
+        if (_videoRecorderService?.IsRecording == true)
+        {
+            _videoRecorderService.WriteFrame(frameData);
+        }
 
         if (_aiOn && _harvestFunctionalService?.IsYoloOptionEnabled == true && !_analysisRunning)
         {
@@ -606,6 +718,12 @@ public sealed partial class DashboardPage : Page
                 }
 
                 _lastDetectionCount = boxes.Count;
+                if (boxes.Count > 0 && (DateTime.UtcNow - _lastYoloTimelineEvent).TotalSeconds >= 5)
+                {
+                    _lastYoloTimelineEvent = DateTime.UtcNow;
+                    _timelineService?.Add("yolo", $"YOLO detection: {boxes.Count} object(s), avg confidence {boxes.Average(b => b.Confidence) * 100:F0}%", "info");
+                    _ = _harvestFunctionalService?.SaveLatestYoloScreenshotAsync(frameData);
+                }
                 var avgConf = boxes.Count > 0 ? boxes.Average(b => (double)b.Confidence) : 0;
                 _lastConfidence = avgConf;
 
@@ -1076,32 +1194,212 @@ public sealed partial class DashboardPage : Page
 
     // ================ HUD ACTIONS ================
 
-    private void RecordButton_Click(object sender, RoutedEventArgs e)
+    private async void RecordButton_Click(object sender, RoutedEventArgs e)
     {
         _isRecording = !_isRecording;
         RecordLabel.Text = _isRecording ? "Stop" : "Record";
         RecStatusText.Text = _isRecording ? "REC" : "IDLE";
         if (_isRecording)
         {
-            try { _ = _videoRecorderService?.StartRecordingAsync(Path.Combine(Path.GetTempPath(), $"harvest_{DateTime.Now:yyyyMMdd_HHmmss}.mp4")); }
-            catch { }
+            try
+            {
+                var path = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+                    $"harvest_{DateTime.Now:yyyyMMdd_HHmmss}.mp4");
+                var started = _videoRecorderService != null && await _videoRecorderService.StartRecordingAsync(path);
+                _timelineService?.Add("recording", started ? $"Video recording started: {path}" : "Video recording failed to start", started ? "success" : "warning");
+            }
+            catch (Exception ex)
+            {
+                _timelineService?.Add("recording", $"Video recording error: {ex.Message}", "warning");
+            }
         }
         else
         {
-            try { _ = _videoRecorderService?.StopRecordingAsync(); }
-            catch { }
+            try
+            {
+                var path = _videoRecorderService?.CurrentRecordingPath ?? string.Empty;
+                if (_videoRecorderService != null)
+                {
+                    await _videoRecorderService.StopRecordingAsync();
+                }
+
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    await _harvestFunctionalService!.AttachVideoRecordingToLatestReportAsync(path);
+                    _timelineService?.Add("recording", $"Video recording saved: {path}", "success");
+                }
+            }
+            catch (Exception ex)
+            {
+                _timelineService?.Add("recording", $"Video recording stop error: {ex.Message}", "warning");
+            }
         }
+
+        UpdateOfflineAndReadiness(_flightViewModel?.Telemetry, _flightViewModel?.IsConnected == true);
     }
 
-    private void SnapshotButton_Click(object sender, RoutedEventArgs e)
+    private async void SnapshotButton_Click(object sender, RoutedEventArgs e)
     {
         var path = Path.Combine(Path.GetTempPath(), $"harvest_snapshot_{DateTime.Now:yyyyMMdd_HHmmss}.png");
         DashboardVideoStream?.SaveCurrentFrame(path);
+        if (_lastFrameData != null && _harvestFunctionalService != null)
+        {
+            var saved = await _harvestFunctionalService.SaveLatestYoloScreenshotAsync(_lastFrameData);
+            _timelineService?.Add("snapshot", $"YOLO screenshot saved: {saved}", "success");
+        }
     }
 
     private void PauseAiButton_Click(object sender, RoutedEventArgs e)
     {
         YoloToggleSwitch.IsOn = !YoloToggleSwitch.IsOn;
+    }
+
+    private async void StartDemoButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_harvestFunctionalService == null)
+        {
+            return;
+        }
+
+        StartDemoButton.IsEnabled = false;
+        StartDemoButton.Content = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            Children =
+            {
+                new FontIcon { Glyph = "\uE895", FontSize = 11 },
+                new TextBlock { Text = "Running..." }
+            }
+        };
+
+        try
+        {
+            _timelineService?.Add("demo", "One-click MoonHarvest demo started", "success");
+            _aiOn = true;
+            if (YoloToggleSwitch != null) YoloToggleSwitch.IsOn = true;
+
+            var videoPath = FindDemoVideoPath();
+            if (string.IsNullOrWhiteSpace(videoPath))
+            {
+                _timelineService?.Add("demo", "Demo video sample not found", "warning");
+                AddAlertRow("Demo video sample not found", "warning");
+                return;
+            }
+
+            if (_cameraService != null)
+            {
+                await _cameraService.StopCameraAsync();
+                var started = await _cameraService.StartCameraAsync(videoPath);
+                _timelineService?.Add("camera", started
+                    ? $"Demo video source started: {videoPath}"
+                    : $"Demo video source failed: {videoPath}", started ? "success" : "warning");
+            }
+
+            var frameData = ExtractFirstFrameBytes(videoPath);
+            if (frameData.Length == 0)
+            {
+                _timelineService?.Add("demo", "Failed to extract frame from demo video", "warning");
+                AddAlertRow("Failed to extract demo frame", "warning");
+                return;
+            }
+
+            _lastFrameData = frameData;
+            DashboardVideoStream?.UpdateFrame(frameData);
+
+            var boxes = await _harvestFunctionalService.DetectInFrameAsync(frameData);
+            _lastDetectionCount = boxes.Count;
+            _lastConfidence = boxes.Count > 0 ? boxes.Average(box => (double)box.Confidence) : 0;
+            RenderDetectionListFromBoxes(boxes);
+            UpdateSummaryFromDetections(boxes);
+            DashboardVideoStream?.SetDetectionOverlays(boxes.Select(box => new VideoDetectionOverlay
+            {
+                Label = box.ClassName,
+                Confidence = box.Confidence,
+                X = box.X,
+                Y = box.Y,
+                Width = box.Width,
+                Height = box.Height
+            }));
+
+            DetectionCountText.Text = $"{boxes.Count} det";
+            DetectionsListTitle.Text = $"Live Detections ({boxes.Count})";
+            MissionDetectionsText.Text = boxes.Count.ToString();
+            ConfAvgText.Text = $"Conf avg {_lastConfidence * 100:F0}%";
+            SummaryConfidenceText.Text = $"{_lastConfidence * 100:F0}%";
+
+            var benchmark = await _harvestFunctionalService.BenchmarkFrameAsync(frameData, iterations: 20);
+            _lastBenchmarkResult = benchmark;
+            if (benchmark != null)
+            {
+                await _harvestFunctionalService.AttachYoloBenchmarkToLatestReportAsync(benchmark);
+                FpsHudText.Text = $"YOLOv8 · {benchmark.FramesPerSecond:F1} FPS";
+                UpdateTopBarAiFps(benchmark.FramesPerSecond);
+                _timelineService?.Add("benchmark", $"Demo YOLO benchmark: {benchmark.Summary}", benchmark.FramesPerSecond >= 15 ? "success" : "warning");
+            }
+
+            var yoloScreenshot = await _harvestFunctionalService.SaveLatestYoloScreenshotAsync(frameData);
+            var mapScreenshot = _harvestFunctionalService.SaveMapSnapshotPlaceholder(_centerLat, _centerLon, "MoonHarvest demo route");
+            var tlogPath = App.Current.Services.GetService<MissionLoggingService>()?.CurrentTlogPath ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(tlogPath) || !File.Exists(tlogPath))
+            {
+                tlogPath = await _harvestFunctionalService.CreateDemoTelemetryLogAsync(_centerLat, _centerLon);
+            }
+
+            var demoGeofenceAlerts = System.Text.Json.JsonSerializer.Serialize(new[]
+            {
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} DEMO geofence warning: UAV near mission boundary",
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} DEMO geofence restored: UAV back inside boundary"
+            });
+
+            var report = new HarvestFunctionalService.HarvestReportRecord
+            {
+                Id = $"DEMO-MH-{DateTime.Now:yyyyMMdd-HHmmss}",
+                DateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                Area = "Demo Field · video sample",
+                Duration = "00:00:20",
+                Detections = boxes.Count,
+                Priority = boxes.Count > 0 ? "Medium" : "Low",
+                OperatorNote = "DEMO · one-click video sample, local YOLO inference, benchmark, and evidence bundle.",
+                AiModelUsed = _harvestFunctionalService.IsYoloOptionEnabled ? "YOLOv8n ONNX local" : "OpenCV fallback",
+                TlogPath = tlogPath,
+                GeofenceAlertsJson = demoGeofenceAlerts,
+                YoloBenchmarkJson = benchmark == null
+                    ? string.Empty
+                    : System.Text.Json.JsonSerializer.Serialize(benchmark, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
+                IncidentTimelineJson = _timelineService?.ToJson() ?? string.Empty,
+                MapScreenshotPath = mapScreenshot,
+                YoloScreenshotPath = yoloScreenshot,
+                VideoRecordingPath = videoPath
+            };
+
+            await _harvestFunctionalService.AddReportAsync(report);
+            await _harvestFunctionalService.CreateEvidenceBundleAsync(report);
+            _timelineService?.Add("report", $"Demo report created: {report.Id}", "success");
+            AddAlertRow($"Demo selesai · {boxes.Count} deteksi · {benchmark?.FramesPerSecond:F1} FPS", "info");
+            RenderIncidentTimeline();
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "[DashboardPage] One-click demo failed");
+            _timelineService?.Add("demo", $"One-click demo error: {ex.Message}", "critical");
+            AddAlertRow($"Demo error: {ex.Message}", "critical");
+        }
+        finally
+        {
+            StartDemoButton.IsEnabled = true;
+            StartDemoButton.Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 6,
+                Children =
+                {
+                    new FontIcon { Glyph = "\uE768", FontSize = 11 },
+                    new TextBlock { Text = "Start Demo" }
+                }
+            };
+        }
     }
 
     // ================ EXPORTS ================
@@ -1113,16 +1411,35 @@ public sealed partial class DashboardPage : Page
     private async Task ExportReportAsync(string format)
     {
         if (_harvestFunctionalService == null) return;
+        var telemetry = _flightViewModel?.Telemetry;
+        var connected = _flightViewModel?.IsConnected == true;
+        var videoPath = _videoRecorderService?.CurrentRecordingPath ?? string.Empty;
+        var mapPath = _harvestFunctionalService.SaveMapSnapshotPlaceholder(
+            telemetry?.Latitude ?? _centerLat,
+            telemetry?.Longitude ?? _centerLon,
+            connected ? "Live dashboard position" : "Dashboard standby position");
+        var yoloPath = _lastFrameData != null
+            ? await _harvestFunctionalService.SaveLatestYoloScreenshotAsync(_lastFrameData)
+            : string.Empty;
+
         var record = new HarvestFunctionalService.HarvestReportRecord
         {
             Id = MissionIdText.Text,
             Area = "Dashboard Session",
             DateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+            Duration = MissionElapsedText.Text,
             Detections = _lastDetectionCount,
-            OperatorNote = $"Avg conf {(_lastConfidence * 100):F0}%"
+            Priority = _lastDetectionCount > 0 ? "Medium" : "Low",
+            AiModelUsed = _harvestFunctionalService.IsYoloOptionEnabled ? "YOLOv8n ONNX local" : "OpenCV fallback",
+            OperatorNote = $"Avg conf {(_lastConfidence * 100):F0}%",
+            MapScreenshotPath = mapPath,
+            YoloScreenshotPath = yoloPath,
+            VideoRecordingPath = videoPath,
+            IncidentTimelineJson = _timelineService?.ToJson() ?? string.Empty
         };
         try
         {
+            await _harvestFunctionalService.CreateEvidenceBundleAsync(record);
             var baseName = $"dashboard-{DateTime.Now:yyyyMMddHHmmss}";
             switch (format)
             {
@@ -1135,6 +1452,69 @@ public sealed partial class DashboardPage : Page
         {
             System.Diagnostics.Debug.WriteLine($"[DashboardPage] Export {format} error: {ex.Message}");
         }
+    }
+
+    private static string? FindDemoVideoPath()
+    {
+        var root = FindRepoRoot();
+        var candidates = new[]
+        {
+            Path.Combine(root, "vision_trial", "testkamera.mp4"),
+            Path.Combine(root, "vision_trial", "output", "crop_weed_trial.mp4"),
+            Path.Combine(root, "testkamera.mp4"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "testkamera.mp4")
+        };
+
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (dir != null)
+        {
+            if (Directory.Exists(Path.Combine(dir.FullName, "HarvestmoonGCS")) &&
+                Directory.Exists(Path.Combine(dir.FullName, "vision_trial")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        return Directory.GetCurrentDirectory();
+    }
+
+    private static byte[] ExtractFirstFrameBytes(string videoPath)
+    {
+        try
+        {
+            using var capture = new VideoCapture(videoPath);
+            if (!capture.IsOpened())
+            {
+                return Array.Empty<byte>();
+            }
+
+            using var frame = new Mat();
+            if (!capture.Read(frame) || frame.Empty())
+            {
+                return Array.Empty<byte>();
+            }
+
+            Cv2.ImEncode(".jpg", frame, out var buffer);
+            return buffer;
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[DashboardPage] Failed to extract demo frame from {Video}", videoPath);
+            return Array.Empty<byte>();
+        }
+    }
+
+    private void AddAlertRow(string text, string severity)
+    {
+        _lastAlertSignature = null;
+        AlertsStack.Children.Insert(0, BuildAlertRow(text, DateTime.Now.ToString("HH:mm:ss"), severity));
     }
 
     private void GoCropAnalysisButton_Click(object sender, RoutedEventArgs e)
@@ -1176,29 +1556,271 @@ public sealed partial class DashboardPage : Page
     {
         var elapsed = DateTime.Now - _missionStart;
         MissionElapsedText.Text = $"{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
-        var total = TimeSpan.FromMinutes(12);
+        var plannedSeconds = _mapViewModel?.CalculateMissionDuration() ?? 0;
+        var total = plannedSeconds > 0
+            ? TimeSpan.FromSeconds(plannedSeconds)
+            : TimeSpan.FromMinutes(12);
         var remaining = total - elapsed;
         if (remaining.TotalSeconds <= 0) remaining = TimeSpan.Zero;
-        MissionEtaText.Text = $"{remaining.Minutes:D2}:{remaining.Seconds:D2}";
+        MissionEtaText.Text = remaining.TotalHours >= 1
+            ? $"{(int)remaining.TotalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}"
+            : $"{remaining.Minutes:D2}:{remaining.Seconds:D2}";
     }
 
     // ================ ALERTS / SUMMARY SEED ================
 
-    private void SeedAlerts()
+    private void UpdateAlertCenter(TelemetryData? telemetry, bool connected)
     {
-        AlertsStack.Children.Clear();
-        var alerts = new (string Text, string Time, string Severity)[]
+        var alerts = BuildRuntimeAlerts(telemetry, connected).ToList();
+        var signature = string.Join("|", alerts.Select(alert => $"{alert.Severity}:{alert.Text}"));
+        if (signature == _lastAlertSignature)
         {
-            ("Pest cluster terdeteksi - Sector B3", "12:42:08", "critical"),
-            ("GPS turun ke 9 satelit", "12:40:55", "warning"),
-            ("Geofence di ambang batas (28 m)", "12:39:21", "warning"),
-            ("Mission 70% - 14/20 waypoint", "12:35:02", "info"),
-            ("Model moonharvest-v2.onnx dimuat", "12:30:11", "info"),
-        };
-        foreach (var a in alerts)
-        {
-            AlertsStack.Children.Add(BuildAlertRow(a.Text, a.Time, a.Severity));
+            return;
         }
+
+        _lastAlertSignature = signature;
+        AlertsStack.Children.Clear();
+        foreach (var alert in alerts)
+        {
+            AlertsStack.Children.Add(BuildAlertRow(alert.Text, DateTime.Now.ToString("HH:mm:ss"), alert.Severity));
+        }
+    }
+
+    private void UpdateOfflineAndReadiness(TelemetryData? telemetry, bool connected)
+    {
+        var modelName = Path.GetFileName(_harvestFunctionalService?.RuntimeModelPath ?? "bundled-auto");
+        OfflineModeText.Text = _harvestFunctionalService?.IsYoloRuntimeReady == true
+            ? "Running offline · AI local model active · No cloud dependency"
+            : "Running offline · AI fallback active · No cloud dependency";
+        ModelRuntimeText.Text = $"Model: {modelName} · threshold {_harvestFunctionalService?.RuntimeConfidenceThreshold * 100:F0}%";
+        RecorderRuntimeText.Text = _videoRecorderService?.IsRecording == true
+            ? $"Recorder: recording · {_videoRecorderService.CurrentRecordingPath}"
+            : "Recorder: standby";
+
+        var battery = telemetry?.BatteryPercent is > 0
+            ? telemetry.BatteryPercent
+            : telemetry?.BatteryRemaining ?? 0;
+        var gpsReady = telemetry != null && IsValidCoordinate(telemetry.Latitude, telemetry.Longitude) && telemetry.SatelliteCount >= 6;
+        var geofenceReady = _mapViewModel?.IsGeofenceActive == true || _geofenceService?.CurrentGeofence.IsActive == true;
+        var waypointReady = (_mapViewModel?.Waypoints?.Count ?? 0) > 0;
+
+        SetChecklistText(ReadyTelemetryText, connected, "Telemetry connected");
+        SetChecklistText(ReadyGpsText, gpsReady, $"GPS fix ({telemetry?.SatelliteCount ?? 0} sats)");
+        SetChecklistText(ReadyBatteryText, battery >= 25, battery > 0 ? $"Battery {battery:F0}%" : "Battery unknown");
+        SetChecklistText(ReadyCameraText, _cameraService?.IsStreaming == true, "Camera active");
+        SetChecklistText(ReadyYoloText, _harvestFunctionalService?.IsYoloRuntimeReady == true, "YOLO ready");
+        SetChecklistText(ReadyGeofenceText, geofenceReady, "Geofence loaded");
+        SetChecklistText(ReadyWaypointText, waypointReady, $"Waypoint loaded ({_mapViewModel?.Waypoints?.Count ?? 0})");
+        SetChecklistText(ReadyRecorderText, _videoRecorderService != null, _videoRecorderService?.IsRecording == true ? "Recorder active" : "Recorder ready");
+    }
+
+    private static void SetChecklistText(TextBlock textBlock, bool ok, string label)
+    {
+        textBlock.Text = $"{(ok ? "✓" : "○")} {label}";
+        textBlock.Foreground = new SolidColorBrush(ok
+            ? Color.FromArgb(255, 6, 95, 70)
+            : Color.FromArgb(255, 100, 116, 139));
+    }
+
+    private void RenderIncidentTimeline()
+    {
+        if (IncidentTimelineStack == null)
+        {
+            return;
+        }
+
+        IncidentTimelineStack.Children.Clear();
+        var entries = _timelineService?.Entries.Take(8).ToList() ?? new List<IncidentTimelineEntry>();
+        if (entries.Count == 0)
+        {
+            IncidentTimelineStack.Children.Add(new TextBlock
+            {
+                Text = "Belum ada event misi.",
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Color.FromArgb(255, 148, 163, 184))
+            });
+            return;
+        }
+
+        foreach (var entry in entries)
+        {
+            IncidentTimelineStack.Children.Add(new TextBlock
+            {
+                Text = $"{entry.Timestamp:HH:mm:ss} · {entry.Type}: {entry.Message}",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = new SolidColorBrush(entry.Severity == "critical"
+                    ? Color.FromArgb(255, 185, 28, 28)
+                    : entry.Severity == "success"
+                        ? Color.FromArgb(255, 6, 95, 70)
+                        : Color.FromArgb(255, 79, 107, 92))
+            });
+        }
+    }
+
+    private IEnumerable<(string Text, string Severity)> BuildRuntimeAlerts(TelemetryData? telemetry, bool connected)
+    {
+        if (!connected)
+        {
+            yield return ("Connection lost - MAVLink disconnected", "critical");
+        }
+
+        var satelliteCount = telemetry?.SatelliteCount ?? 0;
+        var hasGps = telemetry != null && IsValidCoordinate(telemetry.Latitude, telemetry.Longitude);
+        if (!hasGps || satelliteCount < 6)
+        {
+            yield return ($"GPS weak - sats {satelliteCount}", "warning");
+        }
+
+        var battery = telemetry?.BatteryPercent is > 0
+            ? telemetry.BatteryPercent
+            : telemetry?.BatteryRemaining ?? 0;
+        if (battery > 0 && battery < 20)
+        {
+            yield return ($"Battery low - {battery:F0}%", battery < 12 ? "critical" : "warning");
+        }
+
+        foreach (var alert in BuildGeofenceAlerts(telemetry, hasGps))
+        {
+            yield return alert;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_lastGeofenceMonitorEvent))
+        {
+            yield return (_lastGeofenceMonitorEvent, _lastGeofenceMonitorSeverity);
+        }
+
+        if (_harvestFunctionalService?.IsYoloOptionEnabled == true)
+        {
+            yield return (_harvestFunctionalService.IsYoloRuntimeReady
+                ? "YOLO offline runtime ready"
+                : _harvestFunctionalService.YoloStatusMessage,
+                _harvestFunctionalService.IsYoloRuntimeReady ? "info" : "warning");
+        }
+
+        yield return ($"Mission detections: {_lastDetectionCount}", _lastDetectionCount > 0 ? "info" : "warning");
+    }
+
+    private IEnumerable<(string Text, string Severity)> BuildGeofenceAlerts(TelemetryData? telemetry, bool hasGps)
+    {
+        var geofenceActive = _mapViewModel?.IsGeofenceActive == true ||
+            _geofenceService?.CurrentGeofence.IsActive == true;
+
+        if (!geofenceActive)
+        {
+            yield return ("Geofence inactive - set boundary in Map", "warning");
+            yield break;
+        }
+
+        if (telemetry == null || !hasGps)
+        {
+            yield return ("Geofence active - waiting for valid GPS", "warning");
+            yield break;
+        }
+
+        var altitude = telemetry.Altitude;
+        double distanceToBoundary;
+        if (_mapViewModel?.IsGeofenceActive == true)
+        {
+            distanceToBoundary = CalculateMapViewModelGeofenceDistance(telemetry.Latitude, telemetry.Longitude, altitude);
+        }
+        else if (_geofenceService != null)
+        {
+            distanceToBoundary = _geofenceService.CalculateDistanceToBoundary(telemetry.Latitude, telemetry.Longitude, altitude);
+        }
+        else
+        {
+            yield break;
+        }
+
+        if (distanceToBoundary < 0)
+        {
+            yield return ($"GEOFENCE BREACH - outside by {Math.Abs(distanceToBoundary):F0} m", "critical");
+        }
+        else if (distanceToBoundary < 30)
+        {
+            yield return ($"Geofence warning - {distanceToBoundary:F0} m to boundary", "warning");
+        }
+        else
+        {
+            yield return ($"Geofence safe - {distanceToBoundary:F0} m to boundary", "info");
+        }
+    }
+
+    private double CalculateMapViewModelGeofenceDistance(double latitude, double longitude, double altitude)
+    {
+        if (_mapViewModel == null)
+        {
+            return double.MaxValue;
+        }
+
+        if (altitude > _mapViewModel.GeofenceMaxAltitude)
+        {
+            return -(altitude - _mapViewModel.GeofenceMaxAltitude);
+        }
+
+        if (_mapViewModel.GeofenceType == GeofenceType.Circular)
+        {
+            var distanceFromCenter = GeoMath.CalculateDistance(
+                _mapViewModel.GeofenceCenterLat,
+                _mapViewModel.GeofenceCenterLon,
+                latitude,
+                longitude);
+            return _mapViewModel.GeofenceRadius - distanceFromCenter;
+        }
+
+        if (_mapViewModel.GeofenceVertices.Count < 3)
+        {
+            return double.MaxValue;
+        }
+
+        var inside = IsPointInPolygon(latitude, longitude, _mapViewModel.GeofenceVertices);
+        var minDistance = double.MaxValue;
+        for (var i = 0; i < _mapViewModel.GeofenceVertices.Count; i++)
+        {
+            var a = _mapViewModel.GeofenceVertices[i];
+            var b = _mapViewModel.GeofenceVertices[(i + 1) % _mapViewModel.GeofenceVertices.Count];
+            minDistance = Math.Min(minDistance, DistanceToSegmentMeters(latitude, longitude, a.Lat, a.Lon, b.Lat, b.Lon));
+        }
+
+        return inside ? minDistance : -minDistance;
+    }
+
+    private static bool IsPointInPolygon(double latitude, double longitude, IEnumerable<GeofenceVertex> vertices)
+    {
+        var points = vertices.ToList();
+        var inside = false;
+        var j = points.Count - 1;
+        for (var i = 0; i < points.Count; i++)
+        {
+            var vi = points[i];
+            var vj = points[j];
+            if ((vi.Lon > longitude) != (vj.Lon > longitude) &&
+                latitude < (vj.Lat - vi.Lat) * (longitude - vi.Lon) / (vj.Lon - vi.Lon) + vi.Lat)
+            {
+                inside = !inside;
+            }
+            j = i;
+        }
+
+        return inside;
+    }
+
+    private static double DistanceToSegmentMeters(double lat, double lon, double lat1, double lon1, double lat2, double lon2)
+    {
+        var x = lon;
+        var y = lat;
+        var x1 = lon1;
+        var y1 = lat1;
+        var x2 = lon2;
+        var y2 = lat2;
+        var dx = x2 - x1;
+        var dy = y2 - y1;
+        var lengthSquared = dx * dx + dy * dy;
+        var t = lengthSquared == 0 ? 0 : Math.Clamp(((x - x1) * dx + (y - y1) * dy) / lengthSquared, 0, 1);
+        var projectedLat = y1 + t * dy;
+        var projectedLon = x1 + t * dx;
+        return GeoMath.CalculateDistance(lat, lon, projectedLat, projectedLon);
     }
 
     private Border BuildAlertRow(string text, string time, string severity)

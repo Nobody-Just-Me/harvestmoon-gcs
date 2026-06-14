@@ -1,0 +1,18 @@
+path: ./dataset
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: healthy_crop
+  1: crop_stress
+  2: dry_soil
+  3: water_stress
+  4: pest_damage
+  5: weed
+  6: disease
+  7: yellowing
+  8: wilting
+  9: bare_soil
+  10: irrigation_channel
+  11: standing_water

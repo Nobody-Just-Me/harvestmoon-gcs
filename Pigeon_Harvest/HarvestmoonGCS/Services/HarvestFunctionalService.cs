@@ -33,6 +33,12 @@ public sealed class HarvestFunctionalService : IDisposable
         public string GroundTruthValidationSummary { get; set; } = string.Empty;
         public string TlogPath { get; set; } = string.Empty;
         public string GeofenceAlertsJson { get; set; } = "[]";
+        public string YoloBenchmarkJson { get; set; } = string.Empty;
+        public string IncidentTimelineJson { get; set; } = string.Empty;
+        public string EvidenceBundlePath { get; set; } = string.Empty;
+        public string MapScreenshotPath { get; set; } = string.Empty;
+        public string YoloScreenshotPath { get; set; } = string.Empty;
+        public string VideoRecordingPath { get; set; } = string.Empty;
         public string ExportPath { get; set; } = string.Empty;
     }
 
@@ -94,14 +100,43 @@ public sealed class HarvestFunctionalService : IDisposable
         public string Summary { get; set; } = string.Empty;
     }
 
+    public sealed class YoloBenchmarkResult
+    {
+        public int Iterations { get; set; }
+        public double TotalMilliseconds { get; set; }
+        public double FramesPerSecond { get; set; }
+        public double AverageLatencyMs { get; set; }
+        public double AverageDetections { get; set; }
+        public string ModelPath { get; set; } = string.Empty;
+        public string ClassPath { get; set; } = string.Empty;
+        public int InputSize { get; set; }
+        public string Device { get; set; } = string.Empty;
+        public string Summary { get; set; } = string.Empty;
+    }
+
     private const string ReportsSubfolder = "HarvestReports";
     private const string ReportsIndexFile = "reports_index.json";
     private readonly IFileService _fileService;
+    private readonly IncidentTimelineService _timelineService;
     private readonly VegetationYoloAnalyzer _analyzer = new();
+    private readonly List<string> _pendingGeofenceAlerts = new();
+    private string _pendingTlogPath = string.Empty;
+    private string _pendingBenchmarkJson = string.Empty;
+    private string _pendingVideoPath = string.Empty;
+    private string _latestYoloScreenshotPath = string.Empty;
+    private string _latestMapScreenshotPath = string.Empty;
     private bool _initialized;
+    private string? _runtimeModelPath;
+    private string? _runtimeClassPath;
+    private float _runtimeConfidenceThreshold = 0.4f;
+    private float _runtimeNmsThreshold = 0.4f;
     public bool IsYoloOptionEnabled { get; private set; } = true;
     public bool IsYoloRuntimeReady => _initialized && _analyzer.IsYoloInitialized;
     public string YoloStatusMessage { get; private set; } = "YOLO standby";
+    public string? RuntimeModelPath => _runtimeModelPath;
+    public string? RuntimeClassPath => _runtimeClassPath;
+    public float RuntimeConfidenceThreshold => _runtimeConfidenceThreshold;
+    public float RuntimeNmsThreshold => _runtimeNmsThreshold;
     public event EventHandler<bool>? YoloOptionChanged;
 
     /// <summary>
@@ -389,9 +424,10 @@ public sealed class HarvestFunctionalService : IDisposable
     }
 #endif
 
-    public HarvestFunctionalService(IFileService fileService)
+    public HarvestFunctionalService(IFileService fileService, IncidentTimelineService timelineService)
     {
         _fileService = fileService;
+        _timelineService = timelineService;
     }
 
     public async Task<HarvestAnalysisResult?> AnalyzeImageAsync(string imagePath, string area, double latitude, double longitude, double altitude)
@@ -476,6 +512,151 @@ public sealed class HarvestFunctionalService : IDisposable
         return result;
     }
 
+    public async Task<YoloBenchmarkResult?> BenchmarkImageAsync(string imagePath, int iterations = 30)
+    {
+        if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
+        {
+            return null;
+        }
+
+        var frameBytes = await File.ReadAllBytesAsync(imagePath);
+        return await BenchmarkFrameAsync(frameBytes, iterations);
+    }
+
+    public async Task<YoloBenchmarkResult?> BenchmarkFrameAsync(byte[] frameData, int iterations = 30)
+    {
+        if (frameData == null || frameData.Length == 0)
+        {
+            return null;
+        }
+
+        var count = Math.Clamp(iterations, 3, 200);
+        var totalDetections = 0;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < count; i++)
+        {
+            var detections = await DetectInFrameAsync(frameData);
+            totalDetections += detections.Count;
+        }
+        stopwatch.Stop();
+
+        var totalMs = Math.Max(1, stopwatch.Elapsed.TotalMilliseconds);
+        var fps = count * 1000.0 / totalMs;
+        var latency = totalMs / count;
+        var avgDetections = totalDetections / (double)count;
+
+        return new YoloBenchmarkResult
+        {
+            Iterations = count,
+            TotalMilliseconds = totalMs,
+            FramesPerSecond = fps,
+            AverageLatencyMs = latency,
+            AverageDetections = avgDetections,
+            ModelPath = RuntimeModelPath ?? "bundled-auto",
+            ClassPath = RuntimeClassPath ?? "bundled-auto",
+            InputSize = InferYoloInputSize(RuntimeModelPath),
+            Device = Environment.GetEnvironmentVariable("CUDA_VISIBLE_DEVICES") is { Length: > 0 } cuda
+                ? $"CUDA visible devices {cuda}"
+                : $"{Environment.MachineName} · {System.Runtime.InteropServices.RuntimeInformation.OSDescription}",
+            Summary = $"{fps:F1} FPS · {latency:F1} ms/frame · avg {avgDetections:F1} det"
+        };
+    }
+
+    public async Task AttachYoloBenchmarkToLatestReportAsync(YoloBenchmarkResult? result)
+    {
+        if (result == null)
+        {
+            return;
+        }
+
+        _pendingBenchmarkJson = JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+        var current = (await GetReportsAsync()).ToList();
+        if (current.Count == 0) return;
+        current[0].YoloBenchmarkJson = _pendingBenchmarkJson;
+        var json = JsonSerializer.Serialize(current, new JsonSerializerOptions { WriteIndented = true });
+        await _fileService.SaveTextFileAsync(ReportsIndexFile, json, ReportsSubfolder);
+    }
+
+    public async Task AttachVideoRecordingToLatestReportAsync(string videoPath)
+    {
+        if (string.IsNullOrWhiteSpace(videoPath))
+        {
+            return;
+        }
+
+        _pendingVideoPath = videoPath;
+        var current = (await GetReportsAsync()).ToList();
+        if (current.Count == 0) return;
+        current[0].VideoRecordingPath = videoPath;
+        var json = JsonSerializer.Serialize(current, new JsonSerializerOptions { WriteIndented = true });
+        await _fileService.SaveTextFileAsync(ReportsIndexFile, json, ReportsSubfolder);
+    }
+
+    public async Task<string> SaveLatestYoloScreenshotAsync(byte[] frameData)
+    {
+        if (frameData == null || frameData.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var folder = GetEvidenceRootFolder("Screenshots");
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, $"yolo_{DateTime.Now:yyyyMMdd_HHmmss_fff}.jpg");
+        await File.WriteAllBytesAsync(path, frameData);
+        _latestYoloScreenshotPath = path;
+        return path;
+    }
+
+    public string SaveMapSnapshotPlaceholder(double latitude, double longitude, string label)
+    {
+        var folder = GetEvidenceRootFolder("Screenshots");
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, $"map_{DateTime.Now:yyyyMMdd_HHmmss_fff}.png");
+        WritePlaceholderPng(path, "MoonHarvest Map Snapshot", $"{label} · {latitude:F6}, {longitude:F6}");
+        _latestMapScreenshotPath = path;
+        return path;
+    }
+
+    public async Task<string> CreateDemoTelemetryLogAsync(double startLatitude, double startLongitude, int points = 24)
+    {
+        var folder = GetEvidenceRootFolder("Tlogs");
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, $"demo_telemetry_{DateTime.Now:yyyyMMdd_HHmmss}.tlog");
+        var lines = new List<string>
+        {
+            "# MoonHarvest DEMO telemetry log",
+            "# This file is generated for offline/zero-internet presentation mode when no live autopilot TLOG is connected.",
+            "timestamp_utc,lat,lon,alt_m,groundspeed_mps,battery_percent,event"
+        };
+
+        var count = Math.Clamp(points, 6, 240);
+        for (var i = 0; i < count; i++)
+        {
+            var timestamp = DateTime.UtcNow.AddSeconds(i * 2);
+            var lat = startLatitude + i * 0.000018;
+            var lon = startLongitude + Math.Sin(i / 4.0) * 0.000035;
+            var alt = 80 + Math.Sin(i / 6.0) * 3;
+            var speed = i < 3 ? i * 1.5 : 6.5;
+            var battery = Math.Max(45, 96 - i);
+            var evt = i switch
+            {
+                0 => "connected_demo",
+                1 => "armed_demo",
+                2 => "takeoff_demo",
+                8 => "waypoint_reached_demo",
+                14 => "yolo_detection_demo",
+                18 => "geofence_warning_demo",
+                _ => "telemetry_demo"
+            };
+            lines.Add($"{timestamp:O},{lat.ToString("F7", CultureInfo.InvariantCulture)},{lon.ToString("F7", CultureInfo.InvariantCulture)},{alt.ToString("F1", CultureInfo.InvariantCulture)},{speed.ToString("F1", CultureInfo.InvariantCulture)},{battery},{evt}");
+        }
+
+        await File.WriteAllLinesAsync(path, lines, Encoding.UTF8);
+        _pendingTlogPath = path;
+        _timelineService.Add("tlog", $"Demo telemetry TLOG created: {path}", "success");
+        return path;
+    }
+
     public HarvestValidationResult ValidateWithGroundTruth(HarvestAnalysisResult? analysis, IReadOnlyList<HarvestGroundTruthSample> samples, double stressedThresholdPercent = 35)
     {
         if (analysis == null || samples.Count == 0) return new HarvestValidationResult { Summary = "Tidak ada data validasi" };
@@ -537,15 +718,269 @@ public sealed class HarvestFunctionalService : IDisposable
 
     public async Task<string> ExportReportCsvAsync(HarvestReportRecord record, string baseName)
     {
-        var header = "Id,DateTime,Area,Duration,Detections,Priority,AiModelUsed,Healthy,Stressed,Drought,BareSoil,Validation,TlogPath,OperatorNote";
-        var row = $"{record.Id},{record.DateTime},{record.Area},{record.Duration},{record.Detections},{record.Priority},{record.AiModelUsed},{record.HealthyPercentage:F2},{record.StressedPercentage:F2},{record.DroughtPercentage:F2},{record.BareSoilPercentage:F2},\"{record.GroundTruthValidationSummary.Replace("\"", "''")}\",{record.TlogPath},\"{record.OperatorNote.Replace("\"", "''")}\"";
+        var header = "Id,DateTime,Area,Duration,Detections,Priority,AiModelUsed,Healthy,Stressed,Drought,BareSoil,Validation,TlogPath,VideoRecordingPath,EvidenceBundlePath,OperatorNote";
+        var row = $"{record.Id},{record.DateTime},{record.Area},{record.Duration},{record.Detections},{record.Priority},{record.AiModelUsed},{record.HealthyPercentage:F2},{record.StressedPercentage:F2},{record.DroughtPercentage:F2},{record.BareSoilPercentage:F2},\"{record.GroundTruthValidationSummary.Replace("\"", "''")}\",{record.TlogPath},{record.VideoRecordingPath},{record.EvidenceBundlePath},\"{record.OperatorNote.Replace("\"", "''")}\"";
         return await _fileService.ExportToDownloadsAsync($"{baseName}.csv", header + Environment.NewLine + row);
     }
 
     public async Task<string> ExportReportPdfAsync(HarvestReportRecord record, string baseName)
     {
-        var text = $"Pigeon Harvest Report{Environment.NewLine}ID: {record.Id}{Environment.NewLine}Date: {record.DateTime}{Environment.NewLine}Area: {record.Area}{Environment.NewLine}Detections: {record.Detections}{Environment.NewLine}Priority: {record.Priority}{Environment.NewLine}AI Model: {record.AiModelUsed}{Environment.NewLine}Crop Health: healthy={record.HealthyPercentage:F1}%, stressed={record.StressedPercentage:F1}%, drought={record.DroughtPercentage:F1}%, bare soil={record.BareSoilPercentage:F1}%{Environment.NewLine}Ground Truth: {record.GroundTruthValidationSummary}{Environment.NewLine}TLOG: {record.TlogPath}{Environment.NewLine}Note: {record.OperatorNote}{Environment.NewLine}";
-        return await _fileService.ExportToDownloadsAsync($"{baseName}.pdf", text);
+        var geofenceAlerts = ReadAlertList(record.GeofenceAlertsJson);
+        var lines = new List<string>
+        {
+            $"ID: {record.Id}",
+            $"Date: {record.DateTime}",
+            $"Area: {record.Area}",
+            $"Duration: {record.Duration}",
+            $"Detections: {record.Detections}",
+            $"Priority: {record.Priority}",
+            $"AI Model: {record.AiModelUsed}",
+            $"Crop Health: healthy={record.HealthyPercentage:F1}%, stressed={record.StressedPercentage:F1}%, drought={record.DroughtPercentage:F1}%, bare soil={record.BareSoilPercentage:F1}%",
+            $"Ground Truth: {FallbackText(record.GroundTruthValidationSummary)}",
+            $"TLOG: {FallbackText(record.TlogPath)}",
+            $"Video: {FallbackText(record.VideoRecordingPath)}",
+            $"Evidence Bundle: {FallbackText(record.EvidenceBundlePath)}",
+            $"Operator Note: {FallbackText(record.OperatorNote)}",
+            $"YOLO Benchmark: {FormatBenchmarkSummary(record.YoloBenchmarkJson)}",
+            "Geofence Alerts:"
+        };
+
+        if (geofenceAlerts.Count == 0)
+        {
+            lines.Add("- none");
+        }
+        else
+        {
+            lines.AddRange(geofenceAlerts.Take(8).Select(alert => $"- {alert}"));
+        }
+
+        var pdf = BuildSimplePdf("MoonHarvest Mission Report", lines);
+        return await _fileService.ExportToDownloadsAsync($"{baseName}.pdf", pdf);
+    }
+
+    public async Task<string> CreateEvidenceBundleAsync(HarvestReportRecord record)
+    {
+        if (record == null)
+        {
+            return string.Empty;
+        }
+
+        var safeId = MakeSafeFileName(string.IsNullOrWhiteSpace(record.Id) ? $"MH-{DateTime.Now:yyyyMMdd-HHmmss}" : record.Id);
+        var bundleFolder = Path.Combine(GetEvidenceRootFolder("Bundles"), safeId);
+        Directory.CreateDirectory(bundleFolder);
+
+        record.IncidentTimelineJson = string.IsNullOrWhiteSpace(record.IncidentTimelineJson)
+            ? _timelineService.ToJson()
+            : record.IncidentTimelineJson;
+
+        var pdfText = BuildReportPdfText(record);
+        await File.WriteAllTextAsync(Path.Combine(bundleFolder, "report.pdf"), pdfText, Encoding.ASCII);
+        await File.WriteAllTextAsync(
+            Path.Combine(bundleFolder, "report.json"),
+            JsonSerializer.Serialize(record, new JsonSerializerOptions { WriteIndented = true }));
+        await File.WriteAllTextAsync(Path.Combine(bundleFolder, "incident_timeline.json"), record.IncidentTimelineJson);
+
+        CopyIfExists(record.TlogPath, Path.Combine(bundleFolder, "telemetry.tlog"));
+        CopyIfExists(record.VideoRecordingPath, Path.Combine(bundleFolder, "mission_video.mp4"));
+        CopyIfExists(record.YoloScreenshotPath, Path.Combine(bundleFolder, "screenshot_yolo.jpg"));
+        CopyIfExists(record.MapScreenshotPath, Path.Combine(bundleFolder, "screenshot_map.png"));
+
+        if (!File.Exists(Path.Combine(bundleFolder, "screenshot_map.png")))
+        {
+            WritePlaceholderPng(Path.Combine(bundleFolder, "screenshot_map.png"), "MoonHarvest Map Snapshot", record.Area);
+        }
+
+        if (!File.Exists(Path.Combine(bundleFolder, "screenshot_yolo.jpg")))
+        {
+            WritePlaceholderPng(Path.Combine(bundleFolder, "screenshot_yolo.jpg"), "MoonHarvest YOLO Snapshot", "No camera frame captured yet");
+        }
+
+        record.EvidenceBundlePath = bundleFolder;
+        await UpdateLatestReportAsync(current =>
+        {
+            current.EvidenceBundlePath = bundleFolder;
+            current.IncidentTimelineJson = record.IncidentTimelineJson;
+            current.MapScreenshotPath = record.MapScreenshotPath;
+            current.YoloScreenshotPath = record.YoloScreenshotPath;
+            current.VideoRecordingPath = record.VideoRecordingPath;
+        });
+
+        return bundleFolder;
+    }
+
+    private static string BuildSimplePdf(string title, IReadOnlyList<string> lines)
+    {
+        var content = new StringBuilder();
+        content.AppendLine("BT");
+        content.AppendLine("/F1 16 Tf");
+        content.AppendLine("50 750 Td");
+        content.AppendLine($"({EscapePdfText(title)}) Tj");
+        content.AppendLine("0 -26 Td");
+        content.AppendLine("/F1 10 Tf");
+
+        foreach (var line in lines.Take(38))
+        {
+            content.AppendLine($"({EscapePdfText(line)}) Tj");
+            content.AppendLine("0 -14 Td");
+        }
+
+        content.AppendLine("ET");
+
+        var objects = new List<string>
+        {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            $"<< /Length {Encoding.ASCII.GetByteCount(content.ToString())} >>\nstream\n{content}endstream"
+        };
+
+        var pdf = new StringBuilder();
+        var offsets = new List<int> { 0 };
+        pdf.AppendLine("%PDF-1.4");
+        foreach (var obj in objects.Select((value, index) => new { Number = index + 1, Value = value }))
+        {
+            offsets.Add(Encoding.ASCII.GetByteCount(pdf.ToString()));
+            pdf.AppendLine($"{obj.Number} 0 obj");
+            pdf.AppendLine(obj.Value);
+            pdf.AppendLine("endobj");
+        }
+
+        var xrefOffset = Encoding.ASCII.GetByteCount(pdf.ToString());
+        pdf.AppendLine("xref");
+        pdf.AppendLine($"0 {objects.Count + 1}");
+        pdf.AppendLine("0000000000 65535 f ");
+        foreach (var offset in offsets.Skip(1))
+        {
+            pdf.AppendLine($"{offset:D10} 00000 n ");
+        }
+
+        pdf.AppendLine("trailer");
+        pdf.AppendLine($"<< /Size {objects.Count + 1} /Root 1 0 R >>");
+        pdf.AppendLine("startxref");
+        pdf.AppendLine(xrefOffset.ToString(CultureInfo.InvariantCulture));
+        pdf.AppendLine("%%EOF");
+        return pdf.ToString();
+    }
+
+    private static string EscapePdfText(string value)
+    {
+        return value
+            .Replace("\\", "\\\\")
+            .Replace("(", "\\(")
+            .Replace(")", "\\)");
+    }
+
+    private static string FallbackText(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "-" : value;
+    }
+
+    private static string BuildReportPdfText(HarvestReportRecord record)
+    {
+        var geofenceAlerts = ReadAlertList(record.GeofenceAlertsJson);
+        var lines = new List<string>
+        {
+            $"ID: {record.Id}",
+            $"Date: {record.DateTime}",
+            $"Area: {record.Area}",
+            $"Duration: {record.Duration}",
+            $"Detections: {record.Detections}",
+            $"Priority: {record.Priority}",
+            $"AI Model: {record.AiModelUsed}",
+            $"Crop Health: healthy={record.HealthyPercentage:F1}%, stressed={record.StressedPercentage:F1}%, drought={record.DroughtPercentage:F1}%, bare soil={record.BareSoilPercentage:F1}%",
+            $"YOLO Benchmark: {FormatBenchmarkSummary(record.YoloBenchmarkJson)}",
+            $"TLOG: {FallbackText(record.TlogPath)}",
+            $"Video: {FallbackText(record.VideoRecordingPath)}",
+            $"Evidence Bundle: {FallbackText(record.EvidenceBundlePath)}",
+            "Geofence Alerts:"
+        };
+
+        lines.AddRange(geofenceAlerts.Count == 0
+            ? new[] { "- none" }
+            : geofenceAlerts.Take(8).Select(alert => $"- {alert}"));
+
+        return BuildSimplePdf("MoonHarvest Mission Report", lines);
+    }
+
+    private async Task UpdateLatestReportAsync(Action<HarvestReportRecord> update)
+    {
+        var current = (await GetReportsAsync()).ToList();
+        if (current.Count == 0)
+        {
+            return;
+        }
+
+        update(current[0]);
+        var json = JsonSerializer.Serialize(current, new JsonSerializerOptions { WriteIndented = true });
+        await _fileService.SaveTextFileAsync(ReportsIndexFile, json, ReportsSubfolder);
+    }
+
+    private static string FormatBenchmarkSummary(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return "-";
+        }
+
+        try
+        {
+            var result = JsonSerializer.Deserialize<YoloBenchmarkResult>(json);
+            return result == null
+                ? "-"
+                : $"{result.FramesPerSecond:F1} FPS, {result.AverageLatencyMs:F1} ms, avg {result.AverageDetections:F1} det, input {result.InputSize}px";
+        }
+        catch
+        {
+            return json.Length > 90 ? json[..90] + "..." : json;
+        }
+    }
+
+    private static int InferYoloInputSize(string? modelPath)
+    {
+        var path = modelPath ?? string.Empty;
+        if (path.Contains("320", StringComparison.OrdinalIgnoreCase)) return 320;
+        if (path.Contains("416", StringComparison.OrdinalIgnoreCase)) return 416;
+        if (path.Contains("640", StringComparison.OrdinalIgnoreCase)) return 640;
+        return 640;
+    }
+
+    private static string GetEvidenceRootFolder(string child)
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            "HarvestmoonGCS",
+            "Evidence",
+            child);
+    }
+
+    private static string MakeSafeFileName(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var chars = value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray();
+        return new string(chars).Trim();
+    }
+
+    private static void CopyIfExists(string sourcePath, string destinationPath)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? ".");
+        File.Copy(sourcePath, destinationPath, overwrite: true);
+    }
+
+    private static void WritePlaceholderPng(string path, string title, string subtitle)
+    {
+        using var image = new Mat(new OpenCvSharp.Size(1280, 720), MatType.CV_8UC3, new Scalar(245, 251, 246));
+        Cv2.Rectangle(image, new Rect(40, 40, 1200, 640), new Scalar(213, 231, 216), 3);
+        Cv2.PutText(image, title, new Point(90, 180), HersheyFonts.HersheySimplex, 1.5, new Scalar(15, 48, 36), 3);
+        Cv2.PutText(image, subtitle, new Point(90, 250), HersheyFonts.HersheySimplex, 0.8, new Scalar(79, 107, 92), 2);
+        Cv2.PutText(image, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture), new Point(90, 610), HersheyFonts.HersheySimplex, 0.75, new Scalar(46, 125, 50), 2);
+        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+        Cv2.ImWrite(path, image);
     }
 
     public async Task<string> ExportValidationCsvAsync(HarvestValidationResult validation, string baseName)
@@ -557,9 +992,38 @@ public sealed class HarvestFunctionalService : IDisposable
 
     public async Task AttachTlogToLatestReportAsync(string tlogPath)
     {
+        if (string.IsNullOrWhiteSpace(tlogPath))
+        {
+            return;
+        }
+
+        _pendingTlogPath = tlogPath;
         var current = (await GetReportsAsync()).ToList();
         if (current.Count == 0) return;
         current[0].TlogPath = tlogPath;
+        var json = JsonSerializer.Serialize(current, new JsonSerializerOptions { WriteIndented = true });
+        await _fileService.SaveTextFileAsync(ReportsIndexFile, json, ReportsSubfolder);
+    }
+
+    public async Task AddGeofenceAlertToLatestReportAsync(string alert)
+    {
+        if (string.IsNullOrWhiteSpace(alert))
+        {
+            return;
+        }
+
+        _pendingGeofenceAlerts.Insert(0, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {alert}");
+        if (_pendingGeofenceAlerts.Count > 20)
+        {
+            _pendingGeofenceAlerts.RemoveRange(20, _pendingGeofenceAlerts.Count - 20);
+        }
+
+        var current = (await GetReportsAsync()).ToList();
+        if (current.Count == 0) return;
+
+        var alerts = ReadAlertList(current[0].GeofenceAlertsJson);
+        alerts.Insert(0, _pendingGeofenceAlerts[0]);
+        current[0].GeofenceAlertsJson = JsonSerializer.Serialize(alerts.Take(20).ToList());
         var json = JsonSerializer.Serialize(current, new JsonSerializerOptions { WriteIndented = true });
         await _fileService.SaveTextFileAsync(ReportsIndexFile, json, ReportsSubfolder);
     }
@@ -574,10 +1038,71 @@ public sealed class HarvestFunctionalService : IDisposable
 
     public async Task AddReportAsync(HarvestReportRecord report)
     {
+        if (string.IsNullOrWhiteSpace(report.TlogPath) && !string.IsNullOrWhiteSpace(_pendingTlogPath))
+        {
+            report.TlogPath = _pendingTlogPath;
+        }
+
+        if ((string.IsNullOrWhiteSpace(report.GeofenceAlertsJson) || report.GeofenceAlertsJson == "[]") && _pendingGeofenceAlerts.Count > 0)
+        {
+            report.GeofenceAlertsJson = JsonSerializer.Serialize(_pendingGeofenceAlerts.Take(20).ToList());
+        }
+
+        if (string.IsNullOrWhiteSpace(report.YoloBenchmarkJson) && !string.IsNullOrWhiteSpace(_pendingBenchmarkJson))
+        {
+            report.YoloBenchmarkJson = _pendingBenchmarkJson;
+        }
+
+        if (string.IsNullOrWhiteSpace(report.IncidentTimelineJson))
+        {
+            report.IncidentTimelineJson = _timelineService.ToJson();
+        }
+
+        if (string.IsNullOrWhiteSpace(report.VideoRecordingPath) && !string.IsNullOrWhiteSpace(_pendingVideoPath))
+        {
+            report.VideoRecordingPath = _pendingVideoPath;
+        }
+
+        if (string.IsNullOrWhiteSpace(report.YoloScreenshotPath) && !string.IsNullOrWhiteSpace(_latestYoloScreenshotPath))
+        {
+            report.YoloScreenshotPath = _latestYoloScreenshotPath;
+        }
+
+        if (string.IsNullOrWhiteSpace(report.MapScreenshotPath) && !string.IsNullOrWhiteSpace(_latestMapScreenshotPath))
+        {
+            report.MapScreenshotPath = _latestMapScreenshotPath;
+        }
+
         var current = (await GetReportsAsync()).ToList();
         current.Insert(0, report);
         var json = JsonSerializer.Serialize(current.Take(50).ToList(), new JsonSerializerOptions { WriteIndented = true });
         await _fileService.SaveTextFileAsync(ReportsIndexFile, json, ReportsSubfolder);
+
+        var bundlePath = await CreateEvidenceBundleAsync(report);
+        if (!string.IsNullOrWhiteSpace(bundlePath))
+        {
+            report.EvidenceBundlePath = bundlePath;
+            current[0] = report;
+            json = JsonSerializer.Serialize(current.Take(50).ToList(), new JsonSerializerOptions { WriteIndented = true });
+            await _fileService.SaveTextFileAsync(ReportsIndexFile, json, ReportsSubfolder);
+        }
+    }
+
+    private static List<string> ReadAlertList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new List<string>();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+        }
+        catch
+        {
+            return new List<string>();
+        }
     }
 
     private void EnsureInitialized()
@@ -611,7 +1136,9 @@ public sealed class HarvestFunctionalService : IDisposable
             // keeps the normal model order below.
             var androidModelAssets = new[]
             {
+                ("moonharvest-uav-det.onnx", "classes-moonharvest-uav-det.txt"),
                 ("yolov8n-agri-320.onnx", "classes-yolov8n-agri-basic.txt"),
+                ("yolov8n-crop-weed-416.onnx", "classes-crop-weed.txt"),
                 ("yolov8n-320.onnx", "classes-yolov8n-coco.txt"),
                 ("yolov8n.onnx", "classes-yolov8n-coco.txt")
             };
@@ -645,20 +1172,30 @@ public sealed class HarvestFunctionalService : IDisposable
         foreach (var dir in assetSearchPaths.Where(d => !string.IsNullOrWhiteSpace(d)))
         {
 #if __ANDROID__
+            modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-uav-det.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-agri-320.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-agri-basic.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "Assets", "models", "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-320.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-coco.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "moonharvest-uav-det.onnx"), Path.Combine(dir, "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-agri-320.onnx"), Path.Combine(dir, "classes-yolov8n-agri-basic.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-320.onnx"), Path.Combine(dir, "classes-yolov8n-coco.txt")));
 #endif
+            modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-uav-det.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-agri.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-agri-basic.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "Assets", "models", "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-coco.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "moonharvest-uav-det.onnx"), Path.Combine(dir, "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-agri.onnx"), Path.Combine(dir, "classes-yolov8n-agri-basic.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n.onnx"), Path.Combine(dir, "classes-yolov8n-coco.txt")));
         }
 
-        var pair = modelClassPairs.FirstOrDefault(candidate => File.Exists(candidate.Model) && File.Exists(candidate.Classes));
-        var modelPath = pair.Model;
-        var classPath = pair.Classes;
+        var pair = !string.IsNullOrWhiteSpace(_runtimeModelPath) && !string.IsNullOrWhiteSpace(_runtimeClassPath)
+            ? (_runtimeModelPath!, _runtimeClassPath!)
+            : modelClassPairs.FirstOrDefault(candidate => File.Exists(candidate.Model) && File.Exists(candidate.Classes));
+        var modelPath = pair.Item1;
+        var classPath = pair.Item2;
 
 #if __ANDROID__
         Android.Util.Log.Info("HarvestmoonGCS", $"[YOLO] Selected model: {modelPath ?? "NONE"}, classes: {classPath ?? "NONE"}");
@@ -670,15 +1207,13 @@ public sealed class HarvestFunctionalService : IDisposable
         if (!string.IsNullOrWhiteSpace(modelPath) && !string.IsNullOrWhiteSpace(classPath))
         {
             _analyzer.Initialize(modelPath, classPath);
-#if __ANDROID__
             if (_analyzer.IsYoloInitialized)
             {
-                // Performance mode for low-power Android tablets: fewer weak candidates
-                // means less post-processing/NMS work after every inference.
-                _analyzer.Detector.SetConfidenceThreshold(0.4f);
-                _analyzer.Detector.SetNmsThreshold(0.4f);
+                _runtimeModelPath = modelPath;
+                _runtimeClassPath = classPath;
+                _analyzer.Detector.SetConfidenceThreshold(_runtimeConfidenceThreshold);
+                _analyzer.Detector.SetNmsThreshold(_runtimeNmsThreshold);
             }
-#endif
             YoloStatusMessage = _analyzer.IsYoloInitialized
                 ? $"YOLO model loaded: {Path.GetFileName(modelPath)}"
                 : $"YOLO failed to load: {Path.GetFileName(modelPath)}";
@@ -692,6 +1227,34 @@ public sealed class HarvestFunctionalService : IDisposable
         }
         _analyzer.UseYolo = IsYoloOptionEnabled;
         _initialized = true;
+    }
+
+    public bool ConfigureYoloRuntime(string? modelPath, string? classPath, float confidenceThreshold, float nmsThreshold)
+    {
+        _runtimeConfidenceThreshold = Math.Clamp(confidenceThreshold, 0.1f, 1.0f);
+        _runtimeNmsThreshold = Math.Clamp(nmsThreshold, 0.1f, 1.0f);
+
+        if (!string.IsNullOrWhiteSpace(modelPath))
+        {
+            _runtimeModelPath = modelPath.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(classPath))
+        {
+            _runtimeClassPath = classPath.Trim();
+        }
+
+        _initialized = false;
+        EnsureInitialized();
+
+        if (_analyzer.IsYoloInitialized && _analyzer.Detector != null)
+        {
+            _analyzer.Detector.SetConfidenceThreshold(_runtimeConfidenceThreshold);
+            _analyzer.Detector.SetNmsThreshold(_runtimeNmsThreshold);
+        }
+
+        YoloOptionChanged?.Invoke(this, IsYoloOptionEnabled);
+        return IsYoloRuntimeReady;
     }
 
 #if __ANDROID__

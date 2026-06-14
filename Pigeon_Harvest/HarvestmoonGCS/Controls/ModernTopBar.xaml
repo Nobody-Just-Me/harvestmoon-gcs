@@ -179,8 +179,7 @@
                 <Button x:Name="ConnectButton" 
                         Style="{StaticResource ConnectionButtonStyle}"
                         VerticalAlignment="Center"
-                        Click="ConnectButton_Click"
-                        Visibility="Collapsed">
+                        Click="ConnectButton_Click">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon x:Name="ConnectionIcon" Glyph="&#xE912;" FontSize="14" VerticalAlignment="Center">
                             <FontIcon.RenderTransform>

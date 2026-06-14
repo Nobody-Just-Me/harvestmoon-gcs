@@ -60,7 +60,7 @@ public class MavLinkService : IMavLinkService
     private readonly object _parameterLock = new object();
 
     private const int MissionOperationTimeoutMs = 30000;
-    private const int ParameterOperationTimeoutMs = 60000;
+    private const int ParameterOperationTimeoutMs = 5000;
     private const int PlaybackParameterOperationTimeoutMs = 1000;
     private static readonly TimeSpan SerialHandshakeHeartbeatTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan InitialHeartbeatTimeout = TimeSpan.FromSeconds(30);

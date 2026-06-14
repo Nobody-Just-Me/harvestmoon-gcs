@@ -1,6 +1,7 @@
 using Xunit;
 using HarvestmoonGCS.Core.Services;
 using HarvestmoonGCS.Core.Models;
+using System;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -8,11 +9,14 @@ namespace HarvestmoonGCS.Tests;
 
 public class SettingsServiceTests
 {
+    private static string CreateSettingsPath()
+        => Path.Combine(Path.GetTempPath(), "HarvestmoonGCS.Tests", Guid.NewGuid().ToString("N"), "settings.json");
+
     [Fact]
     public async Task LoadSettings_CreatesDefaultSettings_WhenFileDoesNotExist()
     {
         // Arrange
-        var settingsService = new JsonSettingsService();
+        var settingsService = new JsonSettingsService(CreateSettingsPath());
 
         // Act
         var result = await settingsService.LoadSettingsAsync();
@@ -28,7 +32,7 @@ public class SettingsServiceTests
     public async Task SaveSettings_CreatesFile_WithCorrectData()
     {
         // Arrange
-        var settingsService = new JsonSettingsService();
+        var settingsService = new JsonSettingsService(CreateSettingsPath());
         await settingsService.LoadSettingsAsync();
 
         // Modify settings
@@ -48,7 +52,8 @@ public class SettingsServiceTests
     public async Task LoadSettings_RestoresSavedSettings()
     {
         // Arrange
-        var settingsService1 = new JsonSettingsService();
+        var settingsPath = CreateSettingsPath();
+        var settingsService1 = new JsonSettingsService(settingsPath);
         await settingsService1.LoadSettingsAsync();
 
         // Modify and save settings
@@ -60,7 +65,7 @@ public class SettingsServiceTests
         await settingsService1.SaveSettingsAsync();
 
         // Create new instance and load
-        var settingsService2 = new JsonSettingsService();
+        var settingsService2 = new JsonSettingsService(settingsPath);
         var result = await settingsService2.LoadSettingsAsync();
 
         // Assert
@@ -76,7 +81,7 @@ public class SettingsServiceTests
     public async Task ResetToDefault_RestoresDefaultSettings()
     {
         // Arrange
-        var settingsService = new JsonSettingsService();
+        var settingsService = new JsonSettingsService(CreateSettingsPath());
         await settingsService.LoadSettingsAsync();
 
         // Modify settings
@@ -97,7 +102,7 @@ public class SettingsServiceTests
     public async Task GetSetting_ReturnsCorrectValue()
     {
         // Arrange
-        var settingsService = new JsonSettingsService();
+        var settingsService = new JsonSettingsService(CreateSettingsPath());
         await settingsService.LoadSettingsAsync();
 
         // Act
@@ -111,7 +116,7 @@ public class SettingsServiceTests
     public async Task SetSetting_UpdatesAndSavesValue()
     {
         // Arrange
-        var settingsService = new JsonSettingsService();
+        var settingsService = new JsonSettingsService(CreateSettingsPath());
         await settingsService.LoadSettingsAsync();
 
         // Act

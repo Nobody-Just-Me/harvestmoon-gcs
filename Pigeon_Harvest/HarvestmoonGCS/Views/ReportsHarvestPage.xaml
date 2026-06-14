@@ -87,6 +87,26 @@
                             </Grid>
 
                             <TextBlock x:Name="DetailLocationText" Text="Lokasi: -" FontSize="13" Foreground="{ThemeResource ForegroundBrush}" Margin="0,0,0,8"/>
+                            <Border Padding="10" CornerRadius="8" Background="{ThemeResource MutedBrush}" Margin="0,0,0,8">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Telemetry / TLOG" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock x:Name="DetailTlogText" Text="Belum ada TLOG tersambung" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource ForegroundBrush}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Padding="10" CornerRadius="8" Background="{ThemeResource MutedBrush}" Margin="0,0,0,8">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Geofence Alerts" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock x:Name="DetailGeofenceAlertsText" Text="Tidak ada alert geofence" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource ForegroundBrush}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Padding="10" CornerRadius="8" Background="{ThemeResource MutedBrush}" Margin="0,0,0,8">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Evidence Bundle" Style="{StaticResource LabelStyle}"/>
+                                    <TextBlock x:Name="DetailEvidenceText" Text="Belum ada bundle bukti" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource ForegroundBrush}"/>
+                                    <TextBlock x:Name="DetailBenchmarkText" Text="Benchmark YOLO: belum tersedia" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource ForegroundBrush}"/>
+                                    <TextBlock x:Name="DetailVideoText" Text="Video: belum tersedia" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource ForegroundBrush}"/>
+                                </StackPanel>
+                            </Border>
 
                             <Border Height="220" CornerRadius="10" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" Background="#EEF7EF">
                                 <Grid>

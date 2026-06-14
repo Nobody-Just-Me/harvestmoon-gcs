@@ -4,8 +4,10 @@ using Microsoft.UI.Xaml.Navigation;
 using HarvestmoonGCS.Core.Models.AI;
 using HarvestmoonGCS.Core.Services;
 using HarvestmoonGCS.Core.Services.AI;
+using HarvestmoonGCS.Services;
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Globalization;
 using System.Net.Http;
 using System.Threading;
@@ -23,6 +25,8 @@ public sealed partial class AISettingsPage : Page
     private IApiKeyStore? _apiKeyStore;
     private AISettings? _aiSettings;
     private LLMServiceFactory? _llmServiceFactory;
+    private HarvestFunctionalService? _harvestFunctionalService;
+    private IFileService? _fileService;
 
     public AISettingsPage()
     {
@@ -39,6 +43,8 @@ public sealed partial class AISettingsPage : Page
         _settingsService = App.Current.Services.GetService(typeof(ISettingsService)) as ISettingsService;
         _apiKeyStore = App.Current.Services.GetService(typeof(IApiKeyStore)) as IApiKeyStore;
         _llmServiceFactory = App.Current.Services.GetService(typeof(LLMServiceFactory)) as LLMServiceFactory;
+        _harvestFunctionalService = App.Current.Services.GetService(typeof(HarvestFunctionalService)) as HarvestFunctionalService;
+        _fileService = App.Current.Services.GetService(typeof(IFileService)) as IFileService;
         
         LoadSettings();
     }
@@ -111,6 +117,7 @@ public sealed partial class AISettingsPage : Page
             PerformanceModelBox.Text = _aiSettings.Models.PerformanceScoring;
             VoiceIntentModelBox.Text = _aiSettings.Models.VoiceIntent;
             FallbackModelBox.Text = _aiSettings.Models.Fallback;
+            LoadVisionRuntimeSettings();
             UpdateProviderDiagnosticText("Diagnostic siap. Gunakan tombol test provider untuk verifikasi koneksi.");
 
             Debug.WriteLine("AI settings loaded successfully");
@@ -275,6 +282,8 @@ public sealed partial class AISettingsPage : Page
             _aiSettings.Models.VoiceIntent = TextOrFallback(VoiceIntentModelBox.Text, _aiSettings.Models.VoiceIntent);
             _aiSettings.Models.Fallback = TextOrFallback(FallbackModelBox.Text, _aiSettings.Models.Fallback);
 
+            ApplyVisionRuntimeSettings();
+
             _settingsService.Settings.AI = _aiSettings;
             await _settingsService.SetSettingAsync("AISettings", _aiSettings);
             UpdateProviderDiagnosticSummary();
@@ -337,6 +346,72 @@ public sealed partial class AISettingsPage : Page
         AdvancedToggleButton.Content = shouldShow
             ? "Sembunyikan Advanced Settings"
             : "Tampilkan Advanced Settings";
+    }
+
+    private void LoadVisionRuntimeSettings()
+    {
+        var baseDirectory = AppContext.BaseDirectory;
+        var defaultModelPath = Path.Combine(baseDirectory, "Assets", "models", "yolov8n-crop-weed-416.onnx");
+        var defaultClassPath = Path.Combine(baseDirectory, "Assets", "models", "classes-crop-weed.txt");
+
+        VisionModelPathBox.Text = _harvestFunctionalService?.RuntimeModelPath
+            ?? (File.Exists(defaultModelPath) ? defaultModelPath : string.Empty);
+        VisionClassPathBox.Text = _harvestFunctionalService?.RuntimeClassPath
+            ?? (File.Exists(defaultClassPath) ? defaultClassPath : string.Empty);
+        VisionConfidenceBox.Text = (_harvestFunctionalService?.RuntimeConfidenceThreshold ?? 0.4f)
+            .ToString("0.00", CultureInfo.InvariantCulture);
+        VisionNmsBox.Text = (_harvestFunctionalService?.RuntimeNmsThreshold ?? 0.4f)
+            .ToString("0.00", CultureInfo.InvariantCulture);
+        VisionRuntimeStatusText.Text = _harvestFunctionalService?.YoloStatusMessage ?? "Vision runtime standby.";
+    }
+
+    private void ApplyVisionRuntimeSettings()
+    {
+        if (_harvestFunctionalService == null)
+        {
+            VisionRuntimeStatusText.Text = "Harvest vision service tidak tersedia.";
+            return;
+        }
+
+        var modelPath = VisionModelPathBox.Text?.Trim();
+        var classPath = VisionClassPathBox.Text?.Trim();
+        var confidence = (float)Math.Clamp(ParseDoubleOrDefault(VisionConfidenceBox.Text, 0.4), 0.1, 1.0);
+        var nms = (float)Math.Clamp(ParseDoubleOrDefault(VisionNmsBox.Text, 0.4), 0.1, 1.0);
+
+        var ready = _harvestFunctionalService.ConfigureYoloRuntime(modelPath, classPath, confidence, nms);
+        VisionRuntimeStatusText.Text = ready
+            ? $"YOLO aktif: {Path.GetFileName(_harvestFunctionalService.RuntimeModelPath)} | conf={confidence:0.00} | nms={nms:0.00}"
+            : _harvestFunctionalService.YoloStatusMessage;
+    }
+
+    private async void BrowseVisionModelButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_fileService == null)
+        {
+            VisionRuntimeStatusText.Text = "File picker tidak tersedia.";
+            return;
+        }
+
+        var path = await _fileService.PickFileAsync(new[] { ".onnx" });
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            VisionModelPathBox.Text = path;
+        }
+    }
+
+    private async void BrowseVisionClassButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_fileService == null)
+        {
+            VisionRuntimeStatusText.Text = "File picker tidak tersedia.";
+            return;
+        }
+
+        var path = await _fileService.PickFileAsync(new[] { ".txt", ".names" });
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            VisionClassPathBox.Text = path;
+        }
     }
 
     private async System.Threading.Tasks.Task ShowMessageDialog(string title, string message)
