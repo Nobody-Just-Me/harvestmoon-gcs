@@ -40,6 +40,29 @@ import argparse, csv, json, os, sys, time
 import cv2
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# DEMO_MODE — semua tampilan disesuaikan dengan proposal TEKNOFEST
+# ---------------------------------------------------------------------------
+DEMO_MODE = os.environ.get("MOONHARVEST_DEMO", "1") == "1"
+
+# Mapping kelas internal → label demo (None = tersembunyi/background)
+DISPLAY_MAP = {
+    "healthy_crop":              "Healthy",
+    "stressed_crop":             "Stress",
+    "disease_stress_vegetation": "Disease",
+    "drought_stress":            "Stress",   # digabung ke Stress
+    "bare_soil":                 None,        # disembunyikan
+}
+HIDDEN_CLASSES = {"bare_soil"}
+
+# Warna (BGR) untuk label demo
+DEMO_PALETTE = {
+    "Healthy": (0, 255, 0),
+    "Stress":  (0, 255, 255),
+    "Disease": (0, 0, 255),
+    "Pest":    (0, 140, 255),
+}
+
 # ----------------------------------------------------------------------------
 # KONFIGURASI / KALIBRASI (OpenCV HSV: H 0-179, S 0-255, V 0-255)
 # Nilai di bawah dikalibrasi dari footage UAV pengguna (saturasi rendah).
@@ -53,7 +76,7 @@ CLASSES = [
 ]
 IGNORE = {"background": 250, "shadow": 251, "unknown": 255}
 
-# Warna overlay (BGR) per kelas
+# Warna overlay (BGR) per kelas — dipakai di mode non-demo
 PALETTE = {
     "healthy_crop":              (60, 200, 60),
     "stressed_crop":             (40, 220, 230),
@@ -105,7 +128,7 @@ DEFAULT_CFG = {
     "soil":     {"s_max": 30, "v": [110, 240]},
     # Tekstur (std lokal) -> penyakit (berbintik) vs kering (rata)
     "texture_win": 9,
-    "disease_texture_min": 16.0,
+    "disease_texture_min": 24.0,  # dinaikkan: 16 terlalu sensitif, tangkap tepi/jalan
     # Morfologi & region
     "morph_kernel": 5,
     "label_median": 7,
@@ -355,13 +378,17 @@ def classify_pixels(hsv, exg, texture, cfg):
               (V >= c["v"][0]) & (exg >= cfg["exg_healthy_min"])
     commit(healthy, 0, 0.45 + 0.25 * sat_score + 0.3 * exg_score)
 
-    # 4) disease: merah/nekrosis berbintik (saturasi & tekstur tinggi)
+    # 4) disease: merah/nekrosis berbintik
+    #    Syarat: HARUS merah/pinkish (hue) DAN (saturasi tinggi ATAU tekstur tinggi).
+    #    Sebelumnya `redish | necrotic` memungkinkan area bertekstur tinggi apa pun
+    #    (jalan, atap, tepi sawah) masuk sebagai disease — sekarang wajib merah dulu.
     c = cfg["disease"]
     redish = (((H >= c["h1"][0]) & (H <= c["h1"][1])) |
               ((H >= c["h2"][0]) & (H <= c["h2"][1]))) & (S >= c["s_lo"])
-    necrotic = (texture >= cfg["disease_texture_min"]) & (S >= 35) & \
-               (exg < cfg["exg_veg_thr"]) & (V >= c["v"][0]) & (V <= c["v"][1])
-    commit(redish | necrotic, 2, 0.4 + 0.6 * tex_score)
+    high_tex = texture >= cfg["disease_texture_min"]   # tekstur tinggi = bercak-bercak
+    disease = redish & (high_tex | (S >= 80))          # merah + (berbintik ATAU sangat pekat)
+    disease = disease & (V >= c["v"][0]) & (V <= c["v"][1])
+    commit(disease, 2, 0.4 + 0.6 * tex_score)
 
     # 5) stressed: kuning s/d hijau lemah (vegetasi tapi tidak hijau kuat)
     c = cfg["stressed"]
@@ -492,28 +519,64 @@ def colorize(label):
     return out
 
 
+def _demo_pct(pct):
+    """Aggregate internal percentages into 4 demo display classes."""
+    return {
+        "Healthy": pct.get("healthy_crop", 0),
+        "Stress":  pct.get("stressed_crop", 0) + pct.get("drought_stress", 0),
+        "Disease": pct.get("disease_stress_vegetation", 0),
+        "Pest":    0.0,   # configurable — not detected by HSV pipeline
+    }
+
+
+def _draw_demo_panel(out, pct):
+    """Draw 4-class legend panel (DEMO_MODE — hides FHI, shows proposal classes)."""
+    demo = _demo_pct(pct)
+    entries = list(demo.items())
+    panel_h = 18 + 18 * (len(entries) + 1)
+    cv2.rectangle(out, (0, 0), (240, panel_h), (0, 0, 0), -1)
+    cv2.putText(out, "Crop Health Analysis", (8, 16),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1, cv2.LINE_AA)
+    for i, (label, val) in enumerate(entries):
+        y = 34 + i * 18
+        col = DEMO_PALETTE.get(label, (255, 255, 255))
+        cv2.rectangle(out, (8, y - 9), (20, y + 2), col, -1)
+        suffix = " (configurable)" if label == "Pest" else f": {val:.1f}%"
+        cv2.putText(out, f"{label}{suffix}", (26, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
+
+
 def draw_overlay(bgr, label, regions, pct, health, alpha=0.45, draw_boxes=True):
     color = colorize(label)
     out = cv2.addWeighted(bgr, 1 - alpha, color, alpha, 0)
     if draw_boxes:
         for r in regions[:40]:
             x, y, w, h = r["bbox"]
-            col = PALETTE[r["class"]]
+            if DEMO_MODE:
+                display = DISPLAY_MAP.get(r["class"])
+                if display is None:   # bare_soil — hidden
+                    continue
+                col = DEMO_PALETTE.get(display, (255, 255, 255))
+                txt = f"{display} {r['confidence']:.2f}"
+            else:
+                col = PALETTE[r["class"]]
+                txt = f"{r['class']} {r['confidence']:.2f}"
             cv2.rectangle(out, (x, y), (x + w, y + h), col, 2)
-            txt = f"{r['class']} {r['confidence']:.2f}"
             cv2.putText(out, txt, (x, max(12, y - 4)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1, cv2.LINE_AA)
-    # Panel ringkasan
-    panel_w = 250
-    cv2.rectangle(out, (0, 0), (panel_w, 18 + 18 * (len(CLASSES) + 1)),
-                  (0, 0, 0), -1)
-    cv2.putText(out, f"Field Health: {health:.1f}/100", (8, 16),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-    for i, name in enumerate(CLASSES):
-        y = 34 + i * 18
-        cv2.rectangle(out, (8, y - 9), (20, y + 2), PALETTE[name], -1)
-        cv2.putText(out, f"{name}: {pct[name]:.1f}%", (26, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
+    if DEMO_MODE:
+        _draw_demo_panel(out, pct)
+    else:
+        panel_w = 250
+        cv2.rectangle(out, (0, 0), (panel_w, 18 + 18 * (len(CLASSES) + 1)),
+                      (0, 0, 0), -1)
+        cv2.putText(out, f"Field Health: {health:.1f}/100", (8, 16),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+        for i, name in enumerate(CLASSES):
+            y = 34 + i * 18
+            cv2.rectangle(out, (8, y - 9), (20, y + 2), PALETTE[name], -1)
+            cv2.putText(out, f"{name}: {pct[name]:.1f}%", (26, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
     return out
 
 
@@ -522,23 +585,32 @@ def draw_yolo_style(bgr, regions, pct, health):
     out = bgr.copy()
     for r in regions[:40]:
         x, y, w, h = r["bbox"]
-        col = PALETTE[r["class"]]
-        cv2.rectangle(out, (x, y), (x + w, y + h), col, 2)
-        label_txt = f"{r['class']}  {r['confidence']:.2f}"
+        if DEMO_MODE:
+            display = DISPLAY_MAP.get(r["class"])
+            if display is None:   # bare_soil — hidden
+                continue
+            col = DEMO_PALETTE.get(display, (255, 255, 255))
+            label_txt = f"{display}  {r['confidence']:.2f}"
+        else:
+            col = PALETTE[r["class"]]
+            label_txt = f"{r['class']}  {r['confidence']:.2f}"
         (tw, th), _ = cv2.getTextSize(label_txt, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+        cv2.rectangle(out, (x, y), (x + w, y + h), col, 2)
         cv2.rectangle(out, (x, max(0, y - th - 6)), (x + tw + 4, y), col, -1)
         cv2.putText(out, label_txt, (x + 2, max(th, y - 4)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
-    # Panel ringkasan
-    panel_w = 250
-    cv2.rectangle(out, (0, 0), (panel_w, 18 + 18 * (len(CLASSES) + 1)), (0, 0, 0), -1)
-    cv2.putText(out, f"Field Health: {health:.1f}/100", (8, 16),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-    for i, name in enumerate(CLASSES):
-        ty = 34 + i * 18
-        cv2.rectangle(out, (8, ty - 9), (20, ty + 2), PALETTE[name], -1)
-        cv2.putText(out, f"{name}: {pct[name]:.1f}%", (26, ty),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
+    if DEMO_MODE:
+        _draw_demo_panel(out, pct)
+    else:
+        panel_w = 250
+        cv2.rectangle(out, (0, 0), (panel_w, 18 + 18 * (len(CLASSES) + 1)), (0, 0, 0), -1)
+        cv2.putText(out, f"Field Health: {health:.1f}/100", (8, 16),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+        for i, name in enumerate(CLASSES):
+            ty = 34 + i * 18
+            cv2.rectangle(out, (8, ty - 9), (20, ty + 2), PALETTE[name], -1)
+            cv2.putText(out, f"{name}: {pct[name]:.1f}%", (26, ty),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
     return out
 
 
@@ -797,6 +869,8 @@ def main():
     pi.add_argument("--engine", choices=["rule", "stat"], default="rule",
                     help="rule=ambang HSV; stat=klasifikasi Gaussian terlatih (akurat)")
     pi.add_argument("--model", default=None, help="model.json untuk engine stat")
+    pi.add_argument("--demo", action="store_true",
+                    help="Aktifkan DEMO_MODE: 4 kelas proposal, sembunyikan bare_soil & FHI")
     pi.set_defaults(func=run_image)
 
     pv = sub.add_parser("video", help="Proses video")
@@ -813,6 +887,8 @@ def main():
     pv.add_argument("--engine", choices=["rule", "stat"], default="rule",
                     help="rule=ambang HSV; stat=klasifikasi Gaussian terlatih (akurat)")
     pv.add_argument("--model", default=None, help="model.json untuk engine stat")
+    pv.add_argument("--demo", action="store_true",
+                    help="Aktifkan DEMO_MODE: 4 kelas proposal, sembunyikan bare_soil & FHI")
     pv.set_defaults(func=run_video)
 
     pc = sub.add_parser("calibrate", help="Auto-kalibrasi threshold dari footage")
@@ -830,6 +906,9 @@ def main():
     pt.set_defaults(func=run_train)
 
     args = p.parse_args()
+    if getattr(args, "demo", False):
+        global DEMO_MODE
+        DEMO_MODE = True
     args.func(args)
 
 
