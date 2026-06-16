@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
         help="Annotated output video path.",
     )
     parser.add_argument(
-        "--csv",box
+        "--csv",
         type=Path,
         default=Path("runs/moonharvest/video_trial/crop_weed_trial.csv"),
         help="Detection CSV output path.",

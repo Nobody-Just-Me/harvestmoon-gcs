@@ -40,11 +40,15 @@ public class PythonCameraService : ICameraService
 
     public bool IsStreaming { get; private set; }
     public bool IsRecording { get; private set; }
+    public bool IsClassificationStream { get; private set; }
 
     public event EventHandler<byte[]>? FrameReceived;
     public event EventHandler<bool>? StreamingStatusChanged;
     public event EventHandler<bool>? RecordingStatusChanged;
     public event EventHandler<string>? ConnectionError;
+    public event EventHandler<string>? ClassificationSummaryChanged;
+
+    public string? ClassificationPythonCommand { get; private set; }
 
     public PythonCameraService()
     {
@@ -264,6 +268,89 @@ public class PythonCameraService : ICameraService
         }
     }
 
+    public async Task<bool> StartClassifyStreamAsync(
+        string source,
+        string modelPath,
+        int gridRows = 5,
+        int gridCols = 8,
+        float minConf = 0.3f,
+        float boxScale = 0.85f)
+    {
+        // Resolve the .venv-yolo Python interpreter
+        var (yoloPython, _) = ResolvePythonCommand(".venv-yolo");
+        if (string.IsNullOrWhiteSpace(yoloPython))
+        {
+            var errMsg = "YOLO Python (.venv-yolo/bin/python3) not found. Please ensure Pigeon_Harvest/.venv-yolo exists with ultralytics installed.";
+            Serilog.Log.Error("[PythonCameraService] {Msg}", errMsg);
+            ConnectionError?.Invoke(this, errMsg);
+            return false;
+        }
+
+        // Resolve yolo_classify_stream.py script path
+        var classifyScript = ResolveClassifyScriptPath();
+        if (string.IsNullOrWhiteSpace(classifyScript) || !File.Exists(classifyScript))
+        {
+            var errMsg = "yolo_classify_stream.py not found. Ensure it exists alongside camera_service.py.";
+            Serilog.Log.Error("[PythonCameraService] {Msg}", errMsg);
+            ConnectionError?.Invoke(this, errMsg);
+            return false;
+        }
+
+        try
+        {
+            Serilog.Log.Information("[PythonCameraService] ========== STARTING CLASSIFICATION STREAM ==========");
+            Serilog.Log.Information("[PythonCameraService] Source: {Source}, Model: {Model}", source, modelPath);
+            Serilog.Log.Information("[PythonCameraService] Grid: {R}x{C}, MinConf: {Conf}, BoxScale: {Scale}", gridRows, gridCols, minConf, boxScale);
+
+            await StopCameraAsync();
+
+            _currentSource = source;
+            IsClassificationStream = true;
+
+            // Build arguments for yolo_classify_stream.py
+            var args = $"{QuoteArg(classifyScript)} " +
+                       $"--source {QuoteArg(source)} " +
+                       $"--model {QuoteArg(modelPath)} " +
+                       $"--grid-rows {gridRows} " +
+                       $"--grid-cols {gridCols} " +
+                       $"--min-conf {minConf.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} " +
+                       $"--box-scale {boxScale.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}";
+
+            _streamProcess = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = yoloPython,
+                    Arguments = args,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            Serilog.Log.Information("[PythonCameraService] Starting classification stream: {Python} {Args}", yoloPython, args);
+            _streamProcess.Start();
+
+            IsStreaming = true;
+            StreamingStatusChanged?.Invoke(this, true);
+
+            _streamCts = new CancellationTokenSource();
+            _streamTask = Task.Run(() => ReadFramesLoop(_streamCts.Token));
+            _stderrTask = Task.Run(() => ReadStdErrLoop(_streamCts.Token));
+
+            Serilog.Log.Information("[PythonCameraService] ✓ Classification stream started");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "[PythonCameraService] ✗ Error starting classification stream");
+            IsClassificationStream = false;
+            ConnectionError?.Invoke(this, $"Failed to start classification stream: {ex.Message}");
+            return false;
+        }
+    }
+
     public async Task StopCameraAsync()
     {
         Serilog.Log.Information("[PythonCameraService] Stopping camera");
@@ -300,6 +387,7 @@ public class PythonCameraService : ICameraService
         _streamCts = null;
 
         IsStreaming = false;
+        IsClassificationStream = false;
         StreamingStatusChanged?.Invoke(this, false);
 
         Serilog.Log.Information("[PythonCameraService] Camera stopped");
@@ -343,6 +431,18 @@ public class PythonCameraService : ICameraService
                                     Serilog.Log.Information($"[PythonCameraService] Streamed {frameCount} frames");
                                 }
                             }
+                        }
+                    }
+                    else if (frameData.TryGetProperty("type", out var detType) && detType.GetString() == "detection")
+                    {
+                        if (frameData.TryGetProperty("data", out var detData))
+                        {
+                            var summary = "";
+                            if (detData.TryGetProperty("summary", out var summaryProp))
+                            {
+                                summary = summaryProp.GetString() ?? "";
+                            }
+                            ClassificationSummaryChanged?.Invoke(this, summary);
                         }
                     }
                     else if (frameData.TryGetProperty("error", out var error))
@@ -539,6 +639,74 @@ public class PythonCameraService : ICameraService
         return candidates.FirstOrDefault(File.Exists);
     }
 
+    private static string? ResolveClassifyScriptPath()
+    {
+        var candidates = new List<string>();
+        var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+        var envPath = Environment.GetEnvironmentVariable("PIGEON_CLASSIFY_SCRIPT");
+        AddCandidate(candidates, seen, envPath);
+
+        AddCandidate(candidates, seen, Path.Combine(AppContext.BaseDirectory, "yolo_classify_stream.py"));
+        AddCandidate(candidates, seen, Path.Combine(Directory.GetCurrentDirectory(), "yolo_classify_stream.py"));
+
+        var probeRoots = new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() }
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct();
+
+        foreach (var root in probeRoots)
+        {
+            var current = root;
+            for (var depth = 0; depth < 8; depth++)
+            {
+                AddCandidate(candidates, seen, Path.Combine(current, "yolo_classify_stream.py"));
+                AddCandidate(candidates, seen, Path.Combine(current, "HarvestmoonGCS", "yolo_classify_stream.py"));
+                AddCandidate(candidates, seen, Path.Combine(current, "Pigeon_Harvest", "HarvestmoonGCS", "yolo_classify_stream.py"));
+
+                var parent = Directory.GetParent(current);
+                if (parent == null)
+                {
+                    break;
+                }
+
+                current = parent.FullName;
+            }
+        }
+
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    public static string? ResolveHealthModelPath()
+    {
+        var candidates = new List<string>();
+        var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+        var envPath = Environment.GetEnvironmentVariable("PIGEON_HEALTH_MODEL");
+        AddCandidate(candidates, seen, envPath);
+
+        var probeRoots = new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() }
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct();
+
+        foreach (var root in probeRoots)
+        {
+            var current = root;
+            for (var depth = 0; depth < 8; depth++)
+            {
+                AddCandidate(candidates, seen,
+                    Path.Combine(current, "runs", "classify", "Pigeon_Harvest", "runs", "health_classification", "health_train_v1-2", "weights", "best.pt"));
+                AddCandidate(candidates, seen,
+                    Path.Combine(current, "Pigeon_Harvest", "runs", "health_classification", "health_train_v1-2", "weights", "best.pt"));
+
+                var parent = Directory.GetParent(current);
+                if (parent == null) break;
+                current = parent.FullName;
+            }
+        }
+
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
     private static void AddCandidate(List<string> candidates, HashSet<string> seen, string? path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -560,7 +728,7 @@ public class PythonCameraService : ICameraService
         }
     }
 
-    private static (string? Command, string LauncherArgs) ResolvePythonCommand()
+    private static (string? Command, string LauncherArgs) ResolvePythonCommand(string? venvSubdir = null)
     {
         var probes = new List<(string Command, string ProbeArgs, string LauncherArgs)>();
 
@@ -610,6 +778,14 @@ public class PythonCameraService : ICameraService
             probes.Add((Path.Combine(root, ".venv-camera", "bin", "python3"), "--version", string.Empty));
             probes.Add((Path.Combine(root, "Pigeon_Harvest", ".venv-camera", "bin", "python"), "--version", string.Empty));
             probes.Add((Path.Combine(root, "Pigeon_Harvest", ".venv-camera", "bin", "python3"), "--version", string.Empty));
+
+            if (venvSubdir != null)
+            {
+                probes.Add((Path.Combine(root, venvSubdir, "bin", "python"), "--version", string.Empty));
+                probes.Add((Path.Combine(root, venvSubdir, "bin", "python3"), "--version", string.Empty));
+                probes.Add((Path.Combine(root, "Pigeon_Harvest", venvSubdir, "bin", "python"), "--version", string.Empty));
+                probes.Add((Path.Combine(root, "Pigeon_Harvest", venvSubdir, "bin", "python3"), "--version", string.Empty));
+            }
         }
 
         probes.Add(("python3", "--version", string.Empty));

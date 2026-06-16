@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -153,6 +154,12 @@ public sealed partial class CameraPage : Page
             _cameraService.FrameReceived += OnFrameReceived;
             _cameraService.StreamingStatusChanged += OnStreamingStatusChanged;
             _cameraService.ConnectionError += OnConnectionError;
+
+            // Subscribe to classification summary events if available
+            if (_cameraService is PythonCameraService pcs)
+            {
+                pcs.ClassificationSummaryChanged += OnClassificationSummaryChanged;
+            }
         }
 
         _videoRecorderService.RecordingStatusChanged += OnRecordingStatusChanged;
@@ -173,6 +180,11 @@ public sealed partial class CameraPage : Page
             _cameraService.FrameReceived -= OnFrameReceived;
             _cameraService.StreamingStatusChanged -= OnStreamingStatusChanged;
             _cameraService.ConnectionError -= OnConnectionError;
+
+            if (_cameraService is PythonCameraService pcs)
+            {
+                pcs.ClassificationSummaryChanged -= OnClassificationSummaryChanged;
+            }
         }
 
         _videoRecorderService.RecordingStatusChanged -= OnRecordingStatusChanged;
@@ -223,9 +235,30 @@ public sealed partial class CameraPage : Page
             _videoRecorderService.WriteFrame(frameData);
         }
 
-        var yoloResult = _yoloReady
-            ? await _yoloProcessor.ProcessAsync(frameData)
-            : null;
+        // Check if this is a classification stream — boxes already drawn on frame
+        if (_cameraService is PythonCameraService pcs && pcs.IsClassificationStream)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                VideoStream.UpdateFrame(frameData);
+                // Skip YOLO processor — classification boxes already drawn
+            });
+            return;
+        }
+
+        YoloFrameResult? yoloResult = null;
+        if (_yoloReady)
+        {
+            try
+            {
+                yoloResult = await _yoloProcessor.ProcessAsync(frameData);
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Error(ex, "[CameraPage] YOLO inference error");
+                yoloResult = null;
+            }
+        }
 
         DispatcherQueue.TryEnqueue(() =>
         {
@@ -301,6 +334,18 @@ public sealed partial class CameraPage : Page
         });
     }
 
+    private void OnClassificationSummaryChanged(object sender, string summary)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _lastYoloSummary = $"Classification: {summary}";
+            if (YoloStatusText != null)
+            {
+                YoloStatusText.Text = _lastYoloSummary;
+            }
+        });
+    }
+
     private async void StartStopButton_Click(object sender, RoutedEventArgs e)
     {
         if (_isStreaming)
@@ -340,6 +385,26 @@ public sealed partial class CameraPage : Page
             {
                 ShowError("Pilih file video MP4/MOV/AVI yang valid.");
                 return false;
+            }
+
+            // If PythonCameraService is available, use health classification stream
+            if (_cameraService is PythonCameraService pcs)
+            {
+                var modelPath = PythonCameraService.ResolveHealthModelPath();
+                if (!string.IsNullOrWhiteSpace(modelPath) && File.Exists(modelPath))
+                {
+                    var classifyConnected = await pcs.StartClassifyStreamAsync(path, modelPath);
+                    if (!classifyConnected)
+                    {
+                        ShowError("Gagal memulai classification stream. Periksa model dan koneksi.");
+                    }
+                    _timelineService?.Add("camera", $"Video file classification started: {path}", classifyConnected ? "success" : "warning");
+                    return classifyConnected;
+                }
+                else
+                {
+                    Serilog.Log.Warning("[CameraPage] Health model not found, falling back to regular stream");
+                }
             }
 
             var connected = await _cameraService.StartCameraAsync(path);

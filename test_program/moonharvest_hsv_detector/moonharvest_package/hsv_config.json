@@ -1,0 +1,87 @@
+{
+  "white_balance": true,
+  "clahe_clip": 2.0,
+  "clahe_grid": 8,
+  "shadow_v_max": 45,
+  "exg_veg_thr": 0.04,
+  "exg_healthy_min": 0.11,
+  "bg_h": [
+    84,
+    140
+  ],
+  "bg_s_min": 34,
+  "healthy": {
+    "h": [
+      40,
+      82
+    ],
+    "s_lo": 48,
+    "v": [
+      80,
+      255
+    ]
+  },
+  "stressed": {
+    "h": [
+      20,
+      82
+    ],
+    "s_lo": 26,
+    "v": [
+      95,
+      255
+    ]
+  },
+  "drought": {
+    "h": [
+      10,
+      20
+    ],
+    "s_lo": 28,
+    "v": [
+      90,
+      255
+    ]
+  },
+  "disease": {
+    "h1": [
+      0,
+      10
+    ],
+    "h2": [
+      168,
+      179
+    ],
+    "s_lo": 45,
+    "v": [
+      25,
+      215
+    ]
+  },
+  "soil": {
+    "s_max": 30,
+    "v": [
+      110,
+      240
+    ]
+  },
+  "texture_win": 9,
+  "disease_texture_min": 16.0,
+  "morph_kernel": 5,
+  "label_median": 7,
+  "min_region_area_frac": 0.0015,
+  "suppress_structures": true,
+  "road_open_kernel": 11,
+  "struct_min_area_frac": 0.0008,
+  "stat_reject_maha": 90.0,
+  "stressed_to_healthy": true,
+  "yellow_h": [
+    18,
+    36
+  ],
+  "yellow_exg_max": 0.085,
+  "yellow_s_min": 36,
+  "dark_as_soil": true,
+  "dark_v_max": 55,
+  "ema_alpha": 0.6
+}

@@ -13,6 +13,7 @@ OUTPUT="runs/uav_detection/$(basename ${VIDEO%.mp4})_detected.mp4"
 GRID_ROWS=5
 GRID_COLS=8
 MIN_CONF=0.4
+BOX_SCALE=0.85
 
 cd /home/fawwazfa/Program/Harvestmoon
 source Pigeon_Harvest/.venv-yolo/bin/activate
@@ -24,6 +25,7 @@ echo "Video:      $VIDEO"
 echo "Model:      $MODEL"
 echo "Grid:       ${GRID_ROWS}x${GRID_COLS}"
 echo "Min Conf:   $MIN_CONF"
+echo "Box Scale:  $BOX_SCALE (1.0=full cell, 0.85=with gap)"
 echo "Output:     $OUTPUT"
 echo ""
 echo "Controls:"
@@ -39,7 +41,8 @@ python3 Pigeon_Harvest/scripts/run_detection_video.py \
     --show \
     --grid-rows $GRID_ROWS \
     --grid-cols $GRID_COLS \
-    --min-conf $MIN_CONF
+    --min-conf $MIN_CONF \
+    --box-scale $BOX_SCALE
 
 echo ""
 echo "========================================="

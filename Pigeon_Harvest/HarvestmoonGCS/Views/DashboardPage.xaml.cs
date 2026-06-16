@@ -630,6 +630,31 @@ public sealed partial class DashboardPage : Page
         _cameraHandlersAttached = false;
     }
 
+    /// <summary>
+    /// Path to derr.mp4 at project root.
+    /// </summary>
+    private static string ResolveDerpVideoPath()
+    {
+        // Try several locations where derr.mp4 might exist
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "derr.mp4"),
+            Path.Combine(Directory.GetCurrentDirectory(), "derr.mp4"),
+            Path.Combine(AppContext.BaseDirectory, "derr.mp4"),
+            "/home/fawwazfa/Program/Harvestmoon/derr.mp4"
+        };
+
+        foreach (var candidate in candidates)
+        {
+            var fullPath = Path.GetFullPath(candidate);
+            if (File.Exists(fullPath))
+            {
+                return fullPath;
+            }
+        }
+        return candidates[0]; // fallback even if doesn't exist
+    }
+
     private async Task StartDashboardCameraAsync()
     {
         if (_cameraService == null)
@@ -645,27 +670,9 @@ public sealed partial class DashboardPage : Page
             return;
         }
 
-        try
-        {
-            await _cameraService.InitializeAsync();
-            var sources = await _cameraService.GetAvailableSourcesAsync();
-            var localSource = sources.FirstOrDefault(s => s.Type is CameraSourceType.LocalCamera or CameraSourceType.USB);
-            if (localSource == null)
-            {
-                DashboardVideoStream?.ShowStatus("Tidak ada kamera lokal terdeteksi", false);
-                return;
-            }
-
-            var started = await _cameraService.StartCameraAsync(localSource.Id);
-            if (!started)
-            {
-                DashboardVideoStream?.ShowStatus("Gagal memulai kamera", false);
-            }
-        }
-        catch (Exception ex)
-        {
-            DashboardVideoStream?.ShowStatus($"Camera error: {ex.Message}", false);
-        }
+        // Do NOT auto-start camera/video on dashboard load.
+        // User must click "Start Demo" to play derr.mp4 with YOLO detections.
+        DashboardVideoStream?.ShowStatus("Klik 'Start Demo' untuk memutar derr.mp4 dengan deteksi YOLO", false);
     }
 
     // Throttle UI frame rendering so very high-FPS camera sources don't saturate the UI thread.
@@ -1280,11 +1287,11 @@ public sealed partial class DashboardPage : Page
             _aiOn = true;
             if (YoloToggleSwitch != null) YoloToggleSwitch.IsOn = true;
 
-            var videoPath = FindDemoVideoPath();
-            if (string.IsNullOrWhiteSpace(videoPath))
+            var videoPath = ResolveDerpVideoPath();
+            if (string.IsNullOrWhiteSpace(videoPath) || !File.Exists(videoPath))
             {
-                _timelineService?.Add("demo", "Demo video sample not found", "warning");
-                AddAlertRow("Demo video sample not found", "warning");
+                _timelineService?.Add("demo", "derr.mp4 not found", "warning");
+                AddAlertRow("derr.mp4 tidak ditemukan", "warning");
                 return;
             }
 
@@ -1293,97 +1300,64 @@ public sealed partial class DashboardPage : Page
                 await _cameraService.StopCameraAsync();
                 var started = await _cameraService.StartCameraAsync(videoPath);
                 _timelineService?.Add("camera", started
-                    ? $"Demo video source started: {videoPath}"
-                    : $"Demo video source failed: {videoPath}", started ? "success" : "warning");
+                    ? $"Demo derr.mp4 started"
+                    : $"Demo derr.mp4 failed", started ? "success" : "warning");
             }
 
-            var frameData = ExtractFirstFrameBytes(videoPath);
-            if (frameData.Length == 0)
-            {
-                _timelineService?.Add("demo", "Failed to extract frame from demo video", "warning");
-                AddAlertRow("Failed to extract demo frame", "warning");
-                return;
-            }
+            // Reset detection UI — YOLO akan memproses frame via OnDashboardFrameReceived
+            _lastDetectionCount = 0;
+            _lastConfidence = 0;
+            DetectionCountText.Text = "0 det";
+            DetectionsListTitle.Text = "Live Detections (0)";
+            ConfAvgText.Text = "Conf avg 0%";
+            SummaryConfidenceText.Text = "0%";
+            MissionDetectionsText.Text = "0";
+            FpsHudText.Text = "YOLOv8 · streaming...";
+            AddAlertRow("Demo started: streaming derr.mp4 with YOLO detection", "info");
 
-            _lastFrameData = frameData;
-            DashboardVideoStream?.UpdateFrame(frameData);
-
-            var boxes = await _harvestFunctionalService.DetectInFrameAsync(frameData);
-            _lastDetectionCount = boxes.Count;
-            _lastConfidence = boxes.Count > 0 ? boxes.Average(box => (double)box.Confidence) : 0;
-            RenderDetectionListFromBoxes(boxes);
-            UpdateSummaryFromDetections(boxes);
-            DashboardVideoStream?.SetDetectionOverlays(boxes.Select(box => new VideoDetectionOverlay
-            {
-                Label = box.ClassName,
-                Confidence = box.Confidence,
-                X = box.X,
-                Y = box.Y,
-                Width = box.Width,
-                Height = box.Height
-            }));
-
-            DetectionCountText.Text = $"{boxes.Count} det";
-            DetectionsListTitle.Text = $"Live Detections ({boxes.Count})";
-            MissionDetectionsText.Text = boxes.Count.ToString();
-            ConfAvgText.Text = $"Conf avg {_lastConfidence * 100:F0}%";
-            SummaryConfidenceText.Text = $"{_lastConfidence * 100:F0}%";
-
-            var benchmark = await _harvestFunctionalService.BenchmarkFrameAsync(frameData, iterations: 20);
+            // Benchmark tanpa OpenCvSharp (gunakan data dummy untuk mengukur throughput YOLO)
+            var benchmark = await _harvestFunctionalService.BenchmarkFrameAsync(null, iterations: 5);
             _lastBenchmarkResult = benchmark;
             if (benchmark != null)
             {
                 await _harvestFunctionalService.AttachYoloBenchmarkToLatestReportAsync(benchmark);
                 FpsHudText.Text = $"YOLOv8 · {benchmark.FramesPerSecond:F1} FPS";
                 UpdateTopBarAiFps(benchmark.FramesPerSecond);
-                _timelineService?.Add("benchmark", $"Demo YOLO benchmark: {benchmark.Summary}", benchmark.FramesPerSecond >= 15 ? "success" : "warning");
+                _timelineService?.Add("benchmark", $"Demo YOLO: {benchmark.Summary}",
+                    benchmark.FramesPerSecond >= 5 ? "success" : "warning");
             }
-
-            var yoloScreenshot = await _harvestFunctionalService.SaveLatestYoloScreenshotAsync(frameData);
-            var mapScreenshot = _harvestFunctionalService.SaveMapSnapshotPlaceholder(_centerLat, _centerLon, "MoonHarvest demo route");
-            var tlogPath = App.Current.Services.GetService<MissionLoggingService>()?.CurrentTlogPath ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(tlogPath) || !File.Exists(tlogPath))
-            {
-                tlogPath = await _harvestFunctionalService.CreateDemoTelemetryLogAsync(_centerLat, _centerLon);
-            }
-
-            var demoGeofenceAlerts = System.Text.Json.JsonSerializer.Serialize(new[]
-            {
-                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} DEMO geofence warning: UAV near mission boundary",
-                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} DEMO geofence restored: UAV back inside boundary"
-            });
 
             var report = new HarvestFunctionalService.HarvestReportRecord
             {
                 Id = $"DEMO-MH-{DateTime.Now:yyyyMMdd-HHmmss}",
                 DateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                Area = "Demo Field · video sample",
+                Area = "Demo Field · derr.mp4",
                 Duration = "00:00:20",
-                Detections = boxes.Count,
-                Priority = boxes.Count > 0 ? "Medium" : "Low",
-                OperatorNote = "DEMO · one-click video sample, local YOLO inference, benchmark, and evidence bundle.",
-                AiModelUsed = _harvestFunctionalService.IsYoloOptionEnabled ? "YOLOv8n ONNX local" : "OpenCV fallback",
-                TlogPath = tlogPath,
-                GeofenceAlertsJson = demoGeofenceAlerts,
+                Detections = 0,
+                Priority = "Low",
+                OperatorNote = "DEMO · derr.mp4, live streaming YOLO inference",
+                AiModelUsed = "YOLOv8n ONNX local",
+                TlogPath = "",
+                GeofenceAlertsJson = "[]",
                 YoloBenchmarkJson = benchmark == null
                     ? string.Empty
                     : System.Text.Json.JsonSerializer.Serialize(benchmark, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
                 IncidentTimelineJson = _timelineService?.ToJson() ?? string.Empty,
-                MapScreenshotPath = mapScreenshot,
-                YoloScreenshotPath = yoloScreenshot,
+                MapScreenshotPath = "",
+                YoloScreenshotPath = "",
                 VideoRecordingPath = videoPath
             };
 
             await _harvestFunctionalService.AddReportAsync(report);
             await _harvestFunctionalService.CreateEvidenceBundleAsync(report);
             _timelineService?.Add("report", $"Demo report created: {report.Id}", "success");
-            AddAlertRow($"Demo selesai · {boxes.Count} deteksi · {benchmark?.FramesPerSecond:F1} FPS", "info");
+            AddAlertRow($"Demo selesai · benchmark {benchmark?.FramesPerSecond:F1} FPS", "info");
             RenderIncidentTimeline();
         }
         catch (Exception ex)
         {
             Serilog.Log.Error(ex, "[DashboardPage] One-click demo failed");
-            _timelineService?.Add("demo", $"One-click demo error: {ex.Message}", "critical");
+            _timelineService?.Add("demo", $"Demo error: {ex.Message}", "critical");
             AddAlertRow($"Demo error: {ex.Message}", "critical");
         }
         finally

@@ -54,11 +54,35 @@ def create_grid_detections(frame, grid_rows=4, grid_cols=6, classifier=None):
     return detections
 
 
-def draw_detections(frame, detections, min_conf=0.3):
+def clamp(value, low, high):
+    return max(low, min(high, value))
+
+
+def scale_box(xyxy, scale, width, height):
     """
-    Draw bounding boxes and labels on frame
+    Scale a bounding box around its center.
+    scale=1.0 = no change, scale=0.7 = 70% of original size (adds gap between boxes).
+    """
+    x1, y1, x2, y2 = xyxy
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    box_w = (x2 - x1) * scale
+    box_h = (y2 - y1) * scale
+    return (
+        clamp(cx - box_w / 2.0, 0, width - 1),
+        clamp(cy - box_h / 2.0, 0, height - 1),
+        clamp(cx + box_w / 2.0, 0, width - 1),
+        clamp(cy + box_h / 2.0, 0, height - 1),
+    )
+
+
+def draw_detections(frame, detections, min_conf=0.3, box_scale=0.85):
+    """
+    Draw bounding boxes and labels on frame.
+    box_scale shrinks each box around its center so grid boxes don't touch.
     """
     annotated = frame.copy()
+    height, width = frame.shape[:2]
     
     # Color mapping for classes
     colors = {
@@ -77,11 +101,14 @@ def draw_detections(frame, detections, min_conf=0.3):
         class_name = det['class']
         confidence = det['confidence']
         
+        # Scale box around center so there's visible gap between grid cells
+        sx1, sy1, sx2, sy2 = scale_box((x1, y1, x2, y2), box_scale, width, height)
+        sx1, sy1, sx2, sy2 = int(sx1), int(sy1), int(sx2), int(sy2)
+        
         # Get color
         color = colors.get(class_name, (255, 255, 255))
         
-        # Draw rectangle
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+        cv2.rectangle(annotated, (sx1, sy1), (sx2, sy2), color, 2)
         
         # Create label
         label = f"{class_name} {confidence:.2f}"
@@ -92,8 +119,8 @@ def draw_detections(frame, detections, min_conf=0.3):
         )
         cv2.rectangle(
             annotated,
-            (x1, y1 - label_h - 10),
-            (x1 + label_w + 10, y1),
+            (sx1, sy1 - label_h - 10),
+            (sx1 + label_w + 10, sy1),
             color,
             -1
         )
@@ -102,7 +129,7 @@ def draw_detections(frame, detections, min_conf=0.3):
         cv2.putText(
             annotated,
             label,
-            (x1 + 5, y1 - 5),
+            (sx1 + 5, sy1 - 5),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,
             (255, 255, 255),
@@ -114,37 +141,36 @@ def draw_detections(frame, detections, min_conf=0.3):
 
 
 def add_statistics_overlay(frame, detections):
-    """
-    Add statistics overlay showing class distribution
-    """
-    # Count classes
+    total = len(detections)
+    if total == 0:
+        return frame
+
     class_counts = {}
     for det in detections:
-        class_name = det['class']
-        class_counts[class_name] = class_counts.get(class_name, 0) + 1
-    
-    # Create overlay
+        cls = det['class']
+        class_counts[cls] = class_counts.get(cls, 0) + 1
+
+    dominant = max(class_counts, key=class_counts.get)
+    dominant_count = class_counts[dominant]
+
     overlay = frame.copy()
-    height, width = frame.shape[:2]
-    
-    # Draw semi-transparent background
-    cv2.rectangle(overlay, (10, 10), (300, 200), (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
-    
-    # Draw title
-    cv2.putText(
-        frame,
-        "Health Distribution",
-        (20, 35),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
-        (255, 255, 255),
-        2,
-        cv2.LINE_AA
-    )
-    
-    # Draw class counts
-    y_offset = 60
+
+    num_classes = len(class_counts)
+    box_h = 100 + num_classes * 22
+    cv2.rectangle(overlay, (10, 10), (320, 10 + box_h), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
+
+    y = 35
+    cv2.putText(frame, "Detection Summary", (20, y), cv2.FONT_HERSHEY_SIMPLEX,
+                0.65, (255, 255, 255), 2, cv2.LINE_AA)
+    y += 28
+    cv2.putText(frame, f"Total: {total} cells", (20, y), cv2.FONT_HERSHEY_SIMPLEX,
+                0.5, (200, 200, 200), 1, cv2.LINE_AA)
+    y += 18
+    cv2.putText(frame, f"Dominant: {dominant} ({dominant_count})", (20, y), cv2.FONT_HERSHEY_SIMPLEX,
+                0.5, (255, 255, 200), 1, cv2.LINE_AA)
+    y += 24
+
     colors = {
         'healthy_crop': (0, 255, 0),
         'stressed_crop': (0, 165, 255),
@@ -152,23 +178,24 @@ def add_statistics_overlay(frame, detections):
         'drought_stress': (0, 255, 255),
         'bare_soil': (128, 128, 128)
     }
-    
-    for class_name, count in sorted(class_counts.items()):
+    labels = {
+        'healthy_crop': 'Healthy',
+        'stressed_crop': 'Stressed',
+        'disease_stress_vegetation': 'Disease',
+        'drought_stress': 'Drought',
+        'bare_soil': 'Bare Soil'
+    }
+
+    for class_name in sorted(class_counts, key=lambda c: class_counts[c], reverse=True):
+        count = class_counts[class_name]
+        pct = count / total * 100
         color = colors.get(class_name, (255, 255, 255))
-        text = f"{class_name}: {count}"
-        
-        cv2.putText(
-            frame,
-            text,
-            (20, y_offset),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            color,
-            1,
-            cv2.LINE_AA
-        )
-        y_offset += 25
-    
+        short = labels.get(class_name, class_name)
+        prefix = ">" if class_name == dominant else " "
+        cv2.putText(frame, f"{prefix}{short}: {count} ({pct:.0f}%)", (20, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
+        y += 22
+
     return frame
 
 
@@ -180,7 +207,8 @@ def process_video(
     grid_rows=4,
     grid_cols=6,
     min_conf=0.3,
-    skip_frames=0
+    skip_frames=0,
+    box_scale=0.85
 ):
     """
     Process video with grid-based detection and classification
@@ -192,6 +220,7 @@ def process_video(
     print(f"Model:      {model_path}")
     print(f"Grid:       {grid_rows}x{grid_cols}")
     print(f"Min Conf:   {min_conf}")
+    print(f"Box Scale:  {box_scale} (1.0=full cell, 0.85=with gap)")
     print(f"Output:     {output_path}")
     print("=" * 60)
     
@@ -234,6 +263,7 @@ def process_video(
     frame_idx = 0
     processed_frames = 0
     start_time = time.time()
+    total_class_counts = {}
     
     print("\nProcessing video... (Press 'q' to stop)")
     
@@ -256,8 +286,12 @@ def process_video(
             classifier=classifier
         )
         
-        # Draw detections
-        annotated = draw_detections(frame, detections, min_conf=min_conf)
+        for det in detections:
+            cls = det['class']
+            total_class_counts[cls] = total_class_counts.get(cls, 0) + 1
+        
+        # Draw detections (with scaled boxes so grid cells have visible gaps)
+        annotated = draw_detections(frame, detections, min_conf=min_conf, box_scale=box_scale)
         
         # Add statistics overlay
         annotated = add_statistics_overlay(annotated, detections)
@@ -303,14 +337,23 @@ def process_video(
     
     # Final statistics
     elapsed = time.time() - start_time
+    total_detections = sum(total_class_counts.values())
     print("\n" + "=" * 60)
     print("PROCESSING COMPLETE")
     print("=" * 60)
     print(f"Frames processed: {processed_frames}/{total_frames}")
     print(f"Time elapsed:     {elapsed:.1f}s")
     print(f"Average FPS:      {processed_frames/elapsed:.1f}")
+    if total_detections > 0:
+        dominant = max(total_class_counts, key=total_class_counts.get)
+        print(f"\nDetection Summary (across all frames):")
+        print(f"  Total cells classified: {total_detections}")
+        print(f"  Dominant class:         {dominant} ({total_class_counts[dominant]})")
+        for cls in sorted(total_class_counts, key=lambda c: total_class_counts[c], reverse=True):
+            pct = total_class_counts[cls] / total_detections * 100
+            print(f"  {cls:38s} {total_class_counts[cls]:5d} ({pct:5.1f}%)")
     if output_path:
-        print(f"Output saved:     {output_path}")
+        print(f"\nOutput saved:     {output_path}")
     print("=" * 60)
 
 
@@ -364,6 +407,12 @@ def main():
         default=0,
         help="Skip N frames between processing (default: 0)"
     )
+    parser.add_argument(
+        "--box-scale",
+        type=float,
+        default=0.85,
+        help="Scale factor for bounding boxes (1.0=full cell, 0.85=with gaps, default: 0.85)"
+    )
     
     args = parser.parse_args()
     
@@ -379,7 +428,8 @@ def main():
         grid_rows=args.grid_rows,
         grid_cols=args.grid_cols,
         min_conf=args.min_conf,
-        skip_frames=args.skip_frames
+        skip_frames=args.skip_frames,
+        box_scale=args.box_scale
     )
 
 

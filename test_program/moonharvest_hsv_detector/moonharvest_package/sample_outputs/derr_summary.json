@@ -1,0 +1,20 @@
+{
+  "video": "derr.mp4",
+  "frames_analyzed": 364,
+  "sample_fps": 2.0,
+  "avg_class_pct": {
+    "healthy_crop": 47.29,
+    "stressed_crop": 7.46,
+    "disease_stress_vegetation": 1.07,
+    "drought_stress": 8.84,
+    "bare_soil": 35.34
+  },
+  "avg_field_health": 88.9,
+  "min_field_health": 60.0,
+  "worst_classes": [
+    "healthy_crop",
+    "bare_soil",
+    "drought_stress"
+  ],
+  "proc_seconds": 257.3
+}
