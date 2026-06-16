@@ -32,6 +32,10 @@ public sealed partial class CameraPage : Page
     private readonly CameraYoloProcessor _yoloProcessor = new();
     private bool _yoloReady;
     private string _lastYoloSummary = "YOLO: IDLE";
+    private bool _vegetationOverlayEnabled = true;
+    private float _minConf = 0.3f;
+    private string? _lastClassifySource;
+    private string? _lastClassifyModel;
 
     public CameraPage()
     {
@@ -87,6 +91,10 @@ public sealed partial class CameraPage : Page
         EnsureYoloInitialized();
         AttachServiceHandlers();
         LoadCameraSources();
+
+        // Sync button state if a demo stream was already started before this page opened
+        if (_cameraService != null && _cameraService.IsStreaming)
+            OnStreamingStatusChanged(this, true);
     }
 
     private void CameraPage_Unloaded(object sender, RoutedEventArgs e)
@@ -393,7 +401,12 @@ public sealed partial class CameraPage : Page
                 var modelPath = PythonCameraService.ResolveHealthModelPath();
                 if (!string.IsNullOrWhiteSpace(modelPath) && File.Exists(modelPath))
                 {
-                    var classifyConnected = await pcs.StartClassifyStreamAsync(path, modelPath);
+                    _lastClassifySource = path;
+                    _lastClassifyModel = modelPath;
+                    var classifyConnected = await pcs.StartClassifyStreamAsync(
+                        path, modelPath,
+                        showOverlay: _vegetationOverlayEnabled,
+                        minConf: _minConf);
                     if (!classifyConnected)
                     {
                         ShowError("Gagal memulai classification stream. Periksa model dan koneksi.");
@@ -656,6 +669,34 @@ public sealed partial class CameraPage : Page
             VideoFilePathTextBox.Text = file;
             UpdateMetadata();
         }
+    }
+
+    // TASK-04: Vegetation Overlay toggle
+    private async void VegetationOverlayToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        _vegetationOverlayEnabled = VegetationOverlayToggle.IsOn;
+        // Restart classify stream with new overlay flag if active
+        await RestartClassifyStreamIfActive();
+    }
+
+    // TASK-06: Confidence slider
+    private void ConfidenceSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        _minConf = (float)e.NewValue;
+        if (ConfidenceValueText != null)
+            ConfidenceValueText.Text = $"{_minConf:F2}";
+    }
+
+    private async Task RestartClassifyStreamIfActive()
+    {
+        if (_cameraService is not PythonCameraService pcs) return;
+        if (!pcs.IsClassificationStream || !_isStreaming) return;
+        if (string.IsNullOrWhiteSpace(_lastClassifySource) || string.IsNullOrWhiteSpace(_lastClassifyModel)) return;
+
+        await pcs.StartClassifyStreamAsync(
+            _lastClassifySource, _lastClassifyModel,
+            showOverlay: _vegetationOverlayEnabled,
+            minConf: _minConf);
     }
 
     private async void ShowError(string message)

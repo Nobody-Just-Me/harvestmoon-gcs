@@ -144,6 +144,10 @@ def cmd_stream(source: str) -> int:
     if cap is None or not cap.isOpened():
         return emit_error(f"Failed to open camera source: {source}")
 
+    # Adapt playback speed to the source video's native FPS (max 15 for webcam)
+    src_fps = cap.get(cv2.CAP_PROP_FPS) or 15
+    frame_delay = 1.0 / max(1.0, min(15.0, src_fps))
+
     try:
         while True:
             ok, frame = cap.read()
@@ -157,7 +161,7 @@ def cmd_stream(source: str) -> int:
 
             payload = base64.b64encode(encoded.tobytes()).decode("ascii")
             emit({"type": "frame", "data": payload})
-            time.sleep(1.0 / 15.0)
+            time.sleep(frame_delay)
     except (BrokenPipeError, KeyboardInterrupt):
         return 0
     finally:

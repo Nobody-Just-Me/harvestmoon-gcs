@@ -51,7 +51,7 @@ public sealed partial class ReportsHarvestPage : Page
         this.InitializeComponent();
 
         _harvestFunctionalService = App.Current.Services.GetService<HarvestFunctionalService>();
-        _reports.AddRange(SeedReports);
+        _reports.AddRange(EnrichSeedReports(SeedReports));
         _selectedId = _reports.FirstOrDefault()?.Id;
         OperatorNoteTextBox.Text = _operatorNote;
 
@@ -65,6 +65,46 @@ public sealed partial class ReportsHarvestPage : Page
         RenderMissionList();
         RenderDetail();
         _ = LoadPersistedReportsAsync();
+    }
+
+    private static IEnumerable<ReportEntry> EnrichSeedReports(IReadOnlyList<ReportEntry> seeds)
+    {
+        // Try to find the demo video file so the exported PDF shows a real path
+        var videoCandidates = new[]
+        {
+            "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused_only.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/runs/uav_detection/derr_detected.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/runs/demo/detection_output.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/derr.mp4",
+        };
+        var demoVideo = System.Array.Find(videoCandidates, System.IO.File.Exists) ?? string.Empty;
+
+        // Fake-but-consistent TLOG paths for each seed (files need not exist for PDF — path is just shown as text)
+        var tlogDir = System.IO.Path.Combine(
+            System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments),
+            "HarvestmoonGCS", "TLogs");
+
+        foreach (var (seed, idx) in seeds.Select((s, i) => (s, i)))
+        {
+            var tlogName = $"demo_{seed.Id.Replace("DEMO-", "").Replace("-", "_")}.tlog";
+            yield return new ReportEntry
+            {
+                Id                  = seed.Id,
+                DateTime            = seed.DateTime,
+                Area                = seed.Area,
+                Duration            = seed.Duration,
+                Detections          = seed.Detections,
+                Priority            = seed.Priority,
+                IsDemo              = seed.IsDemo,
+                VideoRecordingPath  = idx == 0 ? demoVideo : string.Empty,
+                TlogPath            = System.IO.Path.Combine(tlogDir, tlogName),
+                GeofenceAlertsJson  = "[{\"type\":\"boundary\",\"distance\":28,\"severity\":\"warning\"}]",
+                YoloBenchmarkJson   = seed.YoloBenchmarkJson,
+                EvidenceBundlePath  = seed.EvidenceBundlePath,
+                IncidentTimelineJson = seed.IncidentTimelineJson,
+            };
+        }
     }
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)

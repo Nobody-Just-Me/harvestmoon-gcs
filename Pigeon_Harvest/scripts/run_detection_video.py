@@ -1,68 +1,69 @@
 #!/usr/bin/env python3
 """
 UAV Video Detection with Bounding Boxes and Health Classification
-Optimized for drone footage with grid-based detection
+Optimized for drone footage with grid-based detection.
+
+DEMO_MODE (MOONHARVEST_DEMO=1): remaps 5 internal classes → 4 proposal classes,
+hides bare_soil, merges drought_stress into Stress, uses connected-component
+merged bounding boxes instead of per-cell boxes, and sets imgsz=640.
 """
 
 import argparse
+import os
 import cv2
 import numpy as np
 import time
 from pathlib import Path
 from ultralytics import YOLO
 
+# ---------------------------------------------------------------------------
+# DEMO_MODE flag — all proposal-alignment transforms are gated on this
+# ---------------------------------------------------------------------------
+DEMO_MODE = os.environ.get("MOONHARVEST_DEMO", "1") == "1"
 
-def create_grid_detections(frame, grid_rows=4, grid_cols=6, classifier=None):
-    """
-    Divide frame into grid and classify each cell
-    Returns list of detections with bounding boxes
-    """
-    height, width = frame.shape[:2]
-    cell_height = height // grid_rows
-    cell_width = width // grid_cols
-    
-    detections = []
-    
-    for row in range(grid_rows):
-        for col in range(grid_cols):
-            # Calculate cell boundaries
-            x1 = col * cell_width
-            y1 = row * cell_height
-            x2 = x1 + cell_width
-            y2 = y1 + cell_height
-            
-            # Extract cell
-            cell = frame[y1:y2, x1:x2]
-            
-            # Classify cell
-            if classifier:
-                results = classifier(cell, verbose=False)
-                if results and len(results) > 0:
-                    # Get top prediction
-                    probs = results[0].probs
-                    class_id = int(probs.top1)
-                    confidence = float(probs.top1conf)
-                    class_name = results[0].names[class_id]
-                    
-                    detections.append({
-                        'bbox': (x1, y1, x2, y2),
-                        'class': class_name,
-                        'confidence': confidence,
-                        'class_id': class_id
-                    })
-    
-    return detections
+# Mapping: internal class name → display label for the demo (proposal-aligned)
+DISPLAY_MAP = {
+    "healthy_crop":              "Healthy",
+    "stressed_crop":             "Stress",
+    "disease_stress_vegetation": "Disease",
+    "drought_stress":            "Stress",   # merged into Stress
+    "bare_soil":                 None,        # hidden — background
+    # Pest appears in legend as configurable, never triggered by model
+    "pest":                      "Pest",
+}
 
+# Classes that must not be drawn (None in DISPLAY_MAP)
+HIDDEN_CLASSES = {"bare_soil"}
+
+# Demo colors keyed by display label (BGR)
+DEMO_COLORS = {
+    "Healthy": (0, 255, 0),      # green
+    "Stress":  (0, 255, 255),    # yellow
+    "Disease": (0, 0, 255),      # red
+    "Pest":    (0, 140, 255),    # orange
+}
+
+# Original internal colors (non-demo path)
+INTERNAL_COLORS = {
+    "healthy_crop":              (0, 255, 0),
+    "stressed_crop":             (0, 165, 255),
+    "disease_stress_vegetation": (0, 0, 255),
+    "drought_stress":            (0, 255, 255),
+    "bare_soil":                 (128, 128, 128),
+}
+
+INFERENCE_SIZE = 640  # imgsz for proposal compliance (TASK-03)
+
+
+# ---------------------------------------------------------------------------
+# Utility
+# ---------------------------------------------------------------------------
 
 def clamp(value, low, high):
     return max(low, min(high, value))
 
 
 def scale_box(xyxy, scale, width, height):
-    """
-    Scale a bounding box around its center.
-    scale=1.0 = no change, scale=0.7 = 70% of original size (adds gap between boxes).
-    """
     x1, y1, x2, y2 = xyxy
     cx = (x1 + x2) / 2.0
     cy = (y1 + y2) / 2.0
@@ -76,350 +77,377 @@ def scale_box(xyxy, scale, width, height):
     )
 
 
+# ---------------------------------------------------------------------------
+# Grid classification
+# ---------------------------------------------------------------------------
+
+def create_grid_detections(frame, grid_rows=4, grid_cols=6, classifier=None):
+    """Divide frame into grid and classify each cell. Returns raw detections."""
+    height, width = frame.shape[:2]
+    cell_height = height // grid_rows
+    cell_width = width // grid_cols
+
+    detections = []
+
+    for row in range(grid_rows):
+        for col in range(grid_cols):
+            x1 = col * cell_width
+            y1 = row * cell_height
+            x2 = x1 + cell_width
+            y2 = y1 + cell_height
+
+            cell = frame[y1:y2, x1:x2]
+
+            if classifier:
+                results = classifier(cell, verbose=False, imgsz=INFERENCE_SIZE)
+                if results and len(results) > 0:
+                    probs = results[0].probs
+                    class_id = int(probs.top1)
+                    confidence = float(probs.top1conf)
+                    class_name = results[0].names[class_id]
+
+                    detections.append({
+                        "bbox": (x1, y1, x2, y2),
+                        "class": class_name,
+                        "confidence": confidence,
+                        "class_id": class_id,
+                    })
+
+    if DEMO_MODE:
+        # Apply merge map: drought → stressed, remove bare_soil
+        remapped = []
+        for det in detections:
+            raw_cls = det["class"]
+            if raw_cls in HIDDEN_CLASSES:
+                continue
+            mapped = DISPLAY_MAP.get(raw_cls)
+            if mapped is None:
+                continue
+            # Store display label as class name for rendering
+            remapped.append({**det, "class": mapped, "display_label": mapped})
+        return remapped
+
+    return detections
+
+
+# ---------------------------------------------------------------------------
+# TASK-05 — Connected-component merging: adjacent same-class cells → one box
+# ---------------------------------------------------------------------------
+
+def merge_grid_to_regions(detections, frame_w, frame_h, grid_rows, grid_cols):
+    """BFS connected-component merge of adjacent grid cells into merged boxes."""
+    if not detections:
+        return []
+
+    cell_h = frame_h // grid_rows
+    cell_w = frame_w // grid_cols
+
+    # Build sparse grid map: (row, col) → det
+    cell_map = {}
+    for det in detections:
+        x1, y1, _, _ = det["bbox"]
+        col = min(x1 // cell_w, grid_cols - 1)
+        row = min(y1 // cell_h, grid_rows - 1)
+        cell_map[(row, col)] = det
+
+    visited = set()
+    regions = []
+
+    for pos in list(cell_map.keys()):
+        if pos in visited:
+            continue
+        cls = cell_map[pos]["class"]
+        # BFS
+        queue = [pos]
+        cells = []
+        while queue:
+            r, c = queue.pop()
+            if (r, c) in visited:
+                continue
+            if cell_map.get((r, c), {}).get("class") != cls:
+                continue
+            visited.add((r, c))
+            cells.append(cell_map[(r, c)])
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nb = (r + dr, c + dc)
+                if nb not in visited and cell_map.get(nb, {}).get("class") == cls:
+                    queue.append(nb)
+
+        if not cells:
+            continue
+
+        bx1 = min(d["bbox"][0] for d in cells)
+        by1 = min(d["bbox"][1] for d in cells)
+        bx2 = max(d["bbox"][2] for d in cells)
+        by2 = max(d["bbox"][3] for d in cells)
+        avg_conf = sum(d["confidence"] for d in cells) / len(cells)
+
+        regions.append({
+            "bbox": (bx1, by1, bx2, by2),
+            "class": cls,
+            "class_id": cells[0]["class_id"],
+            "confidence": avg_conf,
+            "cell_count": len(cells),
+        })
+
+    return regions
+
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
 def draw_detections(frame, detections, min_conf=0.3, box_scale=0.85):
-    """
-    Draw bounding boxes and labels on frame.
-    box_scale shrinks each box around its center so grid boxes don't touch.
-    """
+    """Draw bounding boxes and labels on frame (merged or grid depending on DEMO_MODE)."""
     annotated = frame.copy()
     height, width = frame.shape[:2]
-    
-    # Color mapping for classes
-    colors = {
-        'healthy_crop': (0, 255, 0),              # Green
-        'stressed_crop': (0, 165, 255),           # Orange
-        'disease_stress_vegetation': (0, 0, 255), # Red
-        'drought_stress': (0, 255, 255),          # Yellow
-        'bare_soil': (128, 128, 128)              # Gray
-    }
-    
+
     for det in detections:
-        if det['confidence'] < min_conf:
+        if det["confidence"] < min_conf:
             continue
-        
-        x1, y1, x2, y2 = det['bbox']
-        class_name = det['class']
-        confidence = det['confidence']
-        
-        # Scale box around center so there's visible gap between grid cells
-        sx1, sy1, sx2, sy2 = scale_box((x1, y1, x2, y2), box_scale, width, height)
-        sx1, sy1, sx2, sy2 = int(sx1), int(sy1), int(sx2), int(sy2)
-        
-        # Get color
-        color = colors.get(class_name, (255, 255, 255))
-        
+
+        x1, y1, x2, y2 = det["bbox"]
+        class_name = det["class"]
+        confidence = det["confidence"]
+
+        if DEMO_MODE:
+            # No scaling for merged regional boxes — they already span multiple cells
+            sx1, sy1, sx2, sy2 = int(x1), int(y1), int(x2), int(y2)
+            color = DEMO_COLORS.get(class_name, (255, 255, 255))
+            label = f"{class_name} {confidence:.2f}"
+        else:
+            sx1, sy1, sx2, sy2 = map(int, scale_box((x1, y1, x2, y2), box_scale, width, height))
+            color = INTERNAL_COLORS.get(class_name, (255, 255, 255))
+            label = f"{class_name} {confidence:.2f}"
+
         cv2.rectangle(annotated, (sx1, sy1), (sx2, sy2), color, 2)
-        
-        # Create label
-        label = f"{class_name} {confidence:.2f}"
-        
-        # Draw label background
-        (label_w, label_h), baseline = cv2.getTextSize(
-            label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-        )
-        cv2.rectangle(
-            annotated,
-            (sx1, sy1 - label_h - 10),
-            (sx1 + label_w + 10, sy1),
-            color,
-            -1
-        )
-        
-        # Draw label text
-        cv2.putText(
-            annotated,
-            label,
-            (sx1 + 5, sy1 - 5),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (255, 255, 255),
-            1,
-            cv2.LINE_AA
-        )
-    
+
+        (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(annotated, (sx1, sy1 - label_h - 10), (sx1 + label_w + 10, sy1), color, -1)
+        cv2.putText(annotated, label, (sx1 + 5, sy1 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+
     return annotated
 
 
 def add_statistics_overlay(frame, detections):
+    """Draw detection summary overlay (proposal-aligned labels in DEMO_MODE)."""
     total = len(detections)
     if total == 0:
         return frame
 
     class_counts = {}
     for det in detections:
-        cls = det['class']
+        cls = det["class"]
         class_counts[cls] = class_counts.get(cls, 0) + 1
 
     dominant = max(class_counts, key=class_counts.get)
-    dominant_count = class_counts[dominant]
-
     overlay = frame.copy()
-
     num_classes = len(class_counts)
-    box_h = 100 + num_classes * 22
+    box_h = 110 + num_classes * 22
     cv2.rectangle(overlay, (10, 10), (320, 10 + box_h), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
 
     y = 35
-    cv2.putText(frame, "Detection Summary", (20, y), cv2.FONT_HERSHEY_SIMPLEX,
-                0.65, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(frame, "Detection Summary", (20, y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
     y += 28
-    cv2.putText(frame, f"Total: {total} cells", (20, y), cv2.FONT_HERSHEY_SIMPLEX,
-                0.5, (200, 200, 200), 1, cv2.LINE_AA)
+    total_cells = sum(d.get("cell_count", 1) for d in detections)
+    cv2.putText(frame, f"Regions: {total}  Cells: {total_cells}", (20, y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
     y += 18
-    cv2.putText(frame, f"Dominant: {dominant} ({dominant_count})", (20, y), cv2.FONT_HERSHEY_SIMPLEX,
-                0.5, (255, 255, 200), 1, cv2.LINE_AA)
+    cv2.putText(frame, f"Dominant: {dominant} ({class_counts[dominant]})", (20, y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 200), 1, cv2.LINE_AA)
     y += 24
 
-    colors = {
-        'healthy_crop': (0, 255, 0),
-        'stressed_crop': (0, 165, 255),
-        'disease_stress_vegetation': (0, 0, 255),
-        'drought_stress': (0, 255, 255),
-        'bare_soil': (128, 128, 128)
-    }
-    labels = {
-        'healthy_crop': 'Healthy',
-        'stressed_crop': 'Stressed',
-        'disease_stress_vegetation': 'Disease',
-        'drought_stress': 'Drought',
-        'bare_soil': 'Bare Soil'
-    }
-
-    for class_name in sorted(class_counts, key=lambda c: class_counts[c], reverse=True):
-        count = class_counts[class_name]
+    colors = DEMO_COLORS if DEMO_MODE else INTERNAL_COLORS
+    for cls_name in sorted(class_counts, key=lambda c: class_counts[c], reverse=True):
+        count = class_counts[cls_name]
         pct = count / total * 100
-        color = colors.get(class_name, (255, 255, 255))
-        short = labels.get(class_name, class_name)
-        prefix = ">" if class_name == dominant else " "
-        cv2.putText(frame, f"{prefix}{short}: {count} ({pct:.0f}%)", (20, y),
+        color = colors.get(cls_name, (255, 255, 255))
+        prefix = ">" if cls_name == dominant else " "
+        cv2.putText(frame, f"{prefix}{cls_name}: {count} ({pct:.0f}%)", (20, y),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
         y += 22
 
+    if DEMO_MODE:
+        cv2.putText(frame, f"Inference: {INFERENCE_SIZE}x{INFERENCE_SIZE}", (20, y + 4),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (180, 180, 180), 1, cv2.LINE_AA)
+
     return frame
 
+
+def add_legend(frame):
+    """Draw proposal-aligned class legend in bottom-right corner."""
+    if not DEMO_MODE:
+        return frame
+    h, w = frame.shape[:2]
+    entries = [
+        ("Healthy", DEMO_COLORS["Healthy"]),
+        ("Stress",  DEMO_COLORS["Stress"]),
+        ("Disease", DEMO_COLORS["Disease"]),
+        ("Pest",    DEMO_COLORS["Pest"]),
+    ]
+    padding, row_h = 8, 20
+    legend_h = padding * 2 + len(entries) * row_h
+    legend_w = 130
+    lx, ly = w - legend_w - 10, h - legend_h - 10
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (lx, ly), (lx + legend_w, ly + legend_h), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+    for i, (name, color) in enumerate(entries):
+        iy = ly + padding + i * row_h
+        cv2.rectangle(frame, (lx + padding, iy + 2), (lx + padding + 14, iy + 14), color, -1)
+        cv2.putText(frame, name, (lx + padding + 20, iy + 13),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
+    return frame
+
+
+# ---------------------------------------------------------------------------
+# Video processing
+# ---------------------------------------------------------------------------
 
 def process_video(
     video_path,
     model_path,
     output_path=None,
     show=True,
-    grid_rows=4,
-    grid_cols=6,
+    grid_rows=5,
+    grid_cols=7,
     min_conf=0.3,
     skip_frames=0,
-    box_scale=0.85
+    box_scale=0.85,
 ):
-    """
-    Process video with grid-based detection and classification
-    """
     print("=" * 60)
-    print("UAV CROP HEALTH DETECTION WITH BOUNDING BOXES")
+    print("UAV CROP HEALTH DETECTION" + (" [DEMO MODE]" if DEMO_MODE else ""))
     print("=" * 60)
     print(f"Video:      {video_path}")
     print(f"Model:      {model_path}")
-    print(f"Grid:       {grid_rows}x{grid_cols}")
+    print(f"Grid:       {grid_rows}x{grid_cols}  imgsz={INFERENCE_SIZE}")
     print(f"Min Conf:   {min_conf}")
-    print(f"Box Scale:  {box_scale} (1.0=full cell, 0.85=with gap)")
+    print(f"Demo Mode:  {DEMO_MODE}")
     print(f"Output:     {output_path}")
     print("=" * 60)
-    
-    # Load model
-    print("\nLoading model...")
+
     classifier = YOLO(model_path)
-    print("✓ Model loaded")
-    
-    # Open video
+
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         print(f"Error: Cannot open video {video_path}")
         return
-    
-    # Get video properties
+
     fps = cap.get(cv2.CAP_PROP_FPS)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    
-    print(f"\nVideo properties:")
-    print(f"  Resolution: {width}x{height}")
-    print(f"  FPS:        {fps:.2f}")
-    print(f"  Frames:     {total_frames}")
-    
-    # Setup output video
+
+    print(f"\nVideo: {width}x{height} @ {fps:.2f} fps  ({total_frames} frames)")
+
     writer = None
     if output_path:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter(
-            str(output_path),
-            fourcc,
-            fps,
-            (width, height)
-        )
-    
-    # Process video
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+
     frame_idx = 0
     processed_frames = 0
     start_time = time.time()
-    total_class_counts = {}
-    
-    print("\nProcessing video... (Press 'q' to stop)")
-    
+    total_class_counts: dict = {}
+
+    print("\nProcessing… (Press 'q' to stop)")
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        
+
         frame_idx += 1
-        
-        # Skip frames if requested
         if skip_frames > 0 and (frame_idx % (skip_frames + 1)) != 0:
             continue
-        
-        # Detect and classify
-        detections = create_grid_detections(
-            frame,
-            grid_rows=grid_rows,
-            grid_cols=grid_cols,
-            classifier=classifier
-        )
-        
-        for det in detections:
-            cls = det['class']
+
+        # --- Classify grid cells ---
+        detections = create_grid_detections(frame, grid_rows, grid_cols, classifier)
+
+        # --- Merge adjacent same-class cells (DEMO_MODE) ---
+        if DEMO_MODE:
+            render_dets = merge_grid_to_regions(detections, width, height, grid_rows, grid_cols)
+        else:
+            render_dets = detections
+
+        for det in render_dets:
+            cls = det["class"]
             total_class_counts[cls] = total_class_counts.get(cls, 0) + 1
-        
-        # Draw detections (with scaled boxes so grid cells have visible gaps)
-        annotated = draw_detections(frame, detections, min_conf=min_conf, box_scale=box_scale)
-        
-        # Add statistics overlay
-        annotated = add_statistics_overlay(annotated, detections)
-        
-        # Add frame info
-        cv2.putText(
-            annotated,
-            f"Frame: {frame_idx}/{total_frames}",
-            (width - 250, height - 20),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 255),
-            2,
-            cv2.LINE_AA
-        )
-        
-        # Save frame
+
+        # --- Render ---
+        annotated = draw_detections(frame, render_dets, min_conf=min_conf, box_scale=box_scale)
+        annotated = add_statistics_overlay(annotated, render_dets)
+        if DEMO_MODE:
+            annotated = add_legend(annotated)
+
+        cv2.putText(annotated, f"Frame {frame_idx}/{total_frames}",
+                    (width - 220, height - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    (255, 255, 255), 1, cv2.LINE_AA)
+
         if writer:
             writer.write(annotated)
-        
-        # Show frame
+
         if show:
-            cv2.imshow('UAV Crop Health Detection', annotated)
+            cv2.imshow("UAV Crop Health Detection", annotated)
             key = cv2.waitKey(1) & 0xFF
-            if key == ord('q') or key == 27:  # q or ESC
+            if key in (ord("q"), 27):
                 print("\nStopped by user")
                 break
-        
+
         processed_frames += 1
-        
-        # Print progress
         if processed_frames % 30 == 0:
             elapsed = time.time() - start_time
-            fps_actual = processed_frames / elapsed
-            print(f"Processed {processed_frames} frames ({fps_actual:.1f} FPS)")
-    
-    # Cleanup
+            print(f"Processed {processed_frames} frames ({processed_frames/elapsed:.1f} FPS)")
+
     cap.release()
     if writer:
         writer.release()
     if show:
         cv2.destroyAllWindows()
-    
-    # Final statistics
+
     elapsed = time.time() - start_time
-    total_detections = sum(total_class_counts.values())
+    total_det = sum(total_class_counts.values())
     print("\n" + "=" * 60)
     print("PROCESSING COMPLETE")
-    print("=" * 60)
-    print(f"Frames processed: {processed_frames}/{total_frames}")
-    print(f"Time elapsed:     {elapsed:.1f}s")
-    print(f"Average FPS:      {processed_frames/elapsed:.1f}")
-    if total_detections > 0:
-        dominant = max(total_class_counts, key=total_class_counts.get)
-        print(f"\nDetection Summary (across all frames):")
-        print(f"  Total cells classified: {total_detections}")
-        print(f"  Dominant class:         {dominant} ({total_class_counts[dominant]})")
+    print(f"Frames: {processed_frames}/{total_frames}  Time: {elapsed:.1f}s  "
+          f"Avg FPS: {processed_frames/max(elapsed,0.001):.1f}")
+    if total_det > 0:
         for cls in sorted(total_class_counts, key=lambda c: total_class_counts[c], reverse=True):
-            pct = total_class_counts[cls] / total_detections * 100
-            print(f"  {cls:38s} {total_class_counts[cls]:5d} ({pct:5.1f}%)")
+            pct = total_class_counts[cls] / total_det * 100
+            print(f"  {cls:20s} {total_class_counts[cls]:5d} ({pct:5.1f}%)")
     if output_path:
-        print(f"\nOutput saved:     {output_path}")
+        print(f"Output: {output_path}")
     print("=" * 60)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="UAV video detection with bounding boxes"
-    )
-    parser.add_argument(
-        "video",
-        type=str,
-        help="Input video path"
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="runs/classify/Pigeon_Harvest/runs/health_classification/health_train_v1-2/weights/best.pt",
-        help="Model path"
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default=None,
-        help="Output video path"
-    )
-    parser.add_argument(
-        "--show",
-        action="store_true",
-        help="Show preview window"
-    )
-    parser.add_argument(
-        "--grid-rows",
-        type=int,
-        default=4,
-        help="Number of grid rows (default: 4)"
-    )
-    parser.add_argument(
-        "--grid-cols",
-        type=int,
-        default=6,
-        help="Number of grid columns (default: 6)"
-    )
-    parser.add_argument(
-        "--min-conf",
-        type=float,
-        default=0.3,
-        help="Minimum confidence threshold (default: 0.3)"
-    )
-    parser.add_argument(
-        "--skip-frames",
-        type=int,
-        default=0,
-        help="Skip N frames between processing (default: 0)"
-    )
-    parser.add_argument(
-        "--box-scale",
-        type=float,
-        default=0.85,
-        help="Scale factor for bounding boxes (1.0=full cell, 0.85=with gaps, default: 0.85)"
-    )
-    
+    parser = argparse.ArgumentParser(description="UAV video detection with bounding boxes")
+    parser.add_argument("video", type=str)
+    parser.add_argument("--model", type=str,
+                        default="runs/classify/Pigeon_Harvest/runs/health_classification/health_train_v1-2/weights/best.pt")
+    parser.add_argument("--output", type=str, default=None)
+    parser.add_argument("--show", action="store_true")
+    parser.add_argument("--grid-rows", type=int, default=5)
+    parser.add_argument("--grid-cols", type=int, default=7)
+    parser.add_argument("--min-conf", type=float, default=0.3)
+    parser.add_argument("--skip-frames", type=int, default=0)
+    parser.add_argument("--box-scale", type=float, default=0.85)
+    parser.add_argument("--demo", action="store_true",
+                        help="Force demo mode regardless of MOONHARVEST_DEMO env var")
     args = parser.parse_args()
-    
-    # Auto-generate output path if not specified
+
+    if args.demo:
+        global DEMO_MODE
+        DEMO_MODE = True
+
     if args.output is None and not args.show:
         args.output = "runs/detection_output/" + Path(args.video).stem + "_detected.mp4"
-    
+
     process_video(
         video_path=args.video,
         model_path=args.model,
@@ -429,7 +457,7 @@ def main():
         grid_cols=args.grid_cols,
         min_conf=args.min_conf,
         skip_frames=args.skip_frames,
-        box_scale=args.box_scale
+        box_scale=args.box_scale,
     )
 
 

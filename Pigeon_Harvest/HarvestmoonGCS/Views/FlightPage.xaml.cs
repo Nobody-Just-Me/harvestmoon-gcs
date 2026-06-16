@@ -1360,17 +1360,19 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         }
     }
 
-    /// <summary>
-    /// Absolute path to derr.mp4 at project root.
-    /// </summary>
-    private static readonly string DerpVideoPath = Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "derr.mp4"));
+    private static readonly string[] _demoVideoCandidates = new[]
+    {
+        "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused_only.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/runs/uav_detection/derr_detected.mp4",
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "derr.mp4")),
+    };
 
     private async void OnStartStopStream(object sender, RoutedEventArgs e)
     {
         var cameraService = App.Current.Services.GetService<ICameraService>();
         if (cameraService == null) return;
-        
+
         if (cameraService.IsStreaming)
         {
             await cameraService.StopCameraAsync();
@@ -1378,25 +1380,17 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         }
         else
         {
-            // Resolve path to derr.mp4 
-            var videoPath = DerpVideoPath;
-            if (!File.Exists(videoPath))
+            var videoPath = Array.Find(_demoVideoCandidates, File.Exists);
+            if (videoPath == null)
             {
-                // Try relative from current directory
-                videoPath = Path.GetFullPath("derr.mp4");
-                if (!File.Exists(videoPath))
-                {
-                    AddConsoleMessage("CAMERA", $"derr.mp4 not found at {DerpVideoPath}", "ERROR");
-                    return;
-                }
+                AddConsoleMessage("CAMERA", "Tidak ada video deteksi ditemukan (hsvv_fused.mp4 / derr_detected.mp4)", "ERROR");
+                return;
             }
 
-            AddConsoleMessage("CAMERA", $"Playing video: {Path.GetFileName(videoPath)}");
+            AddConsoleMessage("CAMERA", $"Playing: {Path.GetFileName(videoPath)}");
             var success = await cameraService.StartCameraAsync(videoPath);
             if (!success)
-            {
-                AddConsoleMessage("CAMERA", $"Failed to open {Path.GetFileName(videoPath)}", "ERROR");
-            }
+                AddConsoleMessage("CAMERA", $"Gagal membuka {Path.GetFileName(videoPath)}", "ERROR");
         }
     }
     

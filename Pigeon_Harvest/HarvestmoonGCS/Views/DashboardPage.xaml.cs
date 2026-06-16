@@ -1,4 +1,4 @@
-using System;
+ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
@@ -34,6 +34,7 @@ public sealed partial class DashboardPage : Page
     private readonly IGeofenceService? _geofenceService;
     private readonly GeofenceMonitor? _geofenceMonitor;
     private readonly IncidentTimelineService? _timelineService;
+    private readonly IMavLinkService? _mavLinkService;
 
     private TelemetryData? _telemetry;
     private byte[]? _lastFrameData;
@@ -83,6 +84,25 @@ public sealed partial class DashboardPage : Page
     private DateTime _lastYoloTimelineEvent = DateTime.MinValue;
     private HarvestFunctionalService.YoloBenchmarkResult? _lastBenchmarkResult;
 
+    // Demo mode state
+    private bool _isDemoRunning;
+    private int _demoStep;
+    private double _demoBattery = 95.0;
+    private double _demoHeading = 90.0;  // tracks current bearing for smooth roll
+    private const int DemoTicksPerSegment = 4; // 40 m at ~10 m/s ≈ 4 s per segment
+    private readonly DispatcherTimer _demoTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    // 7 rows × 6 cols × 40 m spacing → 240 m × 200 m ≈ 4.8 ha (~5 ha survey area)
+    private static readonly (double Lat, double Lon)[] DemoWaypoints = GenerateSurveyWaypoints(-6.8148, 107.6172, rows: 7, cols: 6, spacingMeters: 40);
+    private static readonly string[] DemoClassificationEvents =
+    {
+        "healthy_crop (conf 0.93) · Zone 2-3",
+        "stressed_crop (conf 0.81) · Zone 4-1",
+        "healthy_crop (conf 0.96) · Zone 1-2",
+        "drought_stress (conf 0.74) · Zone 3-4",
+        "disease_stress_vegetation (conf 0.87) · Zone 2-2",
+        "healthy_crop (conf 0.91) · Zone 5-1",
+    };
+
     public DashboardPage()
     {
         this.InitializeComponent();
@@ -96,6 +116,7 @@ public sealed partial class DashboardPage : Page
         _geofenceService = App.Current.Services.GetService<IGeofenceService>();
         _geofenceMonitor = App.Current.Services.GetService<GeofenceMonitor>();
         _timelineService = App.Current.Services.GetService<IncidentTimelineService>();
+        _mavLinkService  = App.Current.Services.GetService<IMavLinkService>();
 
         _imuTimer.Tick += OnImuTick;
         _missionTimer.Tick += OnMissionTick;
@@ -126,7 +147,7 @@ public sealed partial class DashboardPage : Page
         AttachCameraHandlers();
         SyncYoloStateFromService();
         if (AlertsStack.Children.Count == 0) UpdateAlertCenter(_flightViewModel?.Telemetry, _flightViewModel?.IsConnected == true);
-        if (SummaryHealthyCount.Text == "0") SeedSummary();
+        if (SummaryHealthyCount.Text is "0" or "0%") SeedSummary();
         RebuildGridOverlay();
         ApplyLayerVisibility();
         RefreshDashboard();
@@ -672,7 +693,7 @@ public sealed partial class DashboardPage : Page
 
         // Do NOT auto-start camera/video on dashboard load.
         // User must click "Start Demo" to play derr.mp4 with YOLO detections.
-        DashboardVideoStream?.ShowStatus("Klik 'Start Demo' untuk memutar derr.mp4 dengan deteksi YOLO", false);
+        DashboardVideoStream?.ShowStatus("Kamera standby · hubungkan UAV untuk mulai survey", false);
     }
 
     // Throttle UI frame rendering so very high-FPS camera sources don't saturate the UI thread.
@@ -769,8 +790,11 @@ public sealed partial class DashboardPage : Page
                         Height = box.Height
                     }));
 
-                RenderDetectionListFromBoxes(boxes);
-                UpdateSummaryFromDetections(boxes);
+                if (!_isDemoRunning)
+                {
+                    RenderDetectionListFromBoxes(boxes);
+                    UpdateSummaryFromDetections(boxes);
+                }
             });
         }
         catch (Exception ex)
@@ -805,44 +829,7 @@ public sealed partial class DashboardPage : Page
 
         foreach (var det in filtered)
         {
-            var row = new Grid { Padding = new Thickness(6, 4, 6, 4) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var dot = new XamlEllipse
-            {
-                Width = 8, Height = 8,
-                Fill = new SolidColorBrush(ColorForLabel(det.ClassName)),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-            Grid.SetColumn(dot, 0);
-            row.Children.Add(dot);
-
-            var label = new TextBlock
-            {
-                Text = det.ClassName,
-                FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromArgb(255, 15, 48, 36)),
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-            Grid.SetColumn(label, 1);
-            row.Children.Add(label);
-
-            var conf = new TextBlock
-            {
-                Text = $"{det.Confidence * 100:F0}%",
-                FontSize = 12,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromArgb(255, 22, 101, 52)),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            Grid.SetColumn(conf, 2);
-            row.Children.Add(conf);
-
-            DetectionsListStack.Children.Add(row);
+            DetectionsListStack.Children.Add(BuildCropDetectionRow(det.ClassName, det.Confidence));
         }
     }
 
@@ -868,66 +855,27 @@ public sealed partial class DashboardPage : Page
 
         foreach (var det in filtered)
         {
-            var row = new Grid { Padding = new Thickness(6, 4, 6, 4) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var dot = new XamlEllipse
-            {
-                Width = 8,
-                Height = 8,
-                Fill = new SolidColorBrush(ColorForLabel(det.ClassName)),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-            Grid.SetColumn(dot, 0);
-            row.Children.Add(dot);
-
-            var label = new TextBlock
-            {
-                Text = det.ClassName,
-                FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromArgb(255, 15, 48, 36)),
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-            Grid.SetColumn(label, 1);
-            row.Children.Add(label);
-
-            var conf = new TextBlock
-            {
-                Text = $"{det.Confidence * 100:F0}%",
-                FontSize = 12,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromArgb(255, 22, 101, 52)),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            Grid.SetColumn(conf, 2);
-            row.Children.Add(conf);
-
-            DetectionsListStack.Children.Add(row);
+            DetectionsListStack.Children.Add(BuildCropDetectionRow(det.ClassName, det.Confidence));
         }
     }
 
     private void UpdateSummaryAndNdvi(HarvestFunctionalService.HarvestAnalysisResult result)
     {
-        // Summary counts derived from priority zones
-        var pest = result.Priorities.Count(p => p.Severity.Contains("pest", StringComparison.OrdinalIgnoreCase));
-        var stress = result.Priorities.Count(p => p.Severity.Contains("stress", StringComparison.OrdinalIgnoreCase));
-        var irrigation = result.Priorities.Count(p => p.Severity.Contains("irrigation", StringComparison.OrdinalIgnoreCase) || p.Severity.Contains("dry", StringComparison.OrdinalIgnoreCase));
-        var healthy = Math.Max(0, result.DetectionCount - pest - stress - irrigation);
-
-        SummaryPestCount.Text = pest.ToString();
-        SummaryStressCount.Text = stress.ToString();
-        SummaryIrrigationCount.Text = irrigation.ToString();
-        SummaryHealthyCount.Text = healthy.ToString();
-
-        // Map analyzer buckets to NDVI bars
-        var healthyPct = result.HealthyPercentage;
-        var moderatePct = Math.Max(0, 100 - result.HealthyPercentage - result.StressedPercentage - result.DroughtPercentage - result.BareSoilPercentage);
+        var healthyPct  = result.HealthyPercentage;
         var stressedPct = result.StressedPercentage;
-        var criticalPct = result.DroughtPercentage + result.BareSoilPercentage;
+        var droughtPct  = result.DroughtPercentage;
+        var barePct     = result.BareSoilPercentage;
+        var diseasePct  = Math.Max(0, 100 - healthyPct - stressedPct - droughtPct - barePct);
+
+        SummaryHealthyCount.Text  = $"{healthyPct:F0}%";
+        SummaryStressCount.Text   = $"{stressedPct:F0}%";
+        SummaryDiseaseCount.Text  = $"{diseasePct:F0}%";
+        SummaryDroughtCount.Text  = $"{droughtPct:F0}%";
+        SummaryBaresoilCount.Text = $"{barePct:F0}%";
+
+        // NDVI bars
+        var moderatePct = Math.Max(0, 100 - healthyPct - stressedPct - droughtPct - barePct);
+        var criticalPct = droughtPct + barePct;
 
         NdviHealthyBar.Value = healthyPct;
         NdviHealthyText.Text = $"{healthyPct:F0}%";
@@ -941,7 +889,7 @@ public sealed partial class DashboardPage : Page
         NdviCoverageText.Text = $"{result.TotalZones * 0.05:F1} ha";
 
         // Priority pill
-        var priority = pest > 0 ? "High" : stress > 0 ? "Medium" : "Low";
+        var priority = diseasePct > 5 ? "High" : stressedPct > 15 || droughtPct > 10 ? "Medium" : "Low";
         SummaryPriorityText.Text = priority;
         SummaryPriorityPill.Style = (Style)(priority switch
         {
@@ -959,12 +907,77 @@ public sealed partial class DashboardPage : Page
 
     private static Color ColorForLabel(string label)
     {
-        var lower = label.ToLowerInvariant();
-        if (lower.Contains("pest") || lower.Contains("bug")) return Color.FromArgb(255, 211, 47, 47);
-        if (lower.Contains("stress") || lower.Contains("yellow")) return Color.FromArgb(255, 251, 192, 45);
-        if (lower.Contains("dry") || lower.Contains("bare")) return Color.FromArgb(255, 251, 140, 0);
-        if (lower.Contains("irrig") || lower.Contains("water")) return Color.FromArgb(255, 25, 118, 210);
-        return Color.FromArgb(255, 46, 125, 50);
+        var lower = label.ToLowerInvariant().Replace(" ", "_").Replace("-", "_");
+        if (lower.Contains("disease")) return Color.FromArgb(255, 211, 47, 47);   // red
+        if (lower.Contains("drought")) return Color.FromArgb(255, 230, 100, 20);  // orange
+        if (lower.Contains("stressed") || lower.Contains("stress_crop")) return Color.FromArgb(255, 234, 179, 8); // yellow
+        if (lower.Contains("bare"))    return Color.FromArgb(255, 71, 71, 71);    // dark gray
+        return Color.FromArgb(255, 34, 139, 34);                                   // green (healthy)
+    }
+
+    private static (string Emoji, string Label, string Description) CropClassInfo(string className)
+    {
+        var lower = className.ToLowerInvariant().Replace(" ", "_").Replace("-", "_");
+        if (lower.Contains("disease"))  return ("🔴", "disease_stress_vegetation", "Terserang penyakit");
+        if (lower.Contains("drought"))  return ("🟠", "drought_stress",            "Stress kekeringan");
+        if (lower.Contains("stressed") || (lower.Contains("stress") && !lower.Contains("disease") && !lower.Contains("drought")))
+                                        return ("🟡", "stressed_crop",             "Tanaman stress");
+        if (lower.Contains("bare"))     return ("⚫", "bare_soil",                 "Tanah kosong");
+        return                                 ("🟢", "healthy_crop",              "Tanaman sehat");
+    }
+
+    private Grid BuildCropDetectionRow(string className, double confidence)
+    {
+        var (emoji, label, desc) = CropClassInfo(className);
+        var color = ColorForLabel(className);
+
+        var row = new Grid { Padding = new Thickness(6, 5, 6, 5) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        // Emoji + color dot composite
+        var emojiBlock = new TextBlock
+        {
+            Text = emoji,
+            FontSize = 13,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        };
+        Grid.SetColumn(emojiBlock, 0);
+        row.Children.Add(emojiBlock);
+
+        // Label + description stacked
+        var labelStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        labelStack.Children.Add(new TextBlock
+        {
+            Text = label,
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(color),
+        });
+        labelStack.Children.Add(new TextBlock
+        {
+            Text = desc,
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Color.FromArgb(255, 100, 116, 139)),
+        });
+        Grid.SetColumn(labelStack, 1);
+        row.Children.Add(labelStack);
+
+        // Confidence
+        var confBlock = new TextBlock
+        {
+            Text = $"{confidence * 100:F0}%",
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(color),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(confBlock, 2);
+        row.Children.Add(confBlock);
+
+        return row;
     }
 
     /// <summary>
@@ -975,36 +988,40 @@ public sealed partial class DashboardPage : Page
     {
         if (boxes.Count == 0)
         {
-            SummaryPestCount.Text = "0";
-            SummaryStressCount.Text = "0";
-            SummaryIrrigationCount.Text = "0";
-            SummaryHealthyCount.Text = "0";
+            SummaryHealthyCount.Text  = "0%";
+            SummaryStressCount.Text   = "0%";
+            SummaryDiseaseCount.Text  = "0%";
+            SummaryDroughtCount.Text  = "0%";
+            SummaryBaresoilCount.Text = "0%";
             SummaryPriorityText.Text = "Standby";
             return;
         }
 
-        // Count detections by category based on class name
-        int pest = 0, stress = 0, irrigation = 0, healthy = 0;
+        int disease = 0, stressed = 0, drought = 0, bare = 0, healthy = 0;
         foreach (var box in boxes.Where(b => b.Confidence * 100 >= _confThreshold))
         {
             var cls = box.ClassName.ToLowerInvariant();
-            if (cls.Contains("pest") || cls.Contains("bug") || cls.Contains("insect") || cls.Contains("bird") || cls.Contains("cat") || cls.Contains("dog"))
-                pest++;
-            else if (cls.Contains("stress") || cls.Contains("yellow") || cls.Contains("wilt") || cls.Contains("disease"))
-                stress++;
-            else if (cls.Contains("water") || cls.Contains("irrig") || cls.Contains("bottle") || cls.Contains("cup"))
-                irrigation++;
+            if (cls.Contains("disease") || cls.Contains("pest") || cls.Contains("bug"))
+                disease++;
+            else if (cls.Contains("drought") || cls.Contains("dry") || cls.Contains("irrig"))
+                drought++;
+            else if (cls.Contains("bare") || cls.Contains("soil"))
+                bare++;
+            else if (cls.Contains("stress"))
+                stressed++;
             else
                 healthy++;
         }
 
-        SummaryPestCount.Text = pest.ToString();
-        SummaryStressCount.Text = stress.ToString();
-        SummaryIrrigationCount.Text = irrigation.ToString();
-        SummaryHealthyCount.Text = healthy.ToString();
+        int total = Math.Max(1, healthy + stressed + disease + drought + bare);
+        SummaryHealthyCount.Text  = $"{healthy  * 100 / total}%";
+        SummaryStressCount.Text   = $"{stressed * 100 / total}%";
+        SummaryDiseaseCount.Text  = $"{disease  * 100 / total}%";
+        SummaryDroughtCount.Text  = $"{drought  * 100 / total}%";
+        SummaryBaresoilCount.Text = $"{bare     * 100 / total}%";
 
         // Priority based on detections
-        var priority = pest > 0 ? "High" : stress > 0 ? "Medium" : "Low";
+        var priority = disease > 0 ? "High" : stressed > 0 || drought > 0 ? "Medium" : "Low";
         SummaryPriorityText.Text = priority;
         SummaryPriorityPill.Style = (Style)(priority switch
         {
@@ -1020,23 +1037,21 @@ public sealed partial class DashboardPage : Page
         });
 
         // Vegetation Health (NDVI) — derive from detection distribution
-        int total = Math.Max(1, pest + stress + irrigation + healthy);
-        double healthyPct = healthy * 100.0 / total;
-        double moderatePct = irrigation * 100.0 / total;
-        double stressedPct = stress * 100.0 / total;
-        double criticalPct = pest * 100.0 / total;
+        double healthyPct2  = healthy  * 100.0 / total;
+        double stressedPct2 = stressed * 100.0 / total;
+        double criticalPct2 = (disease + drought) * 100.0 / total;
+        double moderatePct2 = bare     * 100.0 / total;
 
-        NdviHealthyBar.Value = healthyPct;
-        NdviHealthyText.Text = $"{healthyPct:F0}%";
-        NdviModerateBar.Value = moderatePct;
-        NdviModerateText.Text = $"{moderatePct:F0}%";
-        NdviStressedBar.Value = stressedPct;
-        NdviStressedText.Text = $"{stressedPct:F0}%";
-        NdviCriticalBar.Value = criticalPct;
-        NdviCriticalText.Text = $"{criticalPct:F0}%";
+        NdviHealthyBar.Value = healthyPct2;
+        NdviHealthyText.Text = $"{healthyPct2:F0}%";
+        NdviModerateBar.Value = moderatePct2;
+        NdviModerateText.Text = $"{moderatePct2:F0}%";
+        NdviStressedBar.Value = stressedPct2;
+        NdviStressedText.Text = $"{stressedPct2:F0}%";
+        NdviCriticalBar.Value = criticalPct2;
+        NdviCriticalText.Text = $"{criticalPct2:F0}%";
 
-        // Avg NDVI approximation (higher healthy = higher NDVI)
-        double avgNdvi = (healthyPct * 0.8 + moderatePct * 0.5 + stressedPct * 0.3 + criticalPct * 0.1) / 100.0;
+        double avgNdvi = (healthyPct2 * 0.8 + moderatePct2 * 0.5 + stressedPct2 * 0.3 + criticalPct2 * 0.1) / 100.0;
         NdviAvgText.Text = avgNdvi.ToString("F2");
         NdviCoverageText.Text = $"{total * 0.1:F1} ha";
     }
@@ -1264,119 +1279,375 @@ public sealed partial class DashboardPage : Page
 
     private async void StartDemoButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_harvestFunctionalService == null)
+        if (_isDemoRunning) { StopDemoMode(); return; }
+        await StartDemoMode();
+    }
+
+    private async Task StartDemoMode()
+    {
+        if (_isDemoRunning || _harvestFunctionalService == null) return;
+        _isDemoRunning = true;
+        _demoStep = 0;
+        _demoBattery = 95.0;
+        _demoHeading = 90.0;
+        SetDemoButtonState(running: true);
+
+        try
         {
-            return;
+            // 1. Video — prefer pre-annotated output, fall back to raw derr.mp4
+            var videoPath = ResolveDetectedVideoPath() ?? ResolveDerpVideoPath();
+            if (!string.IsNullOrWhiteSpace(videoPath) && File.Exists(videoPath) && _cameraService != null)
+            {
+                await _cameraService.StopCameraAsync();
+                await _cameraService.StartCameraAsync(videoPath);
+                _timelineService?.Add("camera", $"Camera stream: {System.IO.Path.GetFileName(videoPath)}", "success");
+            }
+
+            // 2. AI on
+            _aiOn = true;
+            if (YoloToggleSwitch != null) YoloToggleSwitch.IsOn = true;
+
+            // 3. Activate geofence — covers 5 ha survey area (240m×200m) + 80m safety buffer
+            _geofenceService?.SetGeofenceCenter(-6.8148, 107.6172);
+            _geofenceService?.SetGeofenceRadius(280);
+            _geofenceService?.SetGeofenceActive(true);
+
+            // 4. Simulate connection — fires real MAVLink ConnectionStatusChanged so ALL pages respond
+            _mavLinkService?.SimulateConnection(true);
+            if (_flightViewModel != null) _flightViewModel.IsConnected = true;
+
+            // 4a. Seed demo survey waypoints into MapViewModel so Map / Mission pages show the grid
+            if (_mapViewModel != null)
+            {
+                _mapViewModel.Waypoints.Clear();
+                for (int i = 0; i < DemoWaypoints.Length; i++)
+                {
+                    var (wpLat, wpLon) = DemoWaypoints[i];
+                    _mapViewModel.Waypoints.Add(new WaypointData
+                    {
+                        Sequence    = i + 1,
+                        Latitude    = wpLat,
+                        Longitude   = wpLon,
+                        Altitude    = 82,
+                        Command     = WaypointCommand.Waypoint,
+                    });
+                }
+                // Mirror the geofence into MapViewModel so MapPage draws the boundary
+                _mapViewModel.GeofenceCenterLat = -6.8148;
+                _mapViewModel.GeofenceCenterLon = 107.6172;
+                _mapViewModel.GeofenceRadius    = 280;
+                _mapViewModel.GeofenceType      = GeofenceType.Circular;
+                _mapViewModel.IsGeofenceActive  = true;
+            }
+
+            // 5. Initial telemetry
+            InjectDemoTelemetry(0);
+
+            // 6. Seed timeline
+            _timelineService?.Add("connected", "MAVLink connected · Lembang Field B",              "success");
+            _timelineService?.Add("tlog",      "Auto TLOG recorder armed",                         "success");
+            _timelineService?.Add("armed",     "Armed · AUTO mode · altitude 82m · survey aktif", "success");
+            _timelineService?.Add("waypoint",  "Survey grid aktif · Lembang Zone B · 7×6 · ~5 ha", "info");
+            RenderIncidentTimeline();
+            UpdateAlertCenter(_flightViewModel?.Telemetry, true);
+
+            // 7. Reset UI counters
+            _lastDetectionCount = 0;
+            _lastConfidence = 0;
+            DetectionCountText.Text = "0 det";
+            FpsHudText.Text = "YOLOv8 · live inference...";
+            AddAlertRow("UAV survey aktif · Lembang Field B · AUTO mode", "info");
+
+            // 8. Start tick timer (1 s interval)
+            _demoTimer.Tick -= OnDemoTick;
+            _demoTimer.Tick += OnDemoTick;
+            _demoTimer.Start();
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "[DashboardPage] StartDemoMode failed");
+            _timelineService?.Add("error", $"Error: {ex.Message}", "critical");
+            StopDemoMode();
+        }
+    }
+
+    private void StopDemoMode()
+    {
+        _isDemoRunning = false;
+        _demoTimer.Stop();
+        _demoTimer.Tick -= OnDemoTick;
+        _geofenceService?.SetGeofenceActive(false);
+        _mavLinkService?.SimulateConnection(false);
+        if (_flightViewModel != null) _flightViewModel.IsConnected = false;
+
+        // Restore MapViewModel to idle state
+        if (_mapViewModel != null)
+        {
+            _mapViewModel.Waypoints.Clear();
+            _mapViewModel.IsGeofenceActive = false;
+        }
+        SetDemoButtonState(running: false);
+        _timelineService?.Add("disconnected", "Koneksi diputus", "warning");
+        AddAlertRow("Koneksi UAV diputus", "warning");
+        UpdateAlertCenter(_flightViewModel?.Telemetry, false);
+        RenderIncidentTimeline();
+    }
+
+    private void OnDemoTick(object? sender, object e)
+    {
+        if (!_isDemoRunning) return;
+        _demoStep++;
+        InjectDemoTelemetry(_demoStep);
+        InjectDemoTimelineEvents(_demoStep);
+        InjectDemoDetectionUI(_demoStep);
+        if (_demoStep >= DemoWaypoints.Length * 3) _demoStep = 0;
+    }
+
+    private void InjectDemoTelemetry(int step)
+    {
+        if (_flightViewModel == null) return;
+
+        // --- Smooth interpolation along the survey path ---
+        int totalSegments = DemoWaypoints.Length - 1;
+        int globalStep    = step % (totalSegments * DemoTicksPerSegment);
+        int segIdx        = globalStep / DemoTicksPerSegment;
+        double t          = (globalStep % DemoTicksPerSegment) / (double)DemoTicksPerSegment;
+
+        var (lat0, lon0) = DemoWaypoints[segIdx];
+        var (lat1, lon1) = DemoWaypoints[Math.Min(segIdx + 1, DemoWaypoints.Length - 1)];
+
+        // Linear interpolation — smooth continuous position
+        double lat = lat0 + (lat1 - lat0) * t;
+        double lon = lon0 + (lon1 - lon0) * t;
+
+        // True bearing from current segment start → end
+        double newHeading = GeodesicBearing(lat0, lon0, lat1, lon1);
+
+        // Detect turns: heading change > 45° → UAV is banking
+        double headingDelta = ((newHeading - _demoHeading + 540) % 360) - 180; // [-180, +180]
+        bool isTurning      = Math.Abs(headingDelta) > 45;
+        _demoHeading        = newHeading;
+
+        // Altitude: gentle oscillation ±1.5 m around 82 m (air turbulence)
+        double altitude     = 82.0 + Math.Sin(step * 0.31) * 1.5;
+
+        // Roll: banking during turns, slight waggle on straights
+        double roll = isTurning
+            ? Math.Sign(headingDelta) * 15.0
+            : Math.Sin(step * 0.4) * 2.5;
+
+        // Speed: slightly slower through turns
+        double speed = isTurning ? 7.2 : 9.4;
+
+        // Vertical speed: tiny oscillation
+        double verticalSpeed = Math.Sin(step * 0.5) * 0.15;
+
+        _demoBattery = Math.Max(20, _demoBattery - 0.09); // ~42 min endurance at 95→20%
+
+        var telemetry = new TelemetryData
+        {
+            Latitude           = lat,
+            Longitude          = lon,
+            Altitude           = altitude,
+            RelativeAltitude   = altitude,
+            Heading            = newHeading,
+            Speed              = speed,
+            GroundSpeed        = speed,
+            BatteryPercentage  = _demoBattery,
+            BatteryRemaining   = (int)_demoBattery,
+            SatelliteCount     = 14,
+            FlightMode         = HarvestmoonGCS.Core.Models.FlightMode.AUTO,
+            IsArmed            = true,
+            ThrottlePercent    = isTurning ? 60 : 68,
+            Roll               = roll,
+            Pitch              = isTurning ? -1.5 : -3.0,
+            Yaw                = newHeading,
+            VerticalSpeed      = verticalSpeed,
+        };
+        _flightViewModel.UpdateTelemetry(telemetry);
+
+        // Fire real MAVLink telemetry event so FlightPage, MissionPage etc. all respond
+        _mavLinkService?.SimulateTelemetry(BuildDemoFlightData(telemetry));
+
+        // Keep MapViewModel vehicle marker in sync so Map page shows UAV moving
+        _mapViewModel?.UpdateVehiclePosition(lat, lon, altitude, (float)newHeading);
+    }
+
+    /// <summary>
+    /// Computes the initial compass bearing from (lat1,lon1) to (lat2,lon2) in degrees [0,360).
+    /// </summary>
+    private static double GeodesicBearing(double lat1, double lon1, double lat2, double lon2)
+    {
+        double dLon = (lon2 - lon1) * Math.PI / 180.0;
+        double φ1   = lat1 * Math.PI / 180.0;
+        double φ2   = lat2 * Math.PI / 180.0;
+        double y    = Math.Sin(dLon) * Math.Cos(φ2);
+        double x    = Math.Cos(φ1) * Math.Sin(φ2) - Math.Sin(φ1) * Math.Cos(φ2) * Math.Cos(dLon);
+        return (Math.Atan2(y, x) * 180.0 / Math.PI + 360.0) % 360.0;
+    }
+
+    private static HarvestmoonGCS.Models.FlightData BuildDemoFlightData(TelemetryData t)
+    {
+        var fd = new HarvestmoonGCS.Models.FlightData
+        {
+            FlightMode = t.FlightMode,
+        };
+        fd.GPS.Latitude  = (int)(t.Latitude * 1e7);
+        fd.GPS.Longitude = (int)(t.Longitude * 1e7);
+        fd.Altitude      = (int)t.Altitude;
+        fd.AltitudeFloat = (float)t.Altitude;
+        fd.Speed         = (float)t.Speed;
+        fd.Sats          = (byte)Math.Min(t.SatelliteCount, 255);
+        return fd;
+    }
+
+    private void InjectDemoTimelineEvents(int step)
+    {
+        // DemoWaypoints = 7 rows × 6 cols = 42 waypoints. Row transitions at wp 6, 12, 18, 24, 30, 36.
+        switch (step)
+        {
+            case 2:  _timelineService?.Add("yolo",     "YOLO inference aktif · scan row 1 of 7",               "success"); break;
+            case 5:  _timelineService?.Add("waypoint", "WP 1 → Survey row 1 · Lembang Zone B North",           "success"); break;
+            case 10: _timelineService?.Add("yolo",     DemoClassificationEvents[0],                             "info");    break;
+            case 14: _timelineService?.Add("waypoint", "WP 7 → Survey row 2 · tracking East",                  "success"); break;
+            case 18: _timelineService?.Add("yolo",     DemoClassificationEvents[1],                             "warning"); break;
+            case 22: _timelineService?.Add("waypoint", "WP 13 → Survey row 3 · mid-field",                     "success"); break;
+            case 26: _timelineService?.Add("geofence", "Geofence safe · 85m to boundary (zona aman)",          "info");    break;
+            case 30: _timelineService?.Add("yolo",     DemoClassificationEvents[2],                             "info");    break;
+            case 34: _timelineService?.Add("waypoint", "WP 19 → Survey row 4 · tracking West",                 "success"); break;
+            case 38: _timelineService?.Add("yolo",     DemoClassificationEvents[3],                             "warning"); break;
+            case 42: _timelineService?.Add("waypoint", "WP 25 → Survey row 5 · 60% area covered",              "success"); break;
+            case 46: _timelineService?.Add("yolo",     DemoClassificationEvents[4],                             "critical"); break;
+            case 50: _timelineService?.Add("waypoint", "WP 31 → Survey row 6 · 80% area covered",              "success"); break;
+            case 54: _timelineService?.Add("yolo",     DemoClassificationEvents[5],                             "info");    break;
+            case 58: _timelineService?.Add("waypoint", "WP 37 → Survey row 7 · 95% area covered",              "success"); break;
+            case 62: _timelineService?.Add("tlog",     $"Telemetry batch flushed · {step * 2} packets saved",  "info");    break;
+        }
+        if (step % 5 == 0 && step > 0) RenderIncidentTimeline();
+    }
+
+    // Rotating demo detection frames — each entry is a snapshot of crop health detections
+    private static readonly (string Class, double Conf)[][] DemoDetectionFrames =
+    {
+        new[] { ("healthy_crop", 0.93), ("healthy_crop", 0.88), ("stressed_crop", 0.79) },
+        new[] { ("healthy_crop", 0.91), ("stressed_crop", 0.82), ("drought_stress", 0.74), ("bare_soil", 0.68) },
+        new[] { ("healthy_crop", 0.96), ("healthy_crop", 0.90), ("healthy_crop", 0.85), ("stressed_crop", 0.77) },
+        new[] { ("disease_stress_vegetation", 0.87), ("stressed_crop", 0.81), ("healthy_crop", 0.89) },
+        new[] { ("healthy_crop", 0.94), ("drought_stress", 0.76), ("bare_soil", 0.71), ("stressed_crop", 0.83) },
+        new[] { ("healthy_crop", 0.92), ("healthy_crop", 0.88), ("disease_stress_vegetation", 0.80) },
+        new[] { ("stressed_crop", 0.85), ("drought_stress", 0.78), ("healthy_crop", 0.91) },
+        new[] { ("healthy_crop", 0.95), ("healthy_crop", 0.89), ("bare_soil", 0.65), ("stressed_crop", 0.72) },
+    };
+
+    private void InjectDemoDetectionUI(int step)
+    {
+        var frame = DemoDetectionFrames[step % DemoDetectionFrames.Length];
+        int count = frame.Length;
+        double avgConf = frame.Average(f => f.Conf);
+
+        _lastDetectionCount = count;
+        _lastConfidence = avgConf;
+
+        // Update counters
+        DetectionCountText.Text = $"{count} det";
+        MissionDetectionsText.Text = ((_demoStep / 2) + count).ToString();
+        ConfAvgText.Text = $"Conf avg {avgConf * 100:F0}%";
+        SummaryConfidenceText.Text = $"{avgConf * 100:F0}%";
+        DetectionsListTitle.Text = $"Live Detections ({count})";
+
+        // Render detection rows
+        DetectionsListStack.Children.Clear();
+        foreach (var (cls, conf) in frame)
+        {
+            DetectionsListStack.Children.Add(BuildCropDetectionRow(cls, conf));
         }
 
-        StartDemoButton.IsEnabled = false;
+        // Class distribution from fusion video (hsvv_fused.mp4)
+        // healthy 33.8%, stressed 19.4%, disease 4.9%, drought 5.4%, bare_soil 36.5%
+        double jitter = Math.Sin(step * 0.7) * 2.5;
+        if (SummaryHealthyCount  != null) SummaryHealthyCount.Text  = $"{33.8 + jitter:F0}%";
+        if (SummaryStressCount   != null) SummaryStressCount.Text   = $"{19.4 - jitter * 0.5:F0}%";
+        if (SummaryDiseaseCount  != null) SummaryDiseaseCount.Text  = $"{4.9  + Math.Abs(jitter) * 0.3:F0}%";
+        if (SummaryDroughtCount  != null) SummaryDroughtCount.Text  = $"{5.4  - jitter * 0.2:F0}%";
+        if (SummaryBaresoilCount != null) SummaryBaresoilCount.Text = $"{36.5 + jitter * 0.4:F0}%";
+
+        // NDVI bars — derived from fusion class distribution
+        double jitter2      = Math.Sin(step * 0.5) * 1.5;
+        double ndviHealthy  = Math.Max(0, 33.8 + jitter2);
+        double ndviModerate = Math.Max(0, 36.5 - jitter2 * 0.5);   // bare soil → moderate cover
+        double ndviStressed = Math.Max(0, 19.4 + jitter2 * 0.3);
+        double ndviCritical = Math.Max(0, 10.3 - Math.Abs(jitter2) * 0.2);
+        double avgNdvi      = (ndviHealthy * 0.75 + ndviModerate * 0.45 + ndviStressed * 0.25 + ndviCritical * 0.05) / 100.0;
+
+        if (NdviHealthyBar   != null) { NdviHealthyBar.Value   = ndviHealthy;  NdviHealthyText.Text   = $"{ndviHealthy:F0}%"; }
+        if (NdviModerateBar  != null) { NdviModerateBar.Value  = ndviModerate; NdviModerateText.Text  = $"{ndviModerate:F0}%"; }
+        if (NdviStressedBar  != null) { NdviStressedBar.Value  = ndviStressed; NdviStressedText.Text  = $"{ndviStressed:F0}%"; }
+        if (NdviCriticalBar  != null) { NdviCriticalBar.Value  = ndviCritical; NdviCriticalText.Text  = $"{ndviCritical:F0}%"; }
+        if (NdviAvgText      != null) NdviAvgText.Text      = avgNdvi.ToString("F2");
+        if (NdviCoverageText != null) NdviCoverageText.Text = "4.8 ha";
+
+        // Auto-retry video if camera stopped (e.g. after bad file was fixed)
+        if (step % 10 == 0 && _cameraService != null && !_cameraService.IsStreaming && _isDemoRunning)
+        {
+            var vp = ResolveDetectedVideoPath() ?? ResolveDerpVideoPath();
+            if (!string.IsNullOrWhiteSpace(vp) && File.Exists(vp))
+                _ = _cameraService.StartCameraAsync(vp);
+        }
+
+        UpdateAlertCenter(_flightViewModel?.Telemetry, true);
+    }
+
+    private void SetDemoButtonState(bool running)
+    {
         StartDemoButton.Content = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 6,
             Children =
             {
-                new FontIcon { Glyph = "\uE895", FontSize = 11 },
-                new TextBlock { Text = "Running..." }
+                new FontIcon { Glyph = running ? "" : "", FontSize = 11 },
+                new TextBlock { Text = running ? "Stop Demo" : "Start Demo" }
             }
         };
-
-        try
-        {
-            _timelineService?.Add("demo", "One-click MoonHarvest demo started", "success");
-            _aiOn = true;
-            if (YoloToggleSwitch != null) YoloToggleSwitch.IsOn = true;
-
-            var videoPath = ResolveDerpVideoPath();
-            if (string.IsNullOrWhiteSpace(videoPath) || !File.Exists(videoPath))
-            {
-                _timelineService?.Add("demo", "derr.mp4 not found", "warning");
-                AddAlertRow("derr.mp4 tidak ditemukan", "warning");
-                return;
-            }
-
-            if (_cameraService != null)
-            {
-                await _cameraService.StopCameraAsync();
-                var started = await _cameraService.StartCameraAsync(videoPath);
-                _timelineService?.Add("camera", started
-                    ? $"Demo derr.mp4 started"
-                    : $"Demo derr.mp4 failed", started ? "success" : "warning");
-            }
-
-            // Reset detection UI — YOLO akan memproses frame via OnDashboardFrameReceived
-            _lastDetectionCount = 0;
-            _lastConfidence = 0;
-            DetectionCountText.Text = "0 det";
-            DetectionsListTitle.Text = "Live Detections (0)";
-            ConfAvgText.Text = "Conf avg 0%";
-            SummaryConfidenceText.Text = "0%";
-            MissionDetectionsText.Text = "0";
-            FpsHudText.Text = "YOLOv8 · streaming...";
-            AddAlertRow("Demo started: streaming derr.mp4 with YOLO detection", "info");
-
-            // Benchmark tanpa OpenCvSharp (gunakan data dummy untuk mengukur throughput YOLO)
-            var benchmark = await _harvestFunctionalService.BenchmarkFrameAsync(null, iterations: 5);
-            _lastBenchmarkResult = benchmark;
-            if (benchmark != null)
-            {
-                await _harvestFunctionalService.AttachYoloBenchmarkToLatestReportAsync(benchmark);
-                FpsHudText.Text = $"YOLOv8 · {benchmark.FramesPerSecond:F1} FPS";
-                UpdateTopBarAiFps(benchmark.FramesPerSecond);
-                _timelineService?.Add("benchmark", $"Demo YOLO: {benchmark.Summary}",
-                    benchmark.FramesPerSecond >= 5 ? "success" : "warning");
-            }
-
-            var report = new HarvestFunctionalService.HarvestReportRecord
-            {
-                Id = $"DEMO-MH-{DateTime.Now:yyyyMMdd-HHmmss}",
-                DateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                Area = "Demo Field · derr.mp4",
-                Duration = "00:00:20",
-                Detections = 0,
-                Priority = "Low",
-                OperatorNote = "DEMO · derr.mp4, live streaming YOLO inference",
-                AiModelUsed = "YOLOv8n ONNX local",
-                TlogPath = "",
-                GeofenceAlertsJson = "[]",
-                YoloBenchmarkJson = benchmark == null
-                    ? string.Empty
-                    : System.Text.Json.JsonSerializer.Serialize(benchmark, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
-                IncidentTimelineJson = _timelineService?.ToJson() ?? string.Empty,
-                MapScreenshotPath = "",
-                YoloScreenshotPath = "",
-                VideoRecordingPath = videoPath
-            };
-
-            await _harvestFunctionalService.AddReportAsync(report);
-            await _harvestFunctionalService.CreateEvidenceBundleAsync(report);
-            _timelineService?.Add("report", $"Demo report created: {report.Id}", "success");
-            AddAlertRow($"Demo selesai · benchmark {benchmark?.FramesPerSecond:F1} FPS", "info");
-            RenderIncidentTimeline();
-        }
-        catch (Exception ex)
-        {
-            Serilog.Log.Error(ex, "[DashboardPage] One-click demo failed");
-            _timelineService?.Add("demo", $"Demo error: {ex.Message}", "critical");
-            AddAlertRow($"Demo error: {ex.Message}", "critical");
-        }
-        finally
-        {
-            StartDemoButton.IsEnabled = true;
-            StartDemoButton.Content = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 6,
-                Children =
-                {
-                    new FontIcon { Glyph = "\uE768", FontSize = 11 },
-                    new TextBlock { Text = "Start Demo" }
-                }
-            };
-        }
     }
 
-    // ================ EXPORTS ================
+    private static string? ResolveDetectedVideoPath()
+    {
+        var candidates = new[]
+        {
+            "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused_only.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/runs/uav_detection/derr_detected.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/runs/demo/detection_output.mp4",
+            Path.Combine(AppContext.BaseDirectory, "derr_detected.mp4"),
+        };
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static (double Lat, double Lon)[] GenerateSurveyWaypoints(
+        double centerLat, double centerLon, int rows, int cols, double spacingMeters)
+    {
+        const double mPerDegLat = 111320.0;
+        double mPerDegLon = mPerDegLat * Math.Cos(centerLat * Math.PI / 180);
+        double dLat = spacingMeters / mPerDegLat;
+        double dLon = spacingMeters / mPerDegLon;
+        double startLat = centerLat - (rows / 2.0) * dLat;
+        double startLon = centerLon - (cols / 2.0) * dLon;
+        var wps = new List<(double, double)>();
+        for (int r = 0; r < rows; r++)
+        {
+            double lat = startLat + r * dLat;
+            bool ltr = r % 2 == 0;
+            for (int c = 0; c < cols; c++)
+            {
+                int col = ltr ? c : (cols - 1 - c);
+                wps.Add((lat, startLon + col * dLon));
+            }
+        }
+        return wps.ToArray();
+    }
+
+        // ================ EXPORTS ================
 
     private async void ExportPdfButton_Click(object sender, RoutedEventArgs e) => await ExportReportAsync("pdf");
     private async void ExportCsvButton_Click(object sender, RoutedEventArgs e) => await ExportReportAsync("csv");
@@ -1853,11 +2124,11 @@ public sealed partial class DashboardPage : Page
 
     private void SeedSummary()
     {
-        // Start with zeros — real data will come from YOLO detections
-        SummaryPestCount.Text = "0";
-        SummaryStressCount.Text = "0";
-        SummaryIrrigationCount.Text = "0";
-        SummaryHealthyCount.Text = "0";
+        SummaryHealthyCount.Text = "0%";
+        SummaryStressCount.Text = "0%";
+        SummaryDiseaseCount.Text = "0%";
+        SummaryDroughtCount.Text = "0%";
+        SummaryBaresoilCount.Text = "0%";
         SummaryPriorityText.Text = "Standby";
         SummaryConfidenceText.Text = "0%";
 

@@ -31,6 +31,50 @@ public sealed partial class StatsPage : Page
         DataContext = App.Current.Services.GetService<StatsViewModel>();
         _harvestFunctionalService = App.Current.Services.GetService<HarvestFunctionalService>();
         _fileService = App.Current.Services.GetService<IFileService>();
+        this.Loaded += (_, _) => { if (_lastAnalysis == null) RenderDemoAnalysis(); };
+    }
+
+    private void RenderDemoAnalysis()
+    {
+        // Dari hsvv_fusion_summary.json: healthy 33.8%, stressed 19.4%, disease 4.9%, drought 5.4%, bare 36.5%
+        const double healthy  = 33.8;
+        const double stressed = 24.3; // stressed 19.4 + disease 4.9
+        const double drought  = 5.4;
+        const double bare     = 36.5;
+        double affected = stressed + drought + bare;
+
+        TotalDetectionText.Text      = "493";
+        AverageConfidenceText.Text   = "82%";
+        ImpactAreaText.Text          = $"{affected * 0.048:F1} ha";
+        HighPriorityText.Text        = "12";
+        HealthyDistributionText.Text = $"{healthy:F1}%";
+        StressDistributionText.Text  = $"{stressed:F1}%";
+        DroughtDistributionText.Text = $"{drought:F1}%";
+        BareSoilDistributionText.Text= $"{bare:F1}%";
+        YoloDistributionText.Text    = "18 box";
+
+        HealthyDistributionBar.Width  = PercentToBarWidth(healthy);
+        StressDistributionBar.Width   = PercentToBarWidth(stressed);
+        DroughtDistributionBar.Width  = PercentToBarWidth(drought);
+        BareSoilDistributionBar.Width = PercentToBarWidth(bare);
+        YoloDistributionBar.Width     = PercentToBarWidth(72);
+
+        RecommendationOneText.Text   = "Zona bare_soil (37%) di sektor barat — prioritas pengairan dan revegetasi.";
+        RecommendationTwoText.Text   = "Pantau stressed_crop + disease (24%) — aplikasi nutrisi atau fungisida.";
+        RecommendationThreeText.Text = "Drought_stress (5%) — irigasi tetes pada petak R2-C3, R4-C1.";
+
+        var demoZones = new List<PriorityZoneItem>
+        {
+            new PriorityZoneItem { PriorityText = "P1", ZoneText = "R2 C3", CoordinateText = "-6.8152, 107.6178", Severity = "bare_soil" },
+            new PriorityZoneItem { PriorityText = "P2", ZoneText = "R4 C1", CoordinateText = "-6.8162, 107.6165", Severity = "stressed_crop" },
+            new PriorityZoneItem { PriorityText = "P3", ZoneText = "R1 C5", CoordinateText = "-6.8141, 107.6183", Severity = "drought_stress" },
+            new PriorityZoneItem { PriorityText = "P4", ZoneText = "R6 C4", CoordinateText = "-6.8171, 107.6175", Severity = "bare_soil" },
+            new PriorityZoneItem { PriorityText = "P5", ZoneText = "R3 C2", CoordinateText = "-6.8157, 107.6169", Severity = "stressed_crop" },
+        };
+        PriorityZonesItemsControl.ItemsSource = demoZones;
+        PriorityZonesEmptyText.Visibility = Visibility.Collapsed;
+        AnalysisStatusText.Text = "Data fusion · hsvv_fused_only.mp4 · 290 frame · Field Health 92.0 · Klik Run Analysis untuk analisis citra baru";
+        ValidationStatusText.Text = "Data demo tersedia. Masukkan sampel kelembaban tanah lalu klik Validasi.";
     }
 
     private async void BrowseImageButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)

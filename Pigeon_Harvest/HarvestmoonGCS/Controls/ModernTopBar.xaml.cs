@@ -332,7 +332,7 @@ public sealed partial class ModernTopBar : UserControl
         }
 
         _lastRenderedArmed = IsArmed;
-        ArmedBadge.Visibility = (Status == ConnectionStatus.Connected && IsArmed) ? Visibility.Visible : Visibility.Collapsed;
+        ArmedBadge.Visibility = Visibility.Collapsed;
     }
 
     private void UpdateEndpointVisuals()

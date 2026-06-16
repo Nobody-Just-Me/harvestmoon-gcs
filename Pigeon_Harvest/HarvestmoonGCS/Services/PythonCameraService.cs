@@ -272,9 +272,11 @@ public class PythonCameraService : ICameraService
         string source,
         string modelPath,
         int gridRows = 5,
-        int gridCols = 8,
+        int gridCols = 7,
         float minConf = 0.3f,
-        float boxScale = 0.85f)
+        float boxScale = 0.85f,
+        bool showOverlay = true,
+        bool demoMode = true)
     {
         // Resolve the .venv-yolo Python interpreter
         var (yoloPython, _) = ResolvePythonCommand(".venv-yolo");
@@ -314,7 +316,9 @@ public class PythonCameraService : ICameraService
                        $"--grid-rows {gridRows} " +
                        $"--grid-cols {gridCols} " +
                        $"--min-conf {minConf.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} " +
-                       $"--box-scale {boxScale.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}";
+                       $"--box-scale {boxScale.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}" +
+                       (demoMode ? " --demo" : "") +
+                       (showOverlay ? "" : " --no-overlay");
 
             _streamProcess = new Process
             {

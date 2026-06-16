@@ -72,6 +72,17 @@ public class AppSettings : INotifyPropertyChanged
         set => SetProperty(ref _ai, value);
     }
 
+    private VisionRuntimeSettings _visionRuntime = new VisionRuntimeSettings();
+
+    /// <summary>
+    /// Pengaturan runtime YOLO vision (model path, threshold) — persists across restarts
+    /// </summary>
+    public VisionRuntimeSettings VisionRuntime
+    {
+        get => _visionRuntime;
+        set => SetProperty(ref _visionRuntime, value);
+    }
+
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
         if (Equals(field, value)) return false;
@@ -84,6 +95,17 @@ public class AppSettings : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+}
+
+/// <summary>
+/// YOLO vision runtime settings — persisted so model/threshold survive app restarts
+/// </summary>
+public class VisionRuntimeSettings
+{
+    public string? ModelPath { get; set; }
+    public string? ClassPath { get; set; }
+    public float ConfidenceThreshold { get; set; } = 0.4f;
+    public float NmsThreshold { get; set; } = 0.4f;
 }
 
 /// <summary>

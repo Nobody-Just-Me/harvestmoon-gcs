@@ -3,17 +3,27 @@
 Grid-based YOLO classification streaming for MoonHarvest GCS.
 
 Reads video frames, divides into grid, classifies each cell via YOLO,
-draws scaled bounding boxes + summary overlay, outputs base64 JPEG JSON to stdout.
+draws merged bounding boxes (DEMO_MODE) + summary overlay, outputs base64
+JPEG JSON to stdout.
 
 Protocol (same as camera_service.py):
-  {"type": "frame", "data": "<base64_jpeg>"}     -- annotated frame
-  {"type": "detection", "data": {"count": N, "summary": "...", "classes": {...}}}  -- per-frame metadata
-  {"type": "error", "data": "..."}                 -- non-fatal error
+  {"type": "frame",     "data": "<base64_jpeg>"}
+  {"type": "detection", "data": {"count": N, "summary": "...", "classes": {...}}}
+  {"type": "error",     "data": "..."}
+
+DEMO_MODE (MOONHARVEST_DEMO=1 or --demo flag):
+  - Remaps 5 internal classes → 4 proposal labels
+  - Hides bare_soil (background)
+  - Merges drought_stress → Stress
+  - Uses connected-component merging of adjacent same-class cells
+  - Uses imgsz=640
+  - Adds Pest to legend (configurable, rarely/never triggered)
 """
 
 import argparse
 import base64
 import json
+import os
 import signal
 import sys
 import time
@@ -23,23 +33,52 @@ import numpy as np
 from ultralytics import YOLO
 
 # ---------------------------------------------------------------------------
-# Constants
+# DEMO_MODE
+# ---------------------------------------------------------------------------
+DEMO_MODE = os.environ.get("MOONHARVEST_DEMO", "1") == "1"
+
+INFERENCE_SIZE = 640  # imgsz for proposal compliance
+
+# ---------------------------------------------------------------------------
+# Class mappings
 # ---------------------------------------------------------------------------
 
-COLORS = {
-    "healthy_crop": (0, 255, 0),  # Green
-    "stressed_crop": (0, 165, 255),  # Orange
-    "disease_stress_vegetation": (0, 0, 255),  # Red
-    "drought_stress": (0, 255, 255),  # Yellow
-    "bare_soil": (128, 128, 128),  # Gray
+# Display labels for demo (None = hidden / background)
+DISPLAY_MAP = {
+    "healthy_crop":              "Healthy",
+    "stressed_crop":             "Stress",
+    "disease_stress_vegetation": "Disease",
+    "drought_stress":            "Stress",   # merged into Stress
+    "bare_soil":                 None,        # hidden
+    "pest":                      "Pest",
 }
 
+HIDDEN_CLASSES = {"bare_soil"}
+
+# Colors keyed by demo display label (BGR)
+DEMO_COLORS = {
+    "Healthy": (0, 255, 0),
+    "Stress":  (0, 255, 255),
+    "Disease": (0, 0, 255),
+    "Pest":    (0, 140, 255),
+}
+
+# Internal class colors (non-demo path)
+INTERNAL_COLORS = {
+    "healthy_crop":              (0, 255, 0),
+    "stressed_crop":             (0, 165, 255),
+    "disease_stress_vegetation": (0, 0, 255),
+    "drought_stress":            (0, 255, 255),
+    "bare_soil":                 (128, 128, 128),
+}
+
+# Short labels for non-demo overlay
 SHORT_LABELS = {
-    "healthy_crop": "Healthy",
-    "stressed_crop": "Stressed",
+    "healthy_crop":              "Healthy",
+    "stressed_crop":             "Stressed",
     "disease_stress_vegetation": "Disease",
-    "drought_stress": "Drought",
-    "bare_soil": "Bare Soil",
+    "drought_stress":            "Drought",
+    "bare_soil":                 "Bare Soil",
 }
 
 # ---------------------------------------------------------------------------
@@ -48,7 +87,6 @@ SHORT_LABELS = {
 
 
 def emit(payload: dict) -> None:
-    """Write a JSON line to stdout and flush immediately."""
     print(json.dumps(payload), flush=True)
 
 
@@ -56,8 +94,7 @@ def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-def scale_box(x1: int, y1: int, x2: int, y2: int, scale: float, w: int, h: int):
-    """Scale a box around its centre so adjacent boxes don't touch."""
+def scale_box(x1, y1, x2, y2, scale, w, h):
     cx = (x1 + x2) / 2.0
     cy = (y1 + y2) / 2.0
     bw = (x2 - x1) * scale
@@ -71,21 +108,78 @@ def scale_box(x1: int, y1: int, x2: int, y2: int, scale: float, w: int, h: int):
 
 
 # ---------------------------------------------------------------------------
+# TASK-05 — Connected-component merging
+# ---------------------------------------------------------------------------
+
+def merge_grid_to_regions(detections, frame_w, frame_h, grid_rows, grid_cols):
+    """BFS connected-component merge of adjacent same-class cells into merged boxes."""
+    if not detections:
+        return []
+
+    cell_h = frame_h // grid_rows
+    cell_w = frame_w // grid_cols
+
+    cell_map: dict = {}
+    for det in detections:
+        x1, y1, _, _ = det["bbox"]
+        col = min(x1 // max(cell_w, 1), grid_cols - 1)
+        row = min(y1 // max(cell_h, 1), grid_rows - 1)
+        cell_map[(row, col)] = det
+
+    visited: set = set()
+    regions = []
+
+    for pos in list(cell_map.keys()):
+        if pos in visited:
+            continue
+        cls = cell_map[pos]["class"]
+        queue = [pos]
+        cells = []
+        while queue:
+            r, c = queue.pop()
+            if (r, c) in visited:
+                continue
+            if cell_map.get((r, c), {}).get("class") != cls:
+                continue
+            visited.add((r, c))
+            cells.append(cell_map[(r, c)])
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nb = (r + dr, c + dc)
+                if nb not in visited and cell_map.get(nb, {}).get("class") == cls:
+                    queue.append(nb)
+
+        if not cells:
+            continue
+
+        bx1 = min(d["bbox"][0] for d in cells)
+        by1 = min(d["bbox"][1] for d in cells)
+        bx2 = max(d["bbox"][2] for d in cells)
+        by2 = max(d["bbox"][3] for d in cells)
+        avg_conf = sum(d["confidence"] for d in cells) / len(cells)
+
+        regions.append({
+            "bbox": (bx1, by1, bx2, by2),
+            "class": cls,
+            "class_id": cells[0]["class_id"],
+            "confidence": avg_conf,
+            "cell_count": len(cells),
+        })
+
+    return regions
+
+
+# ---------------------------------------------------------------------------
 # Grid classification
 # ---------------------------------------------------------------------------
 
-
 def classify_grid(frame, model, grid_rows: int, grid_cols: int, min_conf: float):
-    """Divide frame into grid cells and classify each one.
-
-    Returns (detections, total_count, class_counts).
-    """
+    """Divide frame into grid cells, classify each, apply demo remapping."""
     height, width = frame.shape[:2]
     cell_h = height // grid_rows
     cell_w = width // grid_cols
 
     detections = []
-    class_counts: dict[str, int] = {}
+    class_counts: dict = {}
 
     for row in range(grid_rows):
         for col in range(grid_cols):
@@ -95,8 +189,8 @@ def classify_grid(frame, model, grid_rows: int, grid_cols: int, min_conf: float)
             y2 = y1 + cell_h
 
             cell = frame[y1:y2, x1:x2]
-            results = model(cell, verbose=False)
-            if not results or len(results) == 0:
+            results = model(cell, verbose=False, imgsz=INFERENCE_SIZE)
+            if not results:
                 continue
 
             probs = results[0].probs
@@ -107,14 +201,20 @@ def classify_grid(frame, model, grid_rows: int, grid_cols: int, min_conf: float)
             if conf < min_conf:
                 continue
 
-            detections.append(
-                {
-                    "bbox": (x1, y1, x2, y2),
-                    "class": class_name,
-                    "class_id": class_id,
-                    "confidence": conf,
-                }
-            )
+            if DEMO_MODE:
+                if class_name in HIDDEN_CLASSES:
+                    continue
+                display_label = DISPLAY_MAP.get(class_name)
+                if display_label is None:
+                    continue
+                class_name = display_label
+
+            detections.append({
+                "bbox": (x1, y1, x2, y2),
+                "class": class_name,
+                "class_id": class_id,
+                "confidence": conf,
+            })
             class_counts[class_name] = class_counts.get(class_name, 0) + 1
 
     total = sum(class_counts.values())
@@ -125,9 +225,8 @@ def classify_grid(frame, model, grid_rows: int, grid_cols: int, min_conf: float)
 # Drawing
 # ---------------------------------------------------------------------------
 
-
 def draw_detections(frame, detections, box_scale: float):
-    """Draw scaled boxes with labels on the frame."""
+    """Draw boxes on frame. In DEMO_MODE uses merged regional boxes without scaling."""
     annotated = frame.copy()
     height, width = frame.shape[:2]
 
@@ -135,106 +234,96 @@ def draw_detections(frame, detections, box_scale: float):
         x1, y1, x2, y2 = det["bbox"]
         class_name = det["class"]
         conf = det["confidence"]
-        color = COLORS.get(class_name, (255, 255, 255))
 
-        sx1, sy1, sx2, sy2 = scale_box(x1, y1, x2, y2, box_scale, width, height)
+        if DEMO_MODE:
+            sx1, sy1, sx2, sy2 = int(x1), int(y1), int(x2), int(y2)
+            color = DEMO_COLORS.get(class_name, (255, 255, 255))
+        else:
+            sx1, sy1, sx2, sy2 = scale_box(x1, y1, x2, y2, box_scale, width, height)
+            color = INTERNAL_COLORS.get(class_name, (255, 255, 255))
+
         cv2.rectangle(annotated, (sx1, sy1), (sx2, sy2), color, 2)
 
         label = f"{class_name} {conf:.2f}"
-        (lw, lh), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(
-            annotated,
-            (sx1, sy1 - lh - 10),
-            (sx1 + lw + 10, sy1),
-            color,
-            -1,
-        )
-        cv2.putText(
-            annotated,
-            label,
-            (sx1 + 5, sy1 - 5),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (255, 255, 255),
-            1,
-            cv2.LINE_AA,
-        )
+        (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(annotated, (sx1, sy1 - lh - 10), (sx1 + lw + 10, sy1), color, -1)
+        cv2.putText(annotated, label, (sx1 + 5, sy1 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
 
     return annotated
 
 
 def add_statistics_overlay(frame, detections):
-    """Draw detection summary overlay at top-left."""
+    """Draw detection summary overlay."""
     total = len(detections)
     if total == 0:
         return frame
 
-    class_counts: dict[str, int] = {}
+    class_counts: dict = {}
     for det in detections:
         cls = det["class"]
         class_counts[cls] = class_counts.get(cls, 0) + 1
 
     dominant = max(class_counts, key=class_counts.get)
-
     overlay = frame.copy()
     n = len(class_counts)
-    box_h = 100 + n * 22
+    box_h = 110 + n * 22
     cv2.rectangle(overlay, (10, 10), (340, 10 + box_h), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
 
     y = 35
-    cv2.putText(
-        frame,
-        "Detection Summary",
-        (20, y),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.65,
-        (255, 255, 255),
-        2,
-        cv2.LINE_AA,
-    )
+    cv2.putText(frame, "Detection Summary", (20, y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
     y += 28
-    cv2.putText(
-        frame,
-        f"Total: {total} cells",
-        (20, y),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
-        (200, 200, 200),
-        1,
-        cv2.LINE_AA,
-    )
+    total_cells = sum(d.get("cell_count", 1) for d in detections)
+    cv2.putText(frame, f"Regions: {total}  Cells: {total_cells}", (20, y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
     y += 18
-    cv2.putText(
-        frame,
-        f"Dominant: {SHORT_LABELS.get(dominant, dominant)} ({class_counts[dominant]})",
-        (20, y),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
-        (255, 255, 200),
-        1,
-        cv2.LINE_AA,
-    )
+    disp = dominant
+    cv2.putText(frame, f"Dominant: {disp} ({class_counts[dominant]})", (20, y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 200), 1, cv2.LINE_AA)
     y += 24
 
+    colors = DEMO_COLORS if DEMO_MODE else INTERNAL_COLORS
     for cls_name in sorted(class_counts, key=lambda c: class_counts[c], reverse=True):
         count = class_counts[cls_name]
         pct = count / total * 100
-        color = COLORS.get(cls_name, (255, 255, 255))
-        short = SHORT_LABELS.get(cls_name, cls_name)
+        color = colors.get(cls_name, (255, 255, 255))
         prefix = ">" if cls_name == dominant else " "
-        cv2.putText(
-            frame,
-            f"{prefix}{short}: {count} ({pct:.0f}%)",
-            (20, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.45,
-            color,
-            1,
-            cv2.LINE_AA,
-        )
+        cv2.putText(frame, f"{prefix}{cls_name}: {count} ({pct:.0f}%)", (20, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
         y += 22
 
+    if DEMO_MODE:
+        cv2.putText(frame, f"Inference: {INFERENCE_SIZE}x{INFERENCE_SIZE}", (20, y + 4),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (180, 180, 180), 1, cv2.LINE_AA)
+
+    return frame
+
+
+def add_legend(frame):
+    """Bottom-right legend for proposal-aligned 4 classes."""
+    if not DEMO_MODE:
+        return frame
+    h, w = frame.shape[:2]
+    entries = [
+        ("Healthy", DEMO_COLORS["Healthy"]),
+        ("Stress",  DEMO_COLORS["Stress"]),
+        ("Disease", DEMO_COLORS["Disease"]),
+        ("Pest",    DEMO_COLORS["Pest"]),
+    ]
+    padding, row_h = 8, 20
+    legend_h = padding * 2 + len(entries) * row_h
+    legend_w = 130
+    lx, ly = w - legend_w - 10, h - legend_h - 10
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (lx, ly), (lx + legend_w, ly + legend_h), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+    for i, (name, color) in enumerate(entries):
+        iy = ly + padding + i * row_h
+        cv2.rectangle(frame, (lx + padding, iy + 2), (lx + padding + 14, iy + 14), color, -1)
+        cv2.putText(frame, name, (lx + padding + 20, iy + 13),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
     return frame
 
 
@@ -242,39 +331,41 @@ def add_statistics_overlay(frame, detections):
 # Main loop
 # ---------------------------------------------------------------------------
 
-
 def main():
+    global DEMO_MODE
+
     parser = argparse.ArgumentParser(
         description="Grid-based YOLO health classification streaming for GCS"
     )
-    parser.add_argument("--source", type=str, required=True, help="Video source (path or camera index)")
-    parser.add_argument("--model", type=str, required=True, help="Path to YOLO classification model (.pt)")
-    parser.add_argument("--grid-rows", type=int, default=5, help="Number of grid rows (default: 5)")
-    parser.add_argument("--grid-cols", type=int, default=8, help="Number of grid columns (default: 8)")
-    parser.add_argument("--min-conf", type=float, default=0.3, help="Minimum confidence threshold (default: 0.3)")
-    parser.add_argument("--box-scale", type=float, default=0.85, help="Box scale factor for gaps (default: 0.85)")
-    parser.add_argument("--max-fps", type=float, default=15.0, help="Maximum output FPS (default: 15)")
+    parser.add_argument("--source",     type=str,   required=True)
+    parser.add_argument("--model",      type=str,   required=True)
+    parser.add_argument("--grid-rows",  type=int,   default=5)
+    parser.add_argument("--grid-cols",  type=int,   default=7)
+    parser.add_argument("--min-conf",   type=float, default=0.3)
+    parser.add_argument("--box-scale",  type=float, default=0.85)
+    parser.add_argument("--max-fps",    type=float, default=15.0)
+    parser.add_argument("--demo",       action="store_true",
+                        help="Force demo mode (also triggered by MOONHARVEST_DEMO=1)")
+    parser.add_argument("--no-overlay", action="store_true",
+                        help="Emit raw frame without annotation (toggle vegetation overlay off)")
     args = parser.parse_args()
+
+    if args.demo:
+        DEMO_MODE = True
 
     signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
     signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
 
-    # Load model
     try:
         model = YOLO(args.model)
     except Exception as exc:
         emit({"type": "error", "data": f"Failed to load model: {exc}"})
         return 1
 
-    # Open video
     source = args.source
-    if source.isdigit():
-        cap = cv2.VideoCapture(int(source))
-    else:
-        cap = cv2.VideoCapture(source)
-
+    cap = cv2.VideoCapture(int(source) if source.isdigit() else source)
     if not cap.isOpened():
-        emit({"type": "error", "data": f"Failed to open video source: {source}"})
+        emit({"type": "error", "data": f"Failed to open source: {source}"})
         return 1
 
     min_frame_interval = 1.0 / args.max_fps
@@ -284,59 +375,69 @@ def main():
         while True:
             ret, frame = cap.read()
             if not ret or frame is None:
-                # End of video — emit an end marker and exit
                 emit({"type": "end", "data": "Video stream ended"})
                 break
 
-            # Rate-limit
             now = time.time()
             if now - last_frame_time < min_frame_interval:
                 continue
             last_frame_time = now
 
-            # Classify grid
+            height, width = frame.shape[:2]
+
+            if args.no_overlay:
+                # Vegetation overlay OFF — emit raw frame
+                ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                if ok:
+                    emit({"type": "frame", "data": base64.b64encode(buf).decode()})
+                continue
+
+            # Classify grid cells
             detections, total, class_counts = classify_grid(
                 frame, model, args.grid_rows, args.grid_cols, args.min_conf
             )
 
-            # Draw boxes
-            annotated = draw_detections(frame, detections, args.box_scale)
+            # Merge adjacent cells → regional boxes (DEMO_MODE only)
+            if DEMO_MODE:
+                render_dets = merge_grid_to_regions(
+                    detections, width, height, args.grid_rows, args.grid_cols
+                )
+            else:
+                render_dets = detections
 
-            # Draw summary overlay
-            annotated = add_statistics_overlay(annotated, detections)
+            # Render annotations
+            annotated = draw_detections(frame, render_dets, args.box_scale)
+            annotated = add_statistics_overlay(annotated, render_dets)
+            if DEMO_MODE:
+                annotated = add_legend(annotated)
 
-            # Encode as JPEG
             ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if not ok:
                 emit({"type": "error", "data": "JPEG encoding failed"})
                 continue
 
-            b64 = base64.b64encode(buf).decode("utf-8")
-            emit({"type": "frame", "data": b64})
+            emit({"type": "frame", "data": base64.b64encode(buf).decode()})
 
-            # Build summary string for detection metadata
+            # Build summary using demo labels
             if total > 0:
-                summary_parts = []
-                for cls_name in sorted(class_counts, key=lambda c: class_counts[c], reverse=True):
-                    short = SHORT_LABELS.get(cls_name, cls_name)
-                    summary_parts.append(f"{short}: {class_counts[cls_name]}")
+                summary_parts = [
+                    f"{cls}: {class_counts[cls]}"
+                    for cls in sorted(class_counts, key=lambda c: class_counts[c], reverse=True)
+                ]
                 summary_str = " | ".join(summary_parts)
             else:
                 summary_str = "No detections"
 
-            emit(
-                {
-                    "type": "detection",
-                    "data": {
-                        "count": total,
-                        "summary": summary_str,
-                        "classes": class_counts,
-                    },
-                }
-            )
+            emit({
+                "type": "detection",
+                "data": {
+                    "count": total,
+                    "summary": summary_str,
+                    "classes": class_counts,
+                },
+            })
 
     except (BrokenPipeError, EOFError):
-        # Parent closed pipe — normal shutdown
         pass
     except KeyboardInterrupt:
         pass

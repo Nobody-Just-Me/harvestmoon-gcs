@@ -348,8 +348,10 @@
                                 <TextBlock Text="ONNX Runtime · runtime swappable" FontSize="10" Foreground="#64766B" Margin="0,-4,0,4"/>
                                 <ToggleSwitch x:Name="VegToggleSwitch" Header="Vegetation Overlay" IsOn="True" Toggled="VegToggle_Toggled"/>
                                 <TextBlock Text="OpenCV color transform" FontSize="10" Foreground="#64766B" Margin="0,-4,0,4"/>
-                                <ToggleSwitch x:Name="GridToggleSwitch" Header="Grid" IsOn="True" Toggled="GridToggle_Toggled"/>
+                                <ToggleSwitch x:Name="GridToggleSwitch" Header="Grid Survey" IsOn="True" Toggled="GridToggle_Toggled"/>
+                                <TextBlock Text="Garis grid area survey · 7×6 waypoints" FontSize="10" Foreground="#64766B" Margin="0,-4,0,4"/>
                                 <ToggleSwitch x:Name="HeatmapToggleSwitch" Header="Detection Heatmap" IsOn="False" Toggled="HeatmapToggle_Toggled"/>
+                                <TextBlock Text="Hotspot deteksi · kerapatan per region" FontSize="10" Foreground="#64766B" Margin="0,-4,0,4"/>
                                 <ToggleSwitch x:Name="ImuToggleSwitch" Header="IMU HUD" IsOn="True" Toggled="ImuToggle_Toggled"/>
                                 <TextBlock Text="Pitch · roll · yaw" FontSize="10" Foreground="#64766B" Margin="0,-4,0,4"/>
                                 <Grid Margin="0,4,0,0">
@@ -631,11 +633,11 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#FEF2F2" Margin="0,0,10,0">
-                                    <FontIcon Glyph="&#xEC1F;" FontSize="14" Foreground="#D32F2F"/>
+                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#ECFDF5" Margin="0,0,10,0">
+                                    <TextBlock Text="🟢" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
-                                <TextBlock Grid.Column="1" Text="Pest" FontSize="13" Foreground="#0F3024" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" x:Name="SummaryPestCount" Text="0" FontSize="14" FontWeight="SemiBold" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="Tanaman Sehat" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" x:Name="SummaryHealthyCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#2E7D32" VerticalAlignment="Center"/>
                             </Grid>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -644,10 +646,10 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#FFFBEB" Margin="0,0,10,0">
-                                    <FontIcon Glyph="&#xE790;" FontSize="14" Foreground="#B26B00"/>
+                                    <TextBlock Text="🟡" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
-                                <TextBlock Grid.Column="1" Text="Crop Stress" FontSize="13" Foreground="#0F3024" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" x:Name="SummaryStressCount" Text="0" FontSize="14" FontWeight="SemiBold" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="Tanaman Stress" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" x:Name="SummaryStressCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#B26B00" VerticalAlignment="Center"/>
                             </Grid>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -655,11 +657,11 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#EFF6FF" Margin="0,0,10,0">
-                                    <FontIcon Glyph="&#xEA3E;" FontSize="14" Foreground="#1976D2"/>
+                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#FEF2F2" Margin="0,0,10,0">
+                                    <TextBlock Text="🔴" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
-                                <TextBlock Grid.Column="1" Text="Irrigation" FontSize="13" Foreground="#0F3024" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" x:Name="SummaryIrrigationCount" Text="0" FontSize="14" FontWeight="SemiBold" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="Terserang Penyakit" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" x:Name="SummaryDiseaseCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#D32F2F" VerticalAlignment="Center"/>
                             </Grid>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -667,11 +669,23 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#ECFDF5" Margin="0,0,10,0">
-                                    <FontIcon Glyph="&#xE945;" FontSize="14" Foreground="#2E7D32"/>
+                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#FFF7ED" Margin="0,0,10,0">
+                                    <TextBlock Text="🟠" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
-                                <TextBlock Grid.Column="1" Text="Healthy" FontSize="13" Foreground="#0F3024" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" x:Name="SummaryHealthyCount" Text="0" FontSize="14" FontWeight="SemiBold" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="Stress Kekeringan" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" x:Name="SummaryDroughtCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#D97706" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#F5F5F5" Margin="0,0,10,0">
+                                    <TextBlock Text="⚫" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock Grid.Column="1" Text="Tanah Kosong" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" x:Name="SummaryBaresoilCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#616161" VerticalAlignment="Center"/>
                             </Grid>
 
                             <Border Height="1" Background="#E5F3E8" Margin="0,10,0,8"/>

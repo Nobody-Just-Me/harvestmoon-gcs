@@ -149,13 +149,9 @@ public sealed partial class ModernSidebar : UserControl
         else if (button == ConnectionNavButton) ConnectionActiveDot.Opacity = opacity;
         else if (button == CameraNavButton) CameraActiveDot.Opacity = opacity;
         else if (button == MapNavButton) MapActiveDot.Opacity = opacity;
-        else if (button == MissionPlannerNavButton) MissionPlannerActiveDot.Opacity = opacity;
         else if (button == StatsNavButton) StatsActiveDot.Opacity = opacity;
-        else if (button == AIHarvestNavButton) AIHarvestActiveDot.Opacity = opacity;
         else if (button == AISettingsNavButton) AISettingsActiveDot.Opacity = opacity;
         else if (button == TlogNavButton) TlogActiveDot.Opacity = opacity;
-        else if (button == TlogPlayerNavButton) TlogPlayerActiveDot.Opacity = opacity;
-        else if (button == DiagnosticsNavButton) DiagnosticsActiveDot.Opacity = opacity;
 #if !__WASM__
         else if (button == PIANavButton) PIAActiveDot.Opacity = opacity;
 #endif
@@ -167,13 +163,9 @@ public sealed partial class ModernSidebar : UserControl
         if (button == ConnectionNavButton) return (Brush)Application.Current.Resources["NavDiagnosticsBrush"];
         if (button == CameraNavButton) return (Brush)Application.Current.Resources["NavCameraBrush"];
         if (button == MapNavButton) return (Brush)Application.Current.Resources["NavMapBrush"];
-        if (button == MissionPlannerNavButton) return (Brush)Application.Current.Resources["NavMapBrush"];
         if (button == StatsNavButton) return (Brush)Application.Current.Resources["NavStatsBrush"];
-        if (button == AIHarvestNavButton) return (Brush)Application.Current.Resources["PrimaryBrush"];
         if (button == AISettingsNavButton) return (Brush)Application.Current.Resources["PrimaryBrush"];
         if (button == TlogNavButton) return (Brush)Application.Current.Resources["NavTlogBrush"];
-        if (button == TlogPlayerNavButton) return (Brush)Application.Current.Resources["NavTlogBrush"];
-        if (button == DiagnosticsNavButton) return (Brush)Application.Current.Resources["NavDiagnosticsBrush"];
 #if !__WASM__
         if (button == PIANavButton) return (Brush)Application.Current.Resources["PrimaryBrush"];
 #endif

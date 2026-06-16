@@ -119,20 +119,7 @@
                     </Grid>
                 </Button>
 
-                <Button x:Name="MapNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Map">
-                    <Grid HorizontalAlignment="Stretch">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <FontIcon Grid.Column="0" Glyph="&#xE707;" FontSize="16" Foreground="{ThemeResource NavMapBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="Map · Waypoints" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
-                        <Ellipse x:Name="MapActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
-                    </Grid>
-                </Button>
-
-                <Button x:Name="MissionPlannerNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="MissionPlanner">
+                <Button x:Name="MapNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="MissionPlanner">
                     <Grid HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -140,8 +127,8 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <FontIcon Grid.Column="0" Glyph="&#xE81D;" FontSize="16" Foreground="{ThemeResource NavMapBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="Mission Planner" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
-                        <Ellipse x:Name="MissionPlannerActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="Peta &amp; Misi" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
+                        <Ellipse x:Name="MapActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
 
@@ -158,18 +145,6 @@
                     </Grid>
                 </Button>
 
-                <Button x:Name="AIHarvestNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="AIHarvest">
-                    <Grid HorizontalAlignment="Stretch">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <FontIcon Grid.Column="0" Glyph="&#xE950;" FontSize="16" Foreground="{ThemeResource PrimaryBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="AI Vision" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
-                        <Ellipse x:Name="AIHarvestActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
-                    </Grid>
-                </Button>
 
                 <Button x:Name="AISettingsNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="AISettings">
                     <Grid HorizontalAlignment="Stretch">
@@ -197,31 +172,6 @@
                     </Grid>
                 </Button>
 
-                <Button x:Name="TlogPlayerNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="TlogPlayer">
-                    <Grid HorizontalAlignment="Stretch">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <FontIcon Grid.Column="0" Glyph="&#xE102;" FontSize="16" Foreground="{ThemeResource NavTlogBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="TLOG Player" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
-                        <Ellipse x:Name="TlogPlayerActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
-                    </Grid>
-                </Button>
-
-                <Button x:Name="DiagnosticsNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Diagnostics">
-                    <Grid HorizontalAlignment="Stretch">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <FontIcon Grid.Column="0" Glyph="&#xE7BA;" FontSize="16" Foreground="{ThemeResource NavDiagnosticsBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="Diagnostics" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
-                        <Ellipse x:Name="DiagnosticsActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
-                    </Grid>
-                </Button>
 
 #if !__WASM__
                 <!-- PIA AI Assistant Button -->

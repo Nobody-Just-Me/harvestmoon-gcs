@@ -99,6 +99,10 @@ public interface IMavLinkService
     // Playback mode management
     bool EnterPlaybackMode();
     void ExitPlaybackMode();
+
+    // Demo / simulation injection — fires real events so all pages respond correctly
+    void SimulateConnection(bool connected);
+    void SimulateTelemetry(HarvestmoonGCS.Models.FlightData data);
     
     // Diagnostic operations
     IDiagnosticLogger GetDiagnosticLogger();

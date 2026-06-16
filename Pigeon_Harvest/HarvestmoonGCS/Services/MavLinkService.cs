@@ -499,6 +499,10 @@ public class MavLinkService : IMavLinkService, IDisposable
         }
     }
     
+    public void SimulateConnection(bool connected) => RaiseConnectionStatusChanged(connected);
+
+    public void SimulateTelemetry(HarvestmoonGCS.Models.FlightData data) => RaiseTelemetryReceived(data);
+
     // Diagnostic operations
     public IDiagnosticLogger GetDiagnosticLogger() => _diagnosticLogger;
     public IPerformanceMonitor GetPerformanceMonitor() => _performanceMonitor;

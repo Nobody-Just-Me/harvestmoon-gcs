@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using OpenCvSharp;
 using HarvestmoonGCS.Core.Helpers;
+using HarvestmoonGCS.Core.Models;
 using HarvestmoonGCS.Core.Services;
 
 namespace HarvestmoonGCS.Services;
@@ -118,6 +119,7 @@ public sealed class HarvestFunctionalService : IDisposable
     private const string ReportsIndexFile = "reports_index.json";
     private readonly IFileService _fileService;
     private readonly IncidentTimelineService _timelineService;
+    private readonly ISettingsService? _settingsService;
     private readonly VegetationYoloAnalyzer _analyzer = new();
     private readonly List<string> _pendingGeofenceAlerts = new();
     private string _pendingTlogPath = string.Empty;
@@ -424,10 +426,11 @@ public sealed class HarvestFunctionalService : IDisposable
     }
 #endif
 
-    public HarvestFunctionalService(IFileService fileService, IncidentTimelineService timelineService)
+    public HarvestFunctionalService(IFileService fileService, IncidentTimelineService timelineService, ISettingsService? settingsService = null)
     {
         _fileService = fileService;
         _timelineService = timelineService;
+        _settingsService = settingsService;
     }
 
     public async Task<HarvestAnalysisResult?> AnalyzeImageAsync(string imagePath, string area, double latitude, double longitude, double altitude)
@@ -1218,6 +1221,19 @@ public sealed class HarvestFunctionalService : IDisposable
             modelClassPairs.Add((Path.Combine(dir, "yolov8n.onnx"), Path.Combine(dir, "classes-yolov8n-coco.txt")));
         }
 
+        // Apply persisted vision runtime settings if not already overridden in-session
+        if (_runtimeModelPath == null)
+        {
+            var saved = _settingsService?.Settings?.VisionRuntime;
+            if (saved != null)
+            {
+                if (!string.IsNullOrWhiteSpace(saved.ModelPath)) _runtimeModelPath = saved.ModelPath;
+                if (!string.IsNullOrWhiteSpace(saved.ClassPath)) _runtimeClassPath = saved.ClassPath;
+                _runtimeConfidenceThreshold = Math.Clamp(saved.ConfidenceThreshold, 0.1f, 1.0f);
+                _runtimeNmsThreshold = Math.Clamp(saved.NmsThreshold, 0.1f, 1.0f);
+            }
+        }
+
         var pair = !string.IsNullOrWhiteSpace(_runtimeModelPath) && !string.IsNullOrWhiteSpace(_runtimeClassPath)
             ? (_runtimeModelPath!, _runtimeClassPath!)
             : modelClassPairs.FirstOrDefault(candidate => File.Exists(candidate.Model) && File.Exists(candidate.Classes));
@@ -1278,6 +1294,18 @@ public sealed class HarvestFunctionalService : IDisposable
         {
             _analyzer.Detector.SetConfidenceThreshold(_runtimeConfidenceThreshold);
             _analyzer.Detector.SetNmsThreshold(_runtimeNmsThreshold);
+        }
+
+        if (_settingsService != null)
+        {
+            _settingsService.Settings.VisionRuntime = new VisionRuntimeSettings
+            {
+                ModelPath = _runtimeModelPath,
+                ClassPath = _runtimeClassPath,
+                ConfidenceThreshold = _runtimeConfidenceThreshold,
+                NmsThreshold = _runtimeNmsThreshold
+            };
+            _ = _settingsService.SaveSettingsAsync();
         }
 
         YoloOptionChanged?.Invoke(this, IsYoloOptionEnabled);

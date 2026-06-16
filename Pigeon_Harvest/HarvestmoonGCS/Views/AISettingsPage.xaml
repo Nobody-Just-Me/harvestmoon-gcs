@@ -195,6 +195,8 @@
                                  MinWidth="280"
                                  HorizontalAlignment="Left"/>
 
+                        <!-- Voice Command — hidden in DEMO_MODE (TASK-02: di luar proposal) -->
+                        <StackPanel x:Name="VoiceCommandSection" Visibility="Collapsed">
                         <TextBlock Text="Voice Command"
                                    FontSize="16"
                                    FontWeight="SemiBold"
@@ -225,6 +227,7 @@
                             <ComboBoxItem Content="id-ID"/>
                             <ComboBoxItem Content="en-US"/>
                         </ComboBox>
+                        </StackPanel>
 
                         <TextBlock Text="Anomaly Detection"
                                    FontSize="16"
