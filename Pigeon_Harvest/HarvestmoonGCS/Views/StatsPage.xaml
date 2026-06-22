@@ -54,38 +54,31 @@
 
                         <Grid Margin="0,0,0,8">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="Kanopi sehat" Style="{StaticResource LabelStyle}"/>
+                            <TextBlock Text="Lush Green" Style="{StaticResource LabelStyle}"/>
                             <TextBlock x:Name="HealthyDistributionText" Grid.Column="1" Text="0%" FontSize="12" Foreground="{ThemeResource ForegroundBrush}"/>
                         </Grid>
                         <Border Height="8" Background="{ThemeResource MutedBrush}" CornerRadius="4"><Border x:Name="HealthyDistributionBar" Width="4" HorizontalAlignment="Left" Background="#2E7D32" CornerRadius="4"/></Border>
 
                         <Grid Margin="0,10,0,8">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="Stress kuning" Style="{StaticResource LabelStyle}"/>
+                            <TextBlock Text="Inconsistent Growth" Style="{StaticResource LabelStyle}"/>
                             <TextBlock x:Name="StressDistributionText" Grid.Column="1" Text="0%" FontSize="12" Foreground="{ThemeResource ForegroundBrush}"/>
                         </Grid>
                         <Border Height="8" Background="{ThemeResource MutedBrush}" CornerRadius="4"><Border x:Name="StressDistributionBar" Width="4" HorizontalAlignment="Left" Background="#FBC02D" CornerRadius="4"/></Border>
 
                         <Grid Margin="0,10,0,8">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="Kekeringan coklat" Style="{StaticResource LabelStyle}"/>
-                            <TextBlock x:Name="DroughtDistributionText" Grid.Column="1" Text="0%" FontSize="12" Foreground="{ThemeResource ForegroundBrush}"/>
+                            <TextBlock Text="Disease" Style="{StaticResource LabelStyle}"/>
+                            <TextBlock x:Name="DiseaseDistributionText" Grid.Column="1" Text="0%" FontSize="12" Foreground="{ThemeResource ForegroundBrush}"/>
                         </Grid>
-                        <Border Height="8" Background="{ThemeResource MutedBrush}" CornerRadius="4"><Border x:Name="DroughtDistributionBar" Width="4" HorizontalAlignment="Left" Background="#FB8C00" CornerRadius="4"/></Border>
+                        <Border Height="8" Background="{ThemeResource MutedBrush}" CornerRadius="4"><Border x:Name="DiseaseDistributionBar" Width="4" HorizontalAlignment="Left" Background="#E53935" CornerRadius="4"/></Border>
 
                         <Grid Margin="0,10,0,8">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="Tanah terbuka/retak" Style="{StaticResource LabelStyle}"/>
-                            <TextBlock x:Name="BareSoilDistributionText" Grid.Column="1" Text="0%" FontSize="12" Foreground="{ThemeResource ForegroundBrush}"/>
+                            <TextBlock Text="Pest" Style="{StaticResource LabelStyle}"/>
+                            <TextBlock x:Name="PestDistributionText" Grid.Column="1" Text="0%" FontSize="12" Foreground="{ThemeResource ForegroundBrush}"/>
                         </Grid>
-                        <Border Height="8" Background="{ThemeResource MutedBrush}" CornerRadius="4"><Border x:Name="BareSoilDistributionBar" Width="4" HorizontalAlignment="Left" Background="#795548" CornerRadius="4"/></Border>
-
-                        <Grid Margin="0,10,0,8">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="Deteksi YOLOv8n" Style="{StaticResource LabelStyle}"/>
-                            <TextBlock x:Name="YoloDistributionText" Grid.Column="1" Text="0 box" FontSize="12" Foreground="{ThemeResource ForegroundBrush}"/>
-                        </Grid>
-                        <Border Height="8" Background="{ThemeResource MutedBrush}" CornerRadius="4"><Border x:Name="YoloDistributionBar" Width="4" HorizontalAlignment="Left" Background="#1976D2" CornerRadius="4"/></Border>
+                        <Border Height="8" Background="{ThemeResource MutedBrush}" CornerRadius="4"><Border x:Name="PestDistributionBar" Width="4" HorizontalAlignment="Left" Background="#FF8F00" CornerRadius="4"/></Border>
                     </StackPanel>
                 </Border>
 

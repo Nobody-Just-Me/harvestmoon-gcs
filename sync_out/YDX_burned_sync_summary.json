@@ -1,0 +1,19 @@
+{
+  "video": "YDX_burned.mp4",
+  "frames_proc": 165,
+  "avg_fhi": 94.6,
+  "confirmed_rate_pct": 0.0,
+  "total_regions": 1176,
+  "total_confirmed": 0,
+  "proc_seconds": 34.7,
+  "mode": "hsv+yolo-validate",
+  "decision_logic": "multi-tier (metode_hsv_deteksi_yolo_validasi.md)",
+  "temporal_window": 5,
+  "thresholds": {
+    "hsv_conf_high": 0.6,
+    "hsv_conf_med": 0.4,
+    "yolo_conf_high": 0.5,
+    "yolo_conf_med": 0.6,
+    "yolo_conf_low": 0.75
+  }
+}

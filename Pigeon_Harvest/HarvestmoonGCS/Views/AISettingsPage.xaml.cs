@@ -51,7 +51,6 @@ public sealed partial class AISettingsPage : Page
 
     private void AISettingsPage_Loaded(object sender, RoutedEventArgs e)
     {
-        Debug.WriteLine("AISettingsPage loaded");
     }
 
     private void LoadSettings()
@@ -119,8 +118,6 @@ public sealed partial class AISettingsPage : Page
             FallbackModelBox.Text = _aiSettings.Models.Fallback;
             LoadVisionRuntimeSettings();
             UpdateProviderDiagnosticText("Diagnostic siap. Gunakan tombol test provider untuk verifikasi koneksi.");
-
-            Debug.WriteLine("AI settings loaded successfully");
         }
         catch (Exception ex)
         {
@@ -351,8 +348,17 @@ public sealed partial class AISettingsPage : Page
     private void LoadVisionRuntimeSettings()
     {
         var baseDirectory = AppContext.BaseDirectory;
-        var defaultModelPath = Path.Combine(baseDirectory, "Assets", "models", "yolov8n-crop-weed-416.onnx");
-        var defaultClassPath = Path.Combine(baseDirectory, "Assets", "models", "classes-crop-weed.txt");
+        // Android: prefer INT8 model (smaller, faster via NNAPI); desktop: full FP32
+#if __ANDROID__
+        var preferredModelName = "moonharvest-health-cls-int8.onnx";
+#else
+        var preferredModelName = "moonharvest-health-cls.onnx";
+#endif
+        var defaultModelPath = Path.Combine(baseDirectory, "Assets", "models", preferredModelName);
+        // Fallback to FP32 if INT8 file is missing (e.g. first install before asset copy)
+        if (!File.Exists(defaultModelPath))
+            defaultModelPath = Path.Combine(baseDirectory, "Assets", "models", "moonharvest-health-cls.onnx");
+        var defaultClassPath = Path.Combine(baseDirectory, "Assets", "models", "classes-moonharvest-health.txt");
 
         VisionModelPathBox.Text = _harvestFunctionalService?.RuntimeModelPath
             ?? (File.Exists(defaultModelPath) ? defaultModelPath : string.Empty);

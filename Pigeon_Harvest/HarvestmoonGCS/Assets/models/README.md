@@ -1,4 +1,4 @@
-# YOLO Models for Pigeon Harvest
+# YOLO Models for MoonHarvest
 
 Folder ini berisi model YOLO dan class-name yang dipakai oleh `HarvestFunctionalService` untuk deteksi objek offline pada live camera dan image analysis.
 

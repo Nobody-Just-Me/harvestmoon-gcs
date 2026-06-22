@@ -14,11 +14,11 @@
 
         <Grid Grid.Row="0" Background="{ThemeResource CardBrush}" Padding="14,10">
             <StackPanel>
-                <TextBlock Text="PIA Settings"
+                <TextBlock Text="AI Detection Settings"
                            FontSize="22"
                            FontWeight="Bold"
                            Foreground="{ThemeResource ForegroundBrush}"/>
-                <TextBlock Text="Setup cepat: OpenRouter sebagai provider utama, Gemini sebagai fallback"
+                <TextBlock Text="Configure YOLO model, detection threshold, and AI parameters"
                            FontSize="12"
                            Foreground="{ThemeResource MutedForegroundBrush}"
                            Margin="0,5,0,0"/>
@@ -34,82 +34,84 @@
                         BorderBrush="{ThemeResource BorderBrush}"
                         BorderThickness="1">
                     <StackPanel Spacing="14">
-                        <TextBlock Text="Quick Setup"
+                        <TextBlock Text="Detection Settings"
                                    FontSize="17"
                                    FontWeight="SemiBold"
                                    Foreground="{ThemeResource ForegroundBrush}"/>
-                        <TextBlock Text="Isi API key, test koneksi, lalu simpan. Pengaturan teknis lain tersedia di Advanced."
+                        <TextBlock Text="Configure YOLO model for crop health detection. Cloud AI integration available in Advanced."
                                    TextWrapping="Wrap"
                                    Foreground="{ThemeResource MutedForegroundBrush}"/>
                         <Rectangle Height="1" Fill="{ThemeResource BorderBrush}"/>
 
-                        <ToggleSwitch x:Name="AiEnabledToggle"
-                                      Header="Enable AI Features"
-                                      OnContent="Enabled"
-                                      OffContent="Disabled"/>
+                        <StackPanel x:Name="LlmCloudSection" Visibility="Collapsed" Spacing="14">
+                            <ToggleSwitch x:Name="AiEnabledToggle"
+                                          Header="Enable AI Features"
+                                          OnContent="Enabled"
+                                          OffContent="Disabled"/>
 
-                        <TextBlock Text="LLM Provider"
-                                   FontWeight="SemiBold"
-                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
-                        <ComboBox x:Name="ProviderCombo"
-                                  MinWidth="200"
-                                  HorizontalAlignment="Left"
-                                  SelectedIndex="0">
-                            <ComboBoxItem Content="OpenRouter"/>
-                            <ComboBoxItem Content="Gemini"/>
-                            <ComboBoxItem Content="OpenAI"/>
-                            <ComboBoxItem Content="Grok"/>
-                        </ComboBox>
+                            <TextBlock Text="LLM Provider"
+                                       FontWeight="SemiBold"
+                                       Foreground="{ThemeResource MutedForegroundBrush}"/>
+                            <ComboBox x:Name="ProviderCombo"
+                                      MinWidth="200"
+                                      HorizontalAlignment="Left"
+                                      SelectedIndex="0">
+                                <ComboBoxItem Content="OpenRouter"/>
+                                <ComboBoxItem Content="Gemini"/>
+                                <ComboBoxItem Content="OpenAI"/>
+                                <ComboBoxItem Content="Grok"/>
+                            </ComboBox>
 
-                        <TextBlock Text="Primary API Key"
-                                   FontWeight="SemiBold"
-                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
-                        <PasswordBox x:Name="OpenRouterApiKeyBox"
-                                     PlaceholderText="API key OpenRouter utama"
-                                     MaxWidth="460"
-                                     HorizontalAlignment="Stretch"
-                                     PasswordRevealMode="Peek"/>
+                            <TextBlock Text="Primary API Key"
+                                       FontWeight="SemiBold"
+                                       Foreground="{ThemeResource MutedForegroundBrush}"/>
+                            <PasswordBox x:Name="OpenRouterApiKeyBox"
+                                         PlaceholderText="Primary OpenRouter API key"
+                                         MaxWidth="460"
+                                         HorizontalAlignment="Stretch"
+                                         PasswordRevealMode="Peek"/>
 
-                        <TextBlock Text="Fallback Provider"
-                                   FontWeight="SemiBold"
-                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
-                        <ComboBox x:Name="FallbackProviderCombo"
-                                  MinWidth="200"
-                                  HorizontalAlignment="Left"
-                                  SelectedIndex="1">
-                            <ComboBoxItem Content="OpenRouter"/>
-                            <ComboBoxItem Content="Gemini"/>
-                            <ComboBoxItem Content="OpenAI"/>
-                            <ComboBoxItem Content="Grok"/>
-                        </ComboBox>
+                            <TextBlock Text="Fallback Provider"
+                                       FontWeight="SemiBold"
+                                       Foreground="{ThemeResource MutedForegroundBrush}"/>
+                            <ComboBox x:Name="FallbackProviderCombo"
+                                      MinWidth="200"
+                                      HorizontalAlignment="Left"
+                                      SelectedIndex="1">
+                                <ComboBoxItem Content="OpenRouter"/>
+                                <ComboBoxItem Content="Gemini"/>
+                                <ComboBoxItem Content="OpenAI"/>
+                                <ComboBoxItem Content="Grok"/>
+                            </ComboBox>
 
-                        <TextBlock Text="Fallback API Key"
-                                   FontWeight="SemiBold"
-                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
-                        <PasswordBox x:Name="FallbackApiKeyBox"
-                                     PlaceholderText="API key Gemini fallback"
-                                     MaxWidth="460"
-                                     HorizontalAlignment="Stretch"
-                                     PasswordRevealMode="Peek"/>
+                            <TextBlock Text="Fallback API Key"
+                                       FontWeight="SemiBold"
+                                       Foreground="{ThemeResource MutedForegroundBrush}"/>
+                            <PasswordBox x:Name="FallbackApiKeyBox"
+                                         PlaceholderText="Gemini fallback API key"
+                                         MaxWidth="460"
+                                         HorizontalAlignment="Stretch"
+                                         PasswordRevealMode="Peek"/>
 
-                        <TextBlock Text="Provider Diagnostic"
-                                   FontSize="16"
-                                   FontWeight="SemiBold"
-                                   Foreground="{ThemeResource ForegroundBrush}"
-                                   Margin="0,8,0,0"/>
-                        <Rectangle Height="1" Fill="{ThemeResource BorderBrush}"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="TestPrimaryButton"
-                                    Content="Test Primary"
-                                    Click="TestPrimaryButton_Click"/>
-                            <Button x:Name="TestFallbackButton"
-                                    Content="Test Fallback"
-                                    Click="TestFallbackButton_Click"/>
+                            <TextBlock Text="Provider Diagnostic"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="{ThemeResource ForegroundBrush}"
+                                       Margin="0,8,0,0"/>
+                            <Rectangle Height="1" Fill="{ThemeResource BorderBrush}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="TestPrimaryButton"
+                                        Content="Test Primary"
+                                        Click="TestPrimaryButton_Click"/>
+                                <Button x:Name="TestFallbackButton"
+                                        Content="Test Fallback"
+                                        Click="TestFallbackButton_Click"/>
+                            </StackPanel>
+                            <TextBlock x:Name="ProviderDiagnosticText"
+                                       Text="No diagnostics yet."
+                                       TextWrapping="Wrap"
+                                       Foreground="{ThemeResource MutedForegroundBrush}"/>
                         </StackPanel>
-                        <TextBlock x:Name="ProviderDiagnosticText"
-                                   Text="Belum ada diagnostic."
-                                   TextWrapping="Wrap"
-                                   Foreground="{ThemeResource MutedForegroundBrush}"/>
 
                         <TextBlock Text="Vision Runtime"
                                    FontSize="16"
@@ -127,7 +129,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox x:Name="VisionModelPathBox"
-                                     PlaceholderText="Assets/models/yolov8n-crop-weed-416.onnx"/>
+                                     PlaceholderText="Assets/models/moonharvest-health-cls.onnx"/>
                             <Button Grid.Column="1"
                                     Content="Browse"
                                     Click="BrowseVisionModelButton_Click"/>
@@ -142,7 +144,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox x:Name="VisionClassPathBox"
-                                     PlaceholderText="Assets/models/classes-crop-weed.txt"/>
+                                     PlaceholderText="Assets/models/moonharvest-classes.txt"/>
                             <Button Grid.Column="1"
                                     Content="Browse"
                                     Click="BrowseVisionClassButton_Click"/>
@@ -165,12 +167,12 @@
                                  HorizontalAlignment="Left"/>
 
                         <TextBlock x:Name="VisionRuntimeStatusText"
-                                   Text="Vision runtime belum diterapkan."
+                                   Text="Vision runtime not configured."
                                    TextWrapping="Wrap"
                                    Foreground="{ThemeResource MutedForegroundBrush}"/>
 
                         <Button x:Name="AdvancedToggleButton"
-                                Content="Tampilkan Advanced Settings"
+                                Content="Show Advanced Settings"
                                 Click="AdvancedToggleButton_Click"
                                 HorizontalAlignment="Left"
                                 Margin="0,4,0,0"/>
@@ -195,6 +197,8 @@
                                  MinWidth="280"
                                  HorizontalAlignment="Left"/>
 
+                        <!-- Voice Command — hidden in DEMO_MODE (TASK-02: di luar proposal) -->
+                        <StackPanel x:Name="VoiceCommandSection" Visibility="Collapsed">
                         <TextBlock Text="Voice Command"
                                    FontSize="16"
                                    FontWeight="SemiBold"
@@ -225,6 +229,7 @@
                             <ComboBoxItem Content="id-ID"/>
                             <ComboBoxItem Content="en-US"/>
                         </ComboBox>
+                        </StackPanel>
 
                         <TextBlock Text="Anomaly Detection"
                                    FontSize="16"

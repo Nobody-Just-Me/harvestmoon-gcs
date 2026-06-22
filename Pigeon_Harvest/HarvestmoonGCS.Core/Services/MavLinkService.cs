@@ -1470,6 +1470,18 @@ public class MavLinkService : IMavLinkService
         _currentFlightData = new FlightData();
     }
 
+    public void SimulateConnection(bool connected)
+    {
+        _isConnected = connected;
+        OnConnectionStatusChanged(connected);
+    }
+
+    public void SimulateTelemetry(HarvestmoonGCS.Models.FlightData data)
+    {
+        _currentFlightData = data;
+        OnTelemetryReceived();
+    }
+
     // Diagnostic operations
     public IDiagnosticLogger GetDiagnosticLogger()
     {

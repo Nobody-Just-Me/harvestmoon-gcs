@@ -37,6 +37,9 @@ namespace HarvestmoonGCS.Views;
 public sealed partial class FlightPage : Page, INotifyPropertyChanged
 {
     private const int MaxConsoleMessages = 100;
+    private readonly CameraYoloProcessor _yoloProcessor = new();
+    private bool _yoloReady;
+    private string _lastYoloSummary = "YOLO: IDLE";
     private FlightViewModel? _viewModel;
     private IMavLinkService? _mavLinkService;
     private RealTimeDataService? _realTimeDataService;
@@ -202,6 +205,11 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         if (btn_land != null) btn_land.Click += (s, e) => _viewModel.SendCommand(Command.LAND);
         if (btn_toggle_quick_actions != null) btn_toggle_quick_actions.Click += OnToggleQuickActions;
 
+        // Initialise YOLO for detection
+        _yoloReady = _yoloProcessor.Initialize();
+        _lastYoloSummary = _yoloReady ? "YOLO: READY" : $"YOLO: {_yoloProcessor.Status}";
+        AddConsoleMessage("YOLO", _lastYoloSummary, _yoloReady ? "INFO" : "WARNING");
+
         // Camera shortcuts
         if (btn_camera_shortcut != null) btn_camera_shortcut.Click += OnStartStopStream;
 
@@ -271,6 +279,8 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
 
         _optimizedTelemetryHandler = null;
         _optimizedRenderer = null;
+        _yoloProcessor.Dispose();
+        _yoloReady = false;
 
         if (cb_flight_mode != null)
         {
@@ -1350,28 +1360,53 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         }
     }
 
+    private static readonly string[] _demoVideoCandidates = new[]
+    {
+        "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused_only.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/runs/uav_detection/derr_detected.mp4",
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "derr.mp4")),
+    };
+
     private async void OnStartStopStream(object sender, RoutedEventArgs e)
     {
         var cameraService = App.Current.Services.GetService<ICameraService>();
         if (cameraService == null) return;
-        
+
         if (cameraService.IsStreaming)
         {
             await cameraService.StopCameraAsync();
+            AddConsoleMessage("CAMERA", "Video stream stopped");
         }
         else
         {
-            await cameraService.StartCameraAsync("0");
+            var videoPath = Array.Find(_demoVideoCandidates, File.Exists);
+            if (videoPath == null)
+            {
+                AddConsoleMessage("CAMERA", "Tidak ada video deteksi ditemukan (hsvv_fused.mp4 / derr_detected.mp4)", "ERROR");
+                return;
+            }
+
+            AddConsoleMessage("CAMERA", $"Playing: {Path.GetFileName(videoPath)}");
+            var success = await cameraService.StartCameraAsync(videoPath);
+            if (!success)
+                AddConsoleMessage("CAMERA", $"Gagal membuka {Path.GetFileName(videoPath)}", "ERROR");
         }
     }
     
-    private void OnCameraFrameReceived(object? sender, byte[] frameData)
+    private async void OnCameraFrameReceived(object? sender, byte[] frameData)
     {
         _observabilityService?.Track("flight.camera.ingest");
+
+        // Run YOLO inference asynchronously (same pattern as CameraPage)
+        var yoloResult = _yoloReady
+            ? await _yoloProcessor.ProcessAsync(frameData)
+            : null;
 
         lock (_cameraFrameSync)
         {
             _pendingFrameData = frameData;
+            _pendingYoloResult = yoloResult;
             _hasPendingFrameData = true;
         }
     }
@@ -1387,6 +1422,8 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         });
     }
 
+    private YoloFrameResult? _pendingYoloResult;
+
     private void FlushPendingCameraFrame()
     {
         var now = DateTime.UtcNow;
@@ -1396,19 +1433,40 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         }
 
         byte[]? frameToRender = null;
+        YoloFrameResult? yoloResult = null;
         lock (_cameraFrameSync)
         {
             if (_hasPendingFrameData)
             {
                 frameToRender = _pendingFrameData;
+                yoloResult = _pendingYoloResult;
                 _pendingFrameData = null;
+                _pendingYoloResult = null;
                 _hasPendingFrameData = false;
             }
         }
 
         if (frameToRender != null && liveCam != null)
         {
-            liveCam.UpdateFrame(frameToRender);
+            if (yoloResult != null && yoloResult.Detections.Count > 0)
+            {
+                // Update frame with YOLO result data
+                liveCam.UpdateFrame(yoloResult.FrameData);
+                liveCam.SetDetectionOverlays(yoloResult.Detections);
+                
+                // Log detection summary to console
+                _lastYoloSummary = $"YOLO: {yoloResult.DetectionCount} | {yoloResult.Fps:F1} FPS | {yoloResult.Summary}";
+                AddConsoleMessage("YOLO", _lastYoloSummary, "INFO");
+            }
+            else
+            {
+                // No detections or YOLO not ready — just show raw frame
+                liveCam.UpdateFrame(frameToRender);
+                if (!_yoloReady)
+                {
+                    liveCam.SetDetectionOverlays(Array.Empty<VideoDetectionOverlay>());
+                }
+            }
             _lastCameraFrameUiUpdate = now;
             _observabilityService?.Track("flight.camera.render");
         }

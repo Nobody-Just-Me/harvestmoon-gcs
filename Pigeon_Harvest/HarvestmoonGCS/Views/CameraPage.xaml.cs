@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -31,6 +32,10 @@ public sealed partial class CameraPage : Page
     private readonly CameraYoloProcessor _yoloProcessor = new();
     private bool _yoloReady;
     private string _lastYoloSummary = "YOLO: IDLE";
+    private bool _vegetationOverlayEnabled = true;
+    private float _minConf = 0.3f;
+    private string? _lastClassifySource;
+    private string? _lastClassifyModel;
 
     public CameraPage()
     {
@@ -86,6 +91,10 @@ public sealed partial class CameraPage : Page
         EnsureYoloInitialized();
         AttachServiceHandlers();
         LoadCameraSources();
+
+        // Sync button state if a demo stream was already started before this page opened
+        if (_cameraService != null && _cameraService.IsStreaming)
+            OnStreamingStatusChanged(this, true);
     }
 
     private void CameraPage_Unloaded(object sender, RoutedEventArgs e)
@@ -153,6 +162,12 @@ public sealed partial class CameraPage : Page
             _cameraService.FrameReceived += OnFrameReceived;
             _cameraService.StreamingStatusChanged += OnStreamingStatusChanged;
             _cameraService.ConnectionError += OnConnectionError;
+
+            // Subscribe to classification summary events if available
+            if (_cameraService is PythonCameraService pcs)
+            {
+                pcs.ClassificationSummaryChanged += OnClassificationSummaryChanged;
+            }
         }
 
         _videoRecorderService.RecordingStatusChanged += OnRecordingStatusChanged;
@@ -173,6 +188,11 @@ public sealed partial class CameraPage : Page
             _cameraService.FrameReceived -= OnFrameReceived;
             _cameraService.StreamingStatusChanged -= OnStreamingStatusChanged;
             _cameraService.ConnectionError -= OnConnectionError;
+
+            if (_cameraService is PythonCameraService pcs)
+            {
+                pcs.ClassificationSummaryChanged -= OnClassificationSummaryChanged;
+            }
         }
 
         _videoRecorderService.RecordingStatusChanged -= OnRecordingStatusChanged;
@@ -207,7 +227,7 @@ public sealed partial class CameraPage : Page
             }
             else
             {
-                ShowError("Tidak ada kamera lokal terdeteksi. Sambungkan kamera device atau gunakan RTSP Stream.");
+                ShowError("No local camera detected. Connect a device camera or use RTSP Stream.");
             }
         }
         catch (Exception ex)
@@ -223,28 +243,49 @@ public sealed partial class CameraPage : Page
             _videoRecorderService.WriteFrame(frameData);
         }
 
-        var yoloResult = _yoloReady
-            ? await _yoloProcessor.ProcessAsync(frameData)
-            : null;
-
-        DispatcherQueue.TryEnqueue(() =>
+        // HSV/classification stream — kotak deteksi sudah digambar di Python.
+        // UpdateFrame dipanggil langsung dari background thread (bukan DispatcherQueue)
+        // sehingga decode JPEG terjadi di background, bukan UI thread.
+        if (_cameraService is PythonCameraService pcs && pcs.IsClassificationStream)
         {
-            if (yoloResult != null)
+            VideoStream.UpdateFrame(frameData);
+            return;
+        }
+
+        YoloFrameResult? yoloResult = null;
+        if (_yoloReady)
+        {
+            try
             {
-                VideoStream.UpdateFrame(yoloResult.FrameData);
+                yoloResult = await _yoloProcessor.ProcessAsync(frameData);
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Error(ex, "[CameraPage] YOLO inference error");
+                yoloResult = null;
+            }
+        }
+
+        // UpdateFrame di bawah juga dipanggil dari background — decode terjadi di background
+        if (yoloResult != null)
+        {
+            VideoStream.UpdateFrame(yoloResult.FrameData);
+            DispatcherQueue.TryEnqueue(() =>
+            {
                 VideoStream.SetDetectionOverlays(yoloResult.Detections);
                 _lastYoloSummary = $"YOLO: {yoloResult.DetectionCount} | {yoloResult.Fps:F1} FPS | {yoloResult.Summary}";
                 YoloStatusText.Text = _lastYoloSummary;
-            }
-            else
+            });
+        }
+        else
+        {
+            VideoStream.UpdateFrame(frameData);
+            if (!_yoloReady)
             {
-                VideoStream.UpdateFrame(frameData);
-                if (!_yoloReady)
-                {
-                    VideoStream.SetDetectionOverlays(Array.Empty<VideoDetectionOverlay>());
-                }
+                DispatcherQueue.TryEnqueue(() =>
+                    VideoStream.SetDetectionOverlays(Array.Empty<VideoDetectionOverlay>()));
             }
-        });
+        }
     }
 
     private void OnStreamingStatusChanged(object sender, bool isStreaming)
@@ -257,11 +298,11 @@ public sealed partial class CameraPage : Page
             
             if (isStreaming)
             {
-                StartStopButton.Content = "Hentikan Kamera";
+                StartStopButton.Content = "Stop Camera";
             }
             else
             {
-                StartStopButton.Content = "Mulai Kamera";
+                StartStopButton.Content = "Start Camera";
             }
         });
     }
@@ -301,6 +342,26 @@ public sealed partial class CameraPage : Page
         });
     }
 
+    private void OnClassificationSummaryChanged(object sender, string dataJson)
+    {
+        // dataJson is now the full detection data JSON: {"count":31,"summary":"...","classes":{...}}
+        var displaySummary = dataJson;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(dataJson);
+            if (doc.RootElement.TryGetProperty("summary", out var s))
+                displaySummary = s.GetString() ?? dataJson;
+        }
+        catch { }
+
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _lastYoloSummary = $"Classification: {displaySummary}";
+            if (YoloStatusText != null)
+                YoloStatusText.Text = _lastYoloSummary;
+        });
+    }
+
     private async void StartStopButton_Click(object sender, RoutedEventArgs e)
     {
         if (_isStreaming)
@@ -320,14 +381,14 @@ public sealed partial class CameraPage : Page
             string rtspUrl = RtspUrlTextBox.Text;
             if (string.IsNullOrEmpty(rtspUrl) || rtspUrl == "rtsp://")
             {
-                ShowError("Masukkan URL RTSP yang valid.");
+                ShowError("Enter a valid RTSP URL.");
                 return false;
             }
 
             var connected = await _cameraService.StartCameraAsync(rtspUrl);
             if (!connected)
             {
-                ShowError("Gagal membuka RTSP stream. Periksa URL, jaringan, dan kredensial kamera.");
+                ShowError("Failed to open RTSP stream. Check URL, network, and camera credentials.");
             }
 
             return connected;
@@ -338,14 +399,39 @@ public sealed partial class CameraPage : Page
             var path = VideoFilePathTextBox.Text?.Trim();
             if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
             {
-                ShowError("Pilih file video MP4/MOV/AVI yang valid.");
+                ShowError("Select a valid MP4/MOV/AVI video file.");
                 return false;
+            }
+
+            // If PythonCameraService is available, use health classification stream
+            if (_cameraService is PythonCameraService pcs)
+            {
+                var modelPath = PythonCameraService.ResolveHealthModelPath();
+                if (!string.IsNullOrWhiteSpace(modelPath) && File.Exists(modelPath))
+                {
+                    _lastClassifySource = path;
+                    _lastClassifyModel = modelPath;
+                    var classifyConnected = await pcs.StartClassifyStreamAsync(
+                        path, modelPath,
+                        showOverlay: _vegetationOverlayEnabled,
+                        minConf: _minConf);
+                    if (!classifyConnected)
+                    {
+                        ShowError("Failed to start classification stream. Check model and connection.");
+                    }
+                    _timelineService?.Add("camera", $"Video file classification started: {path}", classifyConnected ? "success" : "warning");
+                    return classifyConnected;
+                }
+                else
+                {
+                    Serilog.Log.Warning("[CameraPage] Health model not found, falling back to regular stream");
+                }
             }
 
             var connected = await _cameraService.StartCameraAsync(path);
             if (!connected)
             {
-                ShowError("Gagal membuka file video. Periksa format video dan codec OpenCV.");
+                ShowError("Failed to open video file. Check video format and OpenCV codec.");
             }
 
             _timelineService?.Add("camera", $"Video file source opened: {path}", connected ? "success" : "warning");
@@ -378,7 +464,7 @@ public sealed partial class CameraPage : Page
             _timelineService?.Add("camera", $"Local camera source opened: {selectedSource.Name}", success ? "success" : "warning");
             if (!success)
             {
-                ShowError("Gagal memulai kamera. Periksa izin kamera atau pilih source lain.");
+                ShowError("Failed to start camera. Check camera permissions or select another source.");
             }
             return success;
         }
@@ -443,7 +529,7 @@ public sealed partial class CameraPage : Page
         {
             if (!_isStreaming)
             {
-                ShowError("Mulai kamera/video dulu sebelum recording.");
+                ShowError("Start camera/video first before recording.");
                 return;
             }
 
@@ -581,7 +667,7 @@ public sealed partial class CameraPage : Page
     {
         if (_fileService == null)
         {
-            ShowError("File picker tidak tersedia.");
+            ShowError("File picker not available.");
             return;
         }
 
@@ -591,6 +677,34 @@ public sealed partial class CameraPage : Page
             VideoFilePathTextBox.Text = file;
             UpdateMetadata();
         }
+    }
+
+    // TASK-04: Vegetation Overlay toggle
+    private async void VegetationOverlayToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        _vegetationOverlayEnabled = VegetationOverlayToggle.IsOn;
+        // Restart classify stream with new overlay flag if active
+        await RestartClassifyStreamIfActive();
+    }
+
+    // TASK-06: Confidence slider
+    private void ConfidenceSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        _minConf = (float)e.NewValue;
+        if (ConfidenceValueText != null)
+            ConfidenceValueText.Text = $"{_minConf:F2}";
+    }
+
+    private async Task RestartClassifyStreamIfActive()
+    {
+        if (_cameraService is not PythonCameraService pcs) return;
+        if (!pcs.IsClassificationStream || !_isStreaming) return;
+        if (string.IsNullOrWhiteSpace(_lastClassifySource) || string.IsNullOrWhiteSpace(_lastClassifyModel)) return;
+
+        await pcs.StartClassifyStreamAsync(
+            _lastClassifySource, _lastClassifyModel,
+            showOverlay: _vegetationOverlayEnabled,
+            minConf: _minConf);
     }
 
     private async void ShowError(string message)

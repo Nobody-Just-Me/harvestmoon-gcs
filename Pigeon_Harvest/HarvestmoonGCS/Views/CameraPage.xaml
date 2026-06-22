@@ -117,7 +117,7 @@
                             Click="TogglePanelButton_Click">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="{StaticResource IconSettings}" FontSize="12" VerticalAlignment="Center"/>
-                            <TextBlock Text="Pilih Sumber Kamera" FontSize="12" Foreground="{ThemeResource ForegroundBrush}" VerticalAlignment="Center"/>
+                            <TextBlock Text="Select Camera Source" FontSize="12" Foreground="{ThemeResource ForegroundBrush}" VerticalAlignment="Center"/>
                             <FontIcon x:Name="ToggleIcon" Glyph="{StaticResource IconChevronDown}" FontSize="16" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
@@ -130,13 +130,13 @@
                         <StackPanel Spacing="12">
                             <!-- Tabs -->
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="Sumber:" 
-                                           VerticalAlignment="Center" 
-                                           FontSize="12" 
+                                <TextBlock Text="Source:"
+                                           VerticalAlignment="Center"
+                                           FontSize="12"
                                            Foreground="{ThemeResource MutedForegroundBrush}"
                                            Margin="0,0,12,0"/>
-                                <RadioButton x:Name="LocalTab" 
-                                             Content="Kamera Lokal" 
+                                <RadioButton x:Name="LocalTab"
+                                             Content="Local Camera"
                                              GroupName="SourceTabs"
                                              IsChecked="True"
                                              Checked="LocalTab_Checked"/>
@@ -199,10 +199,38 @@
                                          Text="0"/>
                             </Grid>
 
+                            <!-- Vegetation Overlay & Confidence controls (TASK-04 / TASK-06) -->
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <ToggleSwitch x:Name="VegetationOverlayToggle"
+                                              Grid.Column="0"
+                                              Header="Vegetation Overlay"
+                                              IsOn="True"
+                                              Toggled="VegetationOverlayToggle_Toggled"
+                                              Margin="0,0,0,0"/>
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="Confidence" FontSize="11"
+                                                   Foreground="{ThemeResource MutedForegroundBrush}"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="ConfidenceValueText" Text="0.30" FontSize="11"
+                                                   Foreground="{ThemeResource ForegroundBrush}"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <Slider x:Name="ConfidenceSlider"
+                                            Minimum="0.1" Maximum="0.9" Value="0.3"
+                                            StepFrequency="0.05"
+                                            ValueChanged="ConfidenceSlider_ValueChanged"/>
+                                </StackPanel>
+                            </Grid>
+
                             <!-- Action Buttons -->
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                                 <Button x:Name="StartStopButton"
-                                        Content="Mulai Kamera"
+                                        Content="Start Camera"
                                         Style="{StaticResource PrimaryButtonStyle}"
                                         Click="StartStopButton_Click"/>
                                 <Button x:Name="ScreenshotButton"

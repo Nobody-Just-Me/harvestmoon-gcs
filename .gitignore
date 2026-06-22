@@ -30,3 +30,11 @@ Sequoia/
 
 # Temporary outputs
 AFTER_CLEANUP_STATUS.txt
+GIT_PUSH_SUCCESS.txt
+image.png
+image copy.png
+.omo/
+
+# Detection/fusion output directories
+test_program/moonharvest_output/
+test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/

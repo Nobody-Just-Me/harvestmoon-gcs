@@ -63,11 +63,12 @@ namespace HarvestmoonGCS.Controls
         
         // Rendering throttle
         private DateTime _lastRenderTimeUtc = DateTime.MinValue;
-        private const int INTERACTION_RENDER_INTERVAL_MS = 16; // ~60 FPS while user is interacting
-        private const int BACKGROUND_RENDER_INTERVAL_MS = 100; // ~10 FPS for tile/background updates
+        private const int INTERACTION_RENDER_INTERVAL_MS = 33; // ~30 FPS while user is interacting
+        private const int BACKGROUND_RENDER_INTERVAL_MS = 150; // ~7 FPS for tile/background updates
         private int _interactionRenderIntervalMs = INTERACTION_RENDER_INTERVAL_MS;
         private int _backgroundRenderIntervalMs = BACKGROUND_RENDER_INTERVAL_MS;
         private bool _renderPending = false;
+        private bool _isActive = true;  // false = page hidden, skip rendering
         private readonly HashSet<string> _tileLoadsInProgress = new HashSet<string>();
         private readonly SemaphoreSlim _tileLoadLimiter = new SemaphoreSlim(6, 6);
         private IOptimizedRenderer? _optimizedRenderer;
@@ -1197,8 +1198,11 @@ namespace HarvestmoonGCS.Controls
         /// <summary>
         /// Request a render with throttling to prevent excessive redraws
         /// </summary>
+        public void SetActive(bool active) { _isActive = active; }
+
         private void RequestRender()
         {
+            if (!_isActive) return;
             SyncOptimizationSettings();
             var now = DateTime.UtcNow;
             var minRenderIntervalMs = IsUserInteracting ? _interactionRenderIntervalMs : _backgroundRenderIntervalMs;
@@ -1890,6 +1894,34 @@ namespace HarvestmoonGCS.Controls
         private void DrawWaypointMarkers(SKCanvas canvas, int width, int height)
         {
             if (_waypoints.Count == 0) return;
+
+            // Gambar lingkaran geofence 200m di setiap waypoint
+            const double waypointGeofenceMeters = 200.0;
+            using (var gfPaint = new SKPaint
+            {
+                IsAntialias = true,
+                Style       = SKPaintStyle.Fill,
+                Color       = new SKColor(255, 80, 80, 40),   // merah transparan
+            })
+            using (var gfStroke = new SKPaint
+            {
+                IsAntialias  = true,
+                Style        = SKPaintStyle.Stroke,
+                StrokeWidth  = 1.5f,
+                Color        = new SKColor(220, 60, 60, 120),
+                PathEffect   = SKPathEffect.CreateDash(new float[] { 6, 4 }, 0),
+            })
+            {
+                foreach (var wp in _waypoints)
+                {
+                    var pt = LatLonToScreen(wp.Lat, wp.Lon, width, height);
+                    double cosLat = Math.Cos(wp.Lat * Math.PI / 180.0);
+                    double metersPerPixel = (40075016.0 * cosLat) / (256.0 * Math.Pow(2, _zoomLevel));
+                    float radiusPx = (float)(waypointGeofenceMeters / metersPerPixel);
+                    canvas.DrawCircle(pt.X, pt.Y, radiusPx, gfPaint);
+                    canvas.DrawCircle(pt.X, pt.Y, radiusPx, gfStroke);
+                }
+            }
 
             using var paint = new SKPaint
             {
