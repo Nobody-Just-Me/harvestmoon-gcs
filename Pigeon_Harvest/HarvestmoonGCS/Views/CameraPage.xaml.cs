@@ -227,7 +227,7 @@ public sealed partial class CameraPage : Page
             }
             else
             {
-                ShowError("Tidak ada kamera lokal terdeteksi. Sambungkan kamera device atau gunakan RTSP Stream.");
+                ShowError("No local camera detected. Connect a device camera or use RTSP Stream.");
             }
         }
         catch (Exception ex)
@@ -243,14 +243,12 @@ public sealed partial class CameraPage : Page
             _videoRecorderService.WriteFrame(frameData);
         }
 
-        // Check if this is a classification stream — boxes already drawn on frame
+        // HSV/classification stream — kotak deteksi sudah digambar di Python.
+        // UpdateFrame dipanggil langsung dari background thread (bukan DispatcherQueue)
+        // sehingga decode JPEG terjadi di background, bukan UI thread.
         if (_cameraService is PythonCameraService pcs && pcs.IsClassificationStream)
         {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                VideoStream.UpdateFrame(frameData);
-                // Skip YOLO processor — classification boxes already drawn
-            });
+            VideoStream.UpdateFrame(frameData);
             return;
         }
 
@@ -268,24 +266,26 @@ public sealed partial class CameraPage : Page
             }
         }
 
-        DispatcherQueue.TryEnqueue(() =>
+        // UpdateFrame di bawah juga dipanggil dari background — decode terjadi di background
+        if (yoloResult != null)
         {
-            if (yoloResult != null)
+            VideoStream.UpdateFrame(yoloResult.FrameData);
+            DispatcherQueue.TryEnqueue(() =>
             {
-                VideoStream.UpdateFrame(yoloResult.FrameData);
                 VideoStream.SetDetectionOverlays(yoloResult.Detections);
                 _lastYoloSummary = $"YOLO: {yoloResult.DetectionCount} | {yoloResult.Fps:F1} FPS | {yoloResult.Summary}";
                 YoloStatusText.Text = _lastYoloSummary;
-            }
-            else
+            });
+        }
+        else
+        {
+            VideoStream.UpdateFrame(frameData);
+            if (!_yoloReady)
             {
-                VideoStream.UpdateFrame(frameData);
-                if (!_yoloReady)
-                {
-                    VideoStream.SetDetectionOverlays(Array.Empty<VideoDetectionOverlay>());
-                }
+                DispatcherQueue.TryEnqueue(() =>
+                    VideoStream.SetDetectionOverlays(Array.Empty<VideoDetectionOverlay>()));
             }
-        });
+        }
     }
 
     private void OnStreamingStatusChanged(object sender, bool isStreaming)
@@ -298,11 +298,11 @@ public sealed partial class CameraPage : Page
             
             if (isStreaming)
             {
-                StartStopButton.Content = "Hentikan Kamera";
+                StartStopButton.Content = "Stop Camera";
             }
             else
             {
-                StartStopButton.Content = "Mulai Kamera";
+                StartStopButton.Content = "Start Camera";
             }
         });
     }
@@ -342,15 +342,23 @@ public sealed partial class CameraPage : Page
         });
     }
 
-    private void OnClassificationSummaryChanged(object sender, string summary)
+    private void OnClassificationSummaryChanged(object sender, string dataJson)
     {
+        // dataJson is now the full detection data JSON: {"count":31,"summary":"...","classes":{...}}
+        var displaySummary = dataJson;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(dataJson);
+            if (doc.RootElement.TryGetProperty("summary", out var s))
+                displaySummary = s.GetString() ?? dataJson;
+        }
+        catch { }
+
         DispatcherQueue.TryEnqueue(() =>
         {
-            _lastYoloSummary = $"Classification: {summary}";
+            _lastYoloSummary = $"Classification: {displaySummary}";
             if (YoloStatusText != null)
-            {
                 YoloStatusText.Text = _lastYoloSummary;
-            }
         });
     }
 
@@ -373,14 +381,14 @@ public sealed partial class CameraPage : Page
             string rtspUrl = RtspUrlTextBox.Text;
             if (string.IsNullOrEmpty(rtspUrl) || rtspUrl == "rtsp://")
             {
-                ShowError("Masukkan URL RTSP yang valid.");
+                ShowError("Enter a valid RTSP URL.");
                 return false;
             }
 
             var connected = await _cameraService.StartCameraAsync(rtspUrl);
             if (!connected)
             {
-                ShowError("Gagal membuka RTSP stream. Periksa URL, jaringan, dan kredensial kamera.");
+                ShowError("Failed to open RTSP stream. Check URL, network, and camera credentials.");
             }
 
             return connected;
@@ -391,7 +399,7 @@ public sealed partial class CameraPage : Page
             var path = VideoFilePathTextBox.Text?.Trim();
             if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
             {
-                ShowError("Pilih file video MP4/MOV/AVI yang valid.");
+                ShowError("Select a valid MP4/MOV/AVI video file.");
                 return false;
             }
 
@@ -409,7 +417,7 @@ public sealed partial class CameraPage : Page
                         minConf: _minConf);
                     if (!classifyConnected)
                     {
-                        ShowError("Gagal memulai classification stream. Periksa model dan koneksi.");
+                        ShowError("Failed to start classification stream. Check model and connection.");
                     }
                     _timelineService?.Add("camera", $"Video file classification started: {path}", classifyConnected ? "success" : "warning");
                     return classifyConnected;
@@ -423,7 +431,7 @@ public sealed partial class CameraPage : Page
             var connected = await _cameraService.StartCameraAsync(path);
             if (!connected)
             {
-                ShowError("Gagal membuka file video. Periksa format video dan codec OpenCV.");
+                ShowError("Failed to open video file. Check video format and OpenCV codec.");
             }
 
             _timelineService?.Add("camera", $"Video file source opened: {path}", connected ? "success" : "warning");
@@ -456,7 +464,7 @@ public sealed partial class CameraPage : Page
             _timelineService?.Add("camera", $"Local camera source opened: {selectedSource.Name}", success ? "success" : "warning");
             if (!success)
             {
-                ShowError("Gagal memulai kamera. Periksa izin kamera atau pilih source lain.");
+                ShowError("Failed to start camera. Check camera permissions or select another source.");
             }
             return success;
         }
@@ -521,7 +529,7 @@ public sealed partial class CameraPage : Page
         {
             if (!_isStreaming)
             {
-                ShowError("Mulai kamera/video dulu sebelum recording.");
+                ShowError("Start camera/video first before recording.");
                 return;
             }
 
@@ -659,7 +667,7 @@ public sealed partial class CameraPage : Page
     {
         if (_fileService == null)
         {
-            ShowError("File picker tidak tersedia.");
+            ShowError("File picker not available.");
             return;
         }
 

@@ -89,15 +89,71 @@ public sealed partial class MapPage : Page
         {
             try
             {
-                mapControl.SetCenter(-7.2754, 112.7947, 15);
+                // Center on waypoint centroid when demo/mission waypoints are loaded; fall back to default
+                double centerLat = -7.2754, centerLon = 112.7947;
+                int zoom = 15;
+                if (ViewModel?.Waypoints.Count > 0)
+                {
+                    centerLat = ViewModel.Waypoints.Average(w => w.Latitude);
+                    centerLon = ViewModel.Waypoints.Average(w => w.Longitude);
+                    zoom = 14;
+                }
+                mapControl.SetCenter(centerLat, centerLon, zoom);
                 RebuildWaypointDock();
                 UpdateWaypointsOnMap();
+                SyncGeofenceFromViewModel();
             }
             catch (Exception ex)
             {
                 Serilog.Log.Warning(ex, "[MapPage] RefreshMapView failed");
             }
         });
+    }
+
+    private void SyncGeofenceFromViewModel()
+    {
+        if (mapControl == null || ViewModel == null) return;
+
+        if (!ViewModel.IsGeofenceActive)
+        {
+            mapControl.ClearGeofence();
+            if (geofenceStatusText != null) geofenceStatusText.Text = "Geofence Inactive";
+            if (geofenceStatusDot != null)
+                geofenceStatusDot.Fill = new SolidColorBrush(Color.FromArgb(0xFF, 0x6C, 0x75, 0x7D));
+            if (geofenceStatusBorder != null)
+                geofenceStatusBorder.Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x6C, 0x75, 0x7D));
+            return;
+        }
+
+        if (ViewModel.GeofenceType == HarvestmoonGCS.Core.Models.GeofenceType.Circular &&
+            (ViewModel.GeofenceCenterLat != 0 || ViewModel.GeofenceCenterLon != 0))
+        {
+            mapControl.SetGeofence(true,
+                ViewModel.GeofenceCenterLat,
+                ViewModel.GeofenceCenterLon,
+                ViewModel.GeofenceRadius,
+                null);
+            if (tbGeofenceRadius != null) tbGeofenceRadius.Text = ViewModel.GeofenceRadius.ToString("F0");
+        }
+        else if (ViewModel.GeofenceType == HarvestmoonGCS.Core.Models.GeofenceType.Polygon &&
+                 ViewModel.GeofenceVertices.Count >= 3)
+        {
+            var vertices = ViewModel.GeofenceVertices.Select(v => (v.Lat, v.Lon)).ToList();
+            mapControl.SetGeofence(false, 0, 0, 0, vertices);
+        }
+        else
+        {
+            return;
+        }
+
+        UpdateGeofenceInfo();
+        if (geofenceStatusText != null) geofenceStatusText.Text = "Geofence Active";
+        if (geofenceStatusDot != null)
+            geofenceStatusDot.Fill = new SolidColorBrush(Color.FromArgb(0xFF, 0x10, 0xB9, 0x81));
+        if (geofenceStatusBorder != null)
+            geofenceStatusBorder.Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x28, 0xA7, 0x45));
+        if (btnSendGeofence != null) btnSendGeofence.IsEnabled = true;
+        if (btnClearGeofence != null) btnClearGeofence.IsEnabled = true;
     }
 
     /// <summary>
@@ -121,7 +177,7 @@ public sealed partial class MapPage : Page
             if (ViewModel != null)
             {
                 ViewModel.PropertyChanged += ViewModel_PropertyChanged;
-                _waypointsCollectionChangedHandler ??= (_, __) => RebuildWaypointDock();
+                _waypointsCollectionChangedHandler ??= (_, __) => { RebuildWaypointDock(); UpdateWaypointsOnMap(); };
                 ViewModel.Waypoints.CollectionChanged += _waypointsCollectionChangedHandler;
             }
 
@@ -147,22 +203,27 @@ public sealed partial class MapPage : Page
         // Inisialisasi tampilan map selalu dijalankan setiap kali halaman ditampilkan
         _ = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
-            mapControl.SetCenter(-7.2754, 112.7947, 15);
-
-            if (wpListPanel != null)
+            // Center on loaded waypoints when available (e.g. demo), fall back to default
+            double centerLat = -7.2754, centerLon = 112.7947;
+            int zoom = 15;
+            if (ViewModel?.Waypoints.Count > 0)
             {
-                wpListPanel.Visibility = Visibility.Collapsed;
+                centerLat = ViewModel.Waypoints.Average(w => w.Latitude);
+                centerLon = ViewModel.Waypoints.Average(w => w.Longitude);
+                zoom = 14;
             }
+            mapControl.SetCenter(centerLat, centerLon, zoom);
+
+            if (wpListPanel != null) wpListPanel.Visibility = Visibility.Collapsed;
 
             if (tbMarkersCount != null) tbMarkersCount.Text = $"Markers: {ViewModel?.Waypoints.Count ?? 0} ▲";
             if (wpEmptyMessage != null)
-            {
                 wpEmptyMessage.Visibility = ViewModel?.Waypoints.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            }
 
             _isWPDockHidden = true;
             RebuildWaypointDock();
             UpdateWaypointsOnMap();
+            SyncGeofenceFromViewModel();
         });
     }
 
@@ -250,7 +311,6 @@ public sealed partial class MapPage : Page
                     mapControl.UpdateVehiclePosition(lat, lon);
                     _observabilityService?.Track("map.vehicle.render");
 
-                    // Auto-follow if enabled
                     if (_isFollowingVehicle)
                     {
                         mapControl.SetCenter(lat, lon);
@@ -265,9 +325,21 @@ public sealed partial class MapPage : Page
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                // Sinkronkan label total jarak dengan ViewModel
                 tbTotalDistance.Text = $"{ViewModel.TotalDistance:F2} km";
             });
+        }
+        else if (e.PropertyName is
+            nameof(ViewModel.IsGeofenceActive) or
+            nameof(ViewModel.GeofenceCenterLat) or
+            nameof(ViewModel.GeofenceCenterLon) or
+            nameof(ViewModel.GeofenceRadius) or
+            nameof(ViewModel.GeofenceType))
+        {
+            DispatcherQueue.TryEnqueue(SyncGeofenceFromViewModel);
+        }
+        else if (e.PropertyName == nameof(ViewModel.IsFollowing))
+        {
+            _isFollowingVehicle = ViewModel.IsFollowing;
         }
     }
 

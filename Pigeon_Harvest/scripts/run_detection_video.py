@@ -5,7 +5,7 @@ Optimized for drone footage with grid-based detection.
 
 DEMO_MODE (MOONHARVEST_DEMO=1): remaps 5 internal classes → 4 proposal classes,
 hides bare_soil, merges drought_stress into Stress, uses connected-component
-merged bounding boxes instead of per-cell boxes, and sets imgsz=640.
+merged bounding boxes instead of per-cell boxes, and sets imgsz=416.
 """
 
 import argparse
@@ -21,38 +21,40 @@ from ultralytics import YOLO
 # ---------------------------------------------------------------------------
 DEMO_MODE = os.environ.get("MOONHARVEST_DEMO", "1") == "1"
 
-# Mapping: internal class name → display label for the demo (proposal-aligned)
+# v3 model class names → display labels (Zone Analysis proposal)
 DISPLAY_MAP = {
-    "healthy_crop":              "Healthy",
-    "stressed_crop":             "Stress",
-    "disease_stress_vegetation": "Disease",
-    "drought_stress":            "Stress",   # merged into Stress
-    "bare_soil":                 None,        # hidden — background
-    # Pest appears in legend as configurable, never triggered by model
-    "pest":                      "Pest",
+    "lush_green":          "Lush Green",
+    "well_irrigated":      "Well Irrigated",
+    "inconsistent_growth": "Inconsistent Growth",
+    "soil_issues":         "Soil Issues",
+    "disease":             "Disease",
+    "pest":                "Pest",
 }
 
-# Classes that must not be drawn (None in DISPLAY_MAP)
-HIDDEN_CLASSES = {"bare_soil"}
+# v3: tidak ada kelas yang disembunyikan
+HIDDEN_CLASSES: set = set()
 
 # Demo colors keyed by display label (BGR)
 DEMO_COLORS = {
-    "Healthy": (0, 255, 0),      # green
-    "Stress":  (0, 255, 255),    # yellow
-    "Disease": (0, 0, 255),      # red
-    "Pest":    (0, 140, 255),    # orange
+    "Lush Green":          (50,  205,  50),
+    "Well Irrigated":      (200, 150,   2),
+    "Inconsistent Growth": (0,   200, 255),
+    "Soil Issues":         (55,   64,  93),
+    "Disease":             (0,    60, 255),
+    "Pest":                (0,   140, 255),
 }
 
-# Original internal colors (non-demo path)
+# Internal colors (non-demo path) — sama untuk v3
 INTERNAL_COLORS = {
-    "healthy_crop":              (0, 255, 0),
-    "stressed_crop":             (0, 165, 255),
-    "disease_stress_vegetation": (0, 0, 255),
-    "drought_stress":            (0, 255, 255),
-    "bare_soil":                 (128, 128, 128),
+    "lush_green":          (50,  205,  50),
+    "well_irrigated":      (200, 150,   2),
+    "inconsistent_growth": (0,   200, 255),
+    "soil_issues":         (55,   64,  93),
+    "disease":             (0,    60, 255),
+    "pest":                (0,   140, 255),
 }
 
-INFERENCE_SIZE = 640  # imgsz for proposal compliance (TASK-03)
+INFERENCE_SIZE = 640  # imgsz — matches proposal Figure 3 (OpenCV Resize 640×640)
 
 
 # ---------------------------------------------------------------------------
@@ -194,12 +196,46 @@ def merge_grid_to_regions(detections, frame_w, frame_h, grid_rows, grid_cols):
 
 
 # ---------------------------------------------------------------------------
+# NMS — suppress overlapping regional boxes (matches proposal Figure 3)
+# ---------------------------------------------------------------------------
+
+def apply_nms(detections, iou_threshold=0.45, min_cells=2):
+    """IoU-based NMS on merged regional bounding boxes.
+
+    BFS merge already prevents same-class overlaps; NMS is the final
+    pipeline stage matching proposal Figure 3, handling any residual
+    cross-class overlaps.
+    min_cells: discard isolated single-cell noise regions (default ≥ 2).
+    """
+    # Filter out single isolated cells — these are noise, not real regions
+    detections = [d for d in detections if d.get("cell_count", 1) >= min_cells]
+
+    if len(detections) <= 1:
+        return detections
+
+    boxes = []
+    scores = []
+    for d in detections:
+        x1, y1, x2, y2 = d["bbox"]
+        boxes.append([int(x1), int(y1), int(x2 - x1), int(y2 - y1)])
+        scores.append(float(d["confidence"]))
+
+    indices = cv2.dnn.NMSBoxes(boxes, scores, score_threshold=0.0, nms_threshold=iou_threshold)
+    if len(indices) == 0:
+        return []
+
+    flat = indices.flatten() if hasattr(indices, "flatten") else list(indices)
+    return [detections[i] for i in flat]
+
+
+# ---------------------------------------------------------------------------
 # Drawing
 # ---------------------------------------------------------------------------
 
 def draw_detections(frame, detections, min_conf=0.3, box_scale=0.85):
     """Draw bounding boxes and labels on frame (merged or grid depending on DEMO_MODE)."""
     annotated = frame.copy()
+    overlay   = frame.copy()   # for semi-transparent fill
     height, width = frame.shape[:2]
 
     for det in detections:
@@ -211,7 +247,6 @@ def draw_detections(frame, detections, min_conf=0.3, box_scale=0.85):
         confidence = det["confidence"]
 
         if DEMO_MODE:
-            # No scaling for merged regional boxes — they already span multiple cells
             sx1, sy1, sx2, sy2 = int(x1), int(y1), int(x2), int(y2)
             color = DEMO_COLORS.get(class_name, (255, 255, 255))
             label = f"{class_name} {confidence:.2f}"
@@ -220,13 +255,19 @@ def draw_detections(frame, detections, min_conf=0.3, box_scale=0.85):
             color = INTERNAL_COLORS.get(class_name, (255, 255, 255))
             label = f"{class_name} {confidence:.2f}"
 
-        cv2.rectangle(annotated, (sx1, sy1), (sx2, sy2), color, 2)
+        # Semi-transparent fill inside the box
+        cv2.rectangle(overlay, (sx1, sy1), (sx2, sy2), color, -1)
 
-        (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(annotated, (sx1, sy1 - label_h - 10), (sx1 + label_w + 10, sy1), color, -1)
-        cv2.putText(annotated, label, (sx1 + 5, sy1 - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+        # Solid border (3px)
+        cv2.rectangle(annotated, (sx1, sy1), (sx2, sy2), color, 3)
 
+        (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        cv2.rectangle(annotated, (sx1, sy1 - label_h - 12), (sx1 + label_w + 12, sy1), color, -1)
+        cv2.putText(annotated, label, (sx1 + 6, sy1 - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+
+    # Blend semi-transparent fill (20% opacity)
+    cv2.addWeighted(overlay, 0.20, annotated, 0.80, 0, annotated)
     return annotated
 
 
@@ -283,10 +324,12 @@ def add_legend(frame):
         return frame
     h, w = frame.shape[:2]
     entries = [
-        ("Healthy", DEMO_COLORS["Healthy"]),
-        ("Stress",  DEMO_COLORS["Stress"]),
-        ("Disease", DEMO_COLORS["Disease"]),
-        ("Pest",    DEMO_COLORS["Pest"]),
+        ("Lush Green",          DEMO_COLORS["Lush Green"]),
+        ("Well Irrigated",      DEMO_COLORS["Well Irrigated"]),
+        ("Inconsistent Growth", DEMO_COLORS["Inconsistent Growth"]),
+        ("Soil Issues",         DEMO_COLORS["Soil Issues"]),
+        ("Disease",             DEMO_COLORS["Disease"]),
+        ("Pest",                DEMO_COLORS["Pest"]),
     ]
     padding, row_h = 8, 20
     legend_h = padding * 2 + len(entries) * row_h
@@ -347,8 +390,12 @@ def process_video(
     if output_path:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        # Try H.264 first (better quality, no block artifacts), fall back to mp4v
+        fourcc = cv2.VideoWriter_fourcc(*"avc1")
         writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+        if not writer.isOpened():
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
     frame_idx = 0
     processed_frames = 0
@@ -369,9 +416,10 @@ def process_video(
         # --- Classify grid cells ---
         detections = create_grid_detections(frame, grid_rows, grid_cols, classifier)
 
-        # --- Merge adjacent same-class cells (DEMO_MODE) ---
+        # --- Merge adjacent same-class cells, then NMS (DEMO_MODE) ---
         if DEMO_MODE:
-            render_dets = merge_grid_to_regions(detections, width, height, grid_rows, grid_cols)
+            merged = merge_grid_to_regions(detections, width, height, grid_rows, grid_cols)
+            render_dets = apply_nms(merged, iou_threshold=0.45)
         else:
             render_dets = detections
 
@@ -422,6 +470,18 @@ def process_video(
             print(f"  {cls:20s} {total_class_counts[cls]:5d} ({pct:5.1f}%)")
     if output_path:
         print(f"Output: {output_path}")
+        # Re-encode to H.264 via ffmpeg if available (eliminates mp4v block artifacts)
+        import shutil, subprocess
+        if shutil.which("ffmpeg"):
+            h264_path = str(output_path).replace(".mp4", "_h264.mp4")
+            ret = subprocess.run(
+                ["ffmpeg", "-y", "-i", str(output_path),
+                 "-c:v", "libx264", "-crf", "20", "-preset", "fast", h264_path],
+                capture_output=True
+            )
+            if ret.returncode == 0:
+                import os; os.replace(h264_path, str(output_path))
+                print(f"Re-encoded to H.264: {output_path}")
     print("=" * 60)
 
 
@@ -429,7 +489,7 @@ def main():
     parser = argparse.ArgumentParser(description="UAV video detection with bounding boxes")
     parser.add_argument("video", type=str)
     parser.add_argument("--model", type=str,
-                        default="runs/classify/Pigeon_Harvest/runs/health_classification/health_train_v1-2/weights/best.pt")
+                        default="runs/classify/health_train_v3-20260621/weights/best.pt")
     parser.add_argument("--output", type=str, default=None)
     parser.add_argument("--show", action="store_true")
     parser.add_argument("--grid-rows", type=int, default=5)

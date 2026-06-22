@@ -377,6 +377,10 @@ public sealed partial class MainPage_Modern : Page
                 return;
             }
 
+            // Deactivate the current page before switching (stops timers, telemetry, etc.)
+            if (ContentFrame.Content is Page leavingPage)
+                DeactivatePage(leavingPage);
+
             Page? pageInstance = null;
             if (_pageCacheManager != null && !forceFrameNavigation)
             {
@@ -566,10 +570,22 @@ public sealed partial class MainPage_Modern : Page
             return;
         }
 
+        if (page is MissionPlannerPage missionPlannerPage)
+        {
+            missionPlannerPage.OnPageActivated();
+            return;
+        }
+
         if (page is LoRaPage loRaPage)
         {
             loRaPage.OnPageActivated();
         }
+    }
+
+    private static void DeactivatePage(Page page)
+    {
+        if (page is DashboardPage dashboardPage)
+            dashboardPage.OnPageDeactivated();
     }
 
     private void UpdateTopBarForTarget(string target)

@@ -66,12 +66,12 @@ public sealed partial class DashboardPage : Page
     private bool _isRecording;
     private bool _aiOn = true;
     private bool _showImuHud = true;
-    private int _confThreshold = 25;
+    private int _confThreshold = 40;
     private double _pitch;
     private double _roll;
     private double _yaw;
     private bool _missionTimerStarted;
-    private readonly DispatcherTimer _imuTimer = new() { Interval = TimeSpan.FromMilliseconds(1000) };
+    private readonly DispatcherTimer _imuTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
     private readonly DispatcherTimer _missionTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private DateTime _missionStart = DateTime.Now;
     private int _telemetryFrameCount;
@@ -84,23 +84,33 @@ public sealed partial class DashboardPage : Page
     private DateTime _lastYoloTimelineEvent = DateTime.MinValue;
     private HarvestFunctionalService.YoloBenchmarkResult? _lastBenchmarkResult;
 
+    // Real classify-stream detection data from Python (null = no data yet)
+    private (int Healthy, int Stress, int Disease, int Pest, int Total)? _classifyRealData;
+    private bool _classifyFirstFrameReceived;
+
+    // Real FPS tracking for HSV classify stream
+    private int _classifyFrameCount;
+    private DateTime _classifyFrameStart = DateTime.MinValue;
+    private double _classifyFps;
+
     // Demo mode state
     private bool _isDemoRunning;
     private int _demoStep;
     private double _demoBattery = 95.0;
     private double _demoHeading = 90.0;  // tracks current bearing for smooth roll
-    private const int DemoTicksPerSegment = 4; // 40 m at ~10 m/s ≈ 4 s per segment
+    private const int DemoTicksPerSegment = 10; // ~4 m/s cruise × 10 ticks per segment
     private readonly DispatcherTimer _demoTimer = new() { Interval = TimeSpan.FromSeconds(1) };
-    // 7 rows × 6 cols × 40 m spacing → 240 m × 200 m ≈ 4.8 ha (~5 ha survey area)
-    private static readonly (double Lat, double Lon)[] DemoWaypoints = GenerateSurveyWaypoints(-6.8148, 107.6172, rows: 7, cols: 6, spacingMeters: 40);
+    // Straight transect: WP 10-13 × 300 m → 900 m east–west over Lembang field
+    private static readonly (double Lat, double Lon)[] DemoWaypoints = GenerateStraightLineWaypoints(-6.8148, 107.6172, count: 4, totalMeters: 900, bearingDeg: 90.0);
+    private const int DemoWaypointStartSequence = 10;
     private static readonly string[] DemoClassificationEvents =
     {
-        "healthy_crop (conf 0.93) · Zone 2-3",
-        "stressed_crop (conf 0.81) · Zone 4-1",
-        "healthy_crop (conf 0.96) · Zone 1-2",
-        "drought_stress (conf 0.74) · Zone 3-4",
-        "disease_stress_vegetation (conf 0.87) · Zone 2-2",
-        "healthy_crop (conf 0.91) · Zone 5-1",
+        "Lush Green (conf 0.93) · Sector C",
+        "Inconsistent Growth (conf 0.81) · Sector D",
+        "Lush Green (conf 0.96) · Sector A",
+        "Inconsistent Growth (conf 0.74) · Sector B",
+        "Disease (conf 0.87) · Sector A",
+        "Well Irrigated (conf 0.91) · Sector E",
     };
 
     public DashboardPage()
@@ -134,9 +144,24 @@ public sealed partial class DashboardPage : Page
     public void OnPageActivated()
     {
         _isPageActive = true;
+        DashboardMapControl?.SetActive(true);
         DashboardMapControl?.InvalidateArrange();
         AttachCameraHandlers();
         ResumeVideoRendering();
+        SubscribeToTelemetry();
+        SubscribeToGeofenceMonitor();
+        _imuTimer.Start();
+        if (_missionTimerStarted) _missionTimer.Start();
+    }
+
+    public void OnPageDeactivated()
+    {
+        _isPageActive = false;
+        DashboardMapControl?.SetActive(false);
+        _imuTimer.Stop();
+        _missionTimer.Stop();
+        UnsubscribeFromTelemetry();
+        UnsubscribeFromGeofenceMonitor();
     }
 
     private void DashboardPage_Loaded(object sender, RoutedEventArgs e)
@@ -639,6 +664,8 @@ public sealed partial class DashboardPage : Page
         _cameraService.FrameReceived += OnDashboardFrameReceived;
         _cameraService.StreamingStatusChanged += OnDashboardCameraStreamingChanged;
         _cameraService.ConnectionError += OnDashboardCameraError;
+        if (_cameraService is PythonCameraService pcs)
+            pcs.ClassificationSummaryChanged += OnClassifyDetectionData;
         _cameraHandlersAttached = true;
     }
 
@@ -648,7 +675,31 @@ public sealed partial class DashboardPage : Page
         _cameraService.FrameReceived -= OnDashboardFrameReceived;
         _cameraService.StreamingStatusChanged -= OnDashboardCameraStreamingChanged;
         _cameraService.ConnectionError -= OnDashboardCameraError;
+        if (_cameraService is PythonCameraService pcs)
+            pcs.ClassificationSummaryChanged -= OnClassifyDetectionData;
         _cameraHandlersAttached = false;
+    }
+
+    private void OnClassifyDetectionData(object? sender, string dataJson)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(dataJson);
+            var root = doc.RootElement;
+            // Python emits float percentages (e.g. 53.2) — GetInt32() would throw; use GetDouble()
+            int healthy = 0, stress = 0, disease = 0, pest = 0;
+            if (root.TryGetProperty("classes", out var cls))
+            {
+                if (cls.TryGetProperty("Healthy", out var h)) healthy = (int)Math.Round(h.GetDouble());
+                if (cls.TryGetProperty("Stress",  out var s)) stress  = (int)Math.Round(s.GetDouble());
+                if (cls.TryGetProperty("Disease", out var d)) disease = (int)Math.Round(d.GetDouble());
+                if (cls.TryGetProperty("Pest",    out var p)) pest    = (int)Math.Round(p.GetDouble());
+            }
+            int total = healthy + stress + disease + pest;
+            if (total == 0) return;
+            _classifyRealData = (healthy, stress, disease, pest, total);
+        }
+        catch { }
     }
 
     /// <summary>
@@ -680,7 +731,7 @@ public sealed partial class DashboardPage : Page
     {
         if (_cameraService == null)
         {
-            DashboardVideoStream?.ShowStatus("Camera service tidak tersedia", false);
+            DashboardVideoStream?.ShowStatus("Camera service not available", false);
             return;
         }
 
@@ -697,7 +748,7 @@ public sealed partial class DashboardPage : Page
     }
 
     // Throttle UI frame rendering so very high-FPS camera sources don't saturate the UI thread.
-    private const int VideoFrameIntervalMs = 16; // ~60 FPS / lower preview latency
+    private const int VideoFrameIntervalMs = 50; // ~20 FPS — reduce UI thread load
     private DateTime _lastVideoFrameRender = DateTime.MinValue;
 
     private void OnDashboardFrameReceived(object? sender, byte[] frameData)
@@ -716,13 +767,35 @@ public sealed partial class DashboardPage : Page
         _lastVideoFrameRender = now;
         _lastFrameData = frameData;
 
+        // On first frame from classify stream, hide the loading overlay
+        var classifyActive = (_cameraService as PythonCameraService)?.IsClassificationStream == true;
+        if (classifyActive && !_classifyFirstFrameReceived)
+        {
+            _classifyFirstFrameReceived = true;
+            _classifyFrameStart = now;
+            _classifyFrameCount = 0;
+            DispatcherQueue.TryEnqueue(() => { try { DashboardVideoStream?.HideOverlay(); } catch { } });
+        }
+
+        // Track FPS for classify stream
+        if (classifyActive && _classifyFirstFrameReceived)
+        {
+            _classifyFrameCount++;
+            var elapsed = (now - _classifyFrameStart).TotalSeconds;
+            if (elapsed >= 3.0 && _classifyFrameCount > 0)
+            {
+                _classifyFps = _classifyFrameCount / elapsed;
+                _classifyFrameCount = 0;
+                _classifyFrameStart = now;
+            }
+        }
+
         DashboardVideoStream?.UpdateFrame(frameData);
         if (_videoRecorderService?.IsRecording == true)
         {
             _videoRecorderService.WriteFrame(frameData);
         }
-
-        if (_aiOn && _harvestFunctionalService?.IsYoloOptionEnabled == true && !_analysisRunning)
+        if (!classifyActive && _aiOn && _harvestFunctionalService?.IsYoloOptionEnabled == true && !_analysisRunning)
         {
             _lastAnalysisTime = DateTime.Now;
             _ = AnalyzeDashboardFrameAsync(frameData);
@@ -780,14 +853,16 @@ public sealed partial class DashboardPage : Page
 
                 DashboardVideoStream?.SetDetectionOverlays(boxes
                     .Where(b => b.Confidence * 100 >= _confThreshold)
-                    .Select(box => new VideoDetectionOverlay
+                    .Select(b => (demo: MapToDemo(b.ClassName), b))
+                    .Where(t => !string.IsNullOrEmpty(t.demo))
+                    .Select(t => new VideoDetectionOverlay
                     {
-                        Label = box.ClassName,
-                        Confidence = box.Confidence,
-                        X = box.X,
-                        Y = box.Y,
-                        Width = box.Width,
-                        Height = box.Height
+                        Label = t.demo,
+                        Confidence = t.b.Confidence,
+                        X = t.b.X,
+                        Y = t.b.Y,
+                        Width = t.b.Width,
+                        Height = t.b.Height
                     }));
 
                 if (!_isDemoRunning)
@@ -820,7 +895,7 @@ public sealed partial class DashboardPage : Page
         {
             DetectionsListStack.Children.Add(new TextBlock
             {
-                Text = "Tidak ada deteksi di atas threshold.",
+                Text = "No detections above threshold.",
                 FontSize = 12,
                 Foreground = new SolidColorBrush(Color.FromArgb(255, 148, 163, 184))
             });
@@ -829,7 +904,9 @@ public sealed partial class DashboardPage : Page
 
         foreach (var det in filtered)
         {
-            DetectionsListStack.Children.Add(BuildCropDetectionRow(det.ClassName, det.Confidence));
+            var demoName = MapToDemo(det.ClassName);
+            if (string.IsNullOrEmpty(demoName)) continue;
+            DetectionsListStack.Children.Add(BuildCropDetectionRow(demoName, det.Confidence));
         }
     }
 
@@ -846,7 +923,7 @@ public sealed partial class DashboardPage : Page
         {
             DetectionsListStack.Children.Add(new TextBlock
             {
-                Text = "Tidak ada deteksi di atas threshold.",
+                Text = "No detections above threshold.",
                 FontSize = 12,
                 Foreground = new SolidColorBrush(Color.FromArgb(255, 148, 163, 184))
             });
@@ -855,41 +932,64 @@ public sealed partial class DashboardPage : Page
 
         foreach (var det in filtered)
         {
-            DetectionsListStack.Children.Add(BuildCropDetectionRow(det.ClassName, det.Confidence));
+            var demoName = MapToDemo(det.ClassName);
+            if (string.IsNullOrEmpty(demoName)) continue;
+            DetectionsListStack.Children.Add(BuildCropDetectionRow(demoName, det.Confidence));
         }
     }
 
     private void UpdateSummaryAndNdvi(HarvestFunctionalService.HarvestAnalysisResult result)
     {
-        var healthyPct  = result.HealthyPercentage;
-        var stressedPct = result.StressedPercentage;
-        var droughtPct  = result.DroughtPercentage;
-        var barePct     = result.BareSoilPercentage;
-        var diseasePct  = Math.Max(0, 100 - healthyPct - stressedPct - droughtPct - barePct);
+        // Hitung dari DetectionBoxes (YOLO v3 class names) — bukan HSV residual
+        int lushGreen = 0, wellIrrig = 0, inconsistent = 0, soil = 0, disease = 0, pest = 0;
+        foreach (var box in result.DetectionBoxes.Where(b => b.Confidence * 100 >= _confThreshold))
+        {
+            switch (box.ClassName.ToLowerInvariant())
+            {
+                case "disease":             disease++;      break;
+                case "pest":                pest++;         break;
+                case "inconsistent_growth": inconsistent++; break;
+                case "soil_issues":         soil++;         break;
+                case "well_irrigated":      wellIrrig++;    break;
+                default:                    lushGreen++;    break;  // lush_green + unknown
+            }
+        }
 
-        SummaryHealthyCount.Text  = $"{healthyPct:F0}%";
-        SummaryStressCount.Text   = $"{stressedPct:F0}%";
-        SummaryDiseaseCount.Text  = $"{diseasePct:F0}%";
-        SummaryDroughtCount.Text  = $"{droughtPct:F0}%";
-        SummaryBaresoilCount.Text = $"{barePct:F0}%";
+        int total           = Math.Max(1, lushGreen + wellIrrig + inconsistent + soil + disease + pest);
+        var lushGreenPct    = lushGreen    * 100.0 / total;
+        var wellIrrigPct    = wellIrrig    * 100.0 / total;
+        var inconsistentPct = inconsistent * 100.0 / total;
+        var soilPct         = soil         * 100.0 / total;
+        var diseasePct      = disease      * 100.0 / total;
+        var pestPct         = pest         * 100.0 / total;
 
-        // NDVI bars
-        var moderatePct = Math.Max(0, 100 - healthyPct - stressedPct - droughtPct - barePct);
-        var criticalPct = droughtPct + barePct;
+        SummaryHealthyCount.Text = $"{lushGreenPct:F0}%";
+        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = $"{wellIrrigPct:F0}%";
+        SummaryStressCount.Text  = $"{inconsistentPct:F0}%";
+        if (SummarySoilIssuesCount != null) SummarySoilIssuesCount.Text = $"{soilPct:F0}%";
+        SummaryDiseaseCount.Text = $"{diseasePct:F0}%";
+        SummaryPestCount.Text    = $"{pestPct:F0}%";
 
-        NdviHealthyBar.Value = healthyPct;
-        NdviHealthyText.Text = $"{healthyPct:F0}%";
-        NdviModerateBar.Value = moderatePct;
-        NdviModerateText.Text = $"{moderatePct:F0}%";
-        NdviStressedBar.Value = stressedPct;
-        NdviStressedText.Text = $"{stressedPct:F0}%";
-        NdviCriticalBar.Value = criticalPct;
-        NdviCriticalText.Text = $"{criticalPct:F0}%";
-        NdviAvgText.Text = (healthyPct / 100.0).ToString("F2");
-        NdviCoverageText.Text = $"{result.TotalZones * 0.05:F1} ha";
+        if (SummaryHealthyBar        != null) SummaryHealthyBar.Value        = lushGreenPct;
+        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = wellIrrigPct;
+        if (SummaryStressBar         != null) SummaryStressBar.Value         = inconsistentPct;
+        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = soilPct;
+        if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = diseasePct;
+        if (SummaryPestBar           != null) SummaryPestBar.Value           = pestPct;
 
-        // Priority pill
-        var priority = diseasePct > 5 ? "High" : stressedPct > 15 || droughtPct > 10 ? "Medium" : "Low";
+        var maxHealthy = Math.Max(lushGreenPct, wellIrrigPct);
+        var dominant = diseasePct >= pestPct && diseasePct >= inconsistentPct && diseasePct >= maxHealthy
+            ? $"Disease {diseasePct:F0}%"
+            : pestPct >= inconsistentPct && pestPct >= maxHealthy
+                ? $"Pest {pestPct:F0}%"
+                : inconsistentPct >= maxHealthy
+                    ? $"Inconsistent Growth {inconsistentPct:F0}%"
+                    : lushGreenPct >= wellIrrigPct
+                        ? $"Lush Green {lushGreenPct:F0}%"
+                        : $"Well Irrigated {wellIrrigPct:F0}%";
+        if (SummaryDominantText != null) SummaryDominantText.Text = dominant;
+
+        var priority = disease > 0 || pest > 0 ? "High" : inconsistent > 0 ? "Medium" : "Low";
         SummaryPriorityText.Text = priority;
         SummaryPriorityPill.Style = (Style)(priority switch
         {
@@ -905,25 +1005,41 @@ public sealed partial class DashboardPage : Page
         });
     }
 
+    /// <summary>Remap v3 YOLO class name to display label. Returns "" for unknown.</summary>
+    private static string MapToDemo(string className)
+    {
+        return className.ToLowerInvariant().Replace(" ", "_").Replace("-", "_") switch
+        {
+            "lush_green"          => "Lush Green",
+            "well_irrigated"      => "Well Irrigated",
+            "inconsistent_growth" => "Inconsistent Growth",
+            "soil_issues"         => "Soil Issues",
+            "disease"             => "Disease",
+            "pest"                => "Pest",
+            _ => string.Empty
+        };
+    }
+
     private static Color ColorForLabel(string label)
     {
-        var lower = label.ToLowerInvariant().Replace(" ", "_").Replace("-", "_");
-        if (lower.Contains("disease")) return Color.FromArgb(255, 211, 47, 47);   // red
-        if (lower.Contains("drought")) return Color.FromArgb(255, 230, 100, 20);  // orange
-        if (lower.Contains("stressed") || lower.Contains("stress_crop")) return Color.FromArgb(255, 234, 179, 8); // yellow
-        if (lower.Contains("bare"))    return Color.FromArgb(255, 71, 71, 71);    // dark gray
-        return Color.FromArgb(255, 34, 139, 34);                                   // green (healthy)
+        var lower = label.ToLowerInvariant();
+        if (lower.Contains("disease"))      return Color.FromArgb(255, 211,  47,  47);  // red
+        if (lower.Contains("pest"))         return Color.FromArgb(255, 124,  58, 237);  // purple
+        if (lower.Contains("soil"))         return Color.FromArgb(255,  93,  64,  55);  // brown
+        if (lower.Contains("inconsistent")) return Color.FromArgb(255, 178, 107,   0);  // amber
+        if (lower.Contains("well"))         return Color.FromArgb(255,   2, 136, 209);  // teal
+        return Color.FromArgb(255, 46, 125, 50);                                         // green (lush)
     }
 
     private static (string Emoji, string Label, string Description) CropClassInfo(string className)
     {
         var lower = className.ToLowerInvariant().Replace(" ", "_").Replace("-", "_");
-        if (lower.Contains("disease"))  return ("🔴", "disease_stress_vegetation", "Terserang penyakit");
-        if (lower.Contains("drought"))  return ("🟠", "drought_stress",            "Stress kekeringan");
-        if (lower.Contains("stressed") || (lower.Contains("stress") && !lower.Contains("disease") && !lower.Contains("drought")))
-                                        return ("🟡", "stressed_crop",             "Tanaman stress");
-        if (lower.Contains("bare"))     return ("⚫", "bare_soil",                 "Tanah kosong");
-        return                                 ("🟢", "healthy_crop",              "Tanaman sehat");
+        if (lower.Contains("disease"))      return ("🔴", "Disease",             "Diseased vegetation");
+        if (lower.Contains("pest"))         return ("🟣", "Pest",                "Pest infestation");
+        if (lower.Contains("soil"))         return ("🟤", "Soil Issues",         "Dry or bare soil");
+        if (lower.Contains("inconsistent")) return ("🟡", "Inconsistent Growth", "Stressed / uneven crop");
+        if (lower.Contains("well"))         return ("💧", "Well Irrigated",      "Well-watered crop");
+        return                                     ("🌿", "Lush Green",          "Healthy vegetation");
     }
 
     private Grid BuildCropDetectionRow(string className, double confidence)
@@ -981,7 +1097,7 @@ public sealed partial class DashboardPage : Page
     }
 
     /// <summary>
-    /// Updates Analysis Summary and Vegetation Health panels from actual YOLO detections.
+    /// Updates Analysis Summary panel from actual YOLO detections.
     /// Maps COCO class names to agriculture categories for display.
     /// </summary>
     private void UpdateSummaryFromDetections(List<HarvestmoonGCS.Services.HarvestFunctionalService.HarvestDetectionBox> boxes)
@@ -991,37 +1107,67 @@ public sealed partial class DashboardPage : Page
             SummaryHealthyCount.Text  = "0%";
             SummaryStressCount.Text   = "0%";
             SummaryDiseaseCount.Text  = "0%";
-            SummaryDroughtCount.Text  = "0%";
-            SummaryBaresoilCount.Text = "0%";
+            SummaryPestCount.Text     = "0%";
+            if (SummaryHealthyBar        != null) SummaryHealthyBar.Value        = 0;
+            if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = 0;
+            if (SummaryStressBar         != null) SummaryStressBar.Value         = 0;
+            if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = 0;
+            if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = 0;
+            if (SummaryPestBar           != null) SummaryPestBar.Value           = 0;
+            if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = "0%";
+            if (SummarySoilIssuesCount    != null) SummarySoilIssuesCount.Text   = "0%";
             SummaryPriorityText.Text = "Standby";
+            if (SummaryDominantText != null) SummaryDominantText.Text = "—";
             return;
         }
 
-        int disease = 0, stressed = 0, drought = 0, bare = 0, healthy = 0;
+        int disease = 0, pest = 0, inconsistent = 0, soil = 0, lushGreen = 0, wellIrrig = 0;
         foreach (var box in boxes.Where(b => b.Confidence * 100 >= _confThreshold))
         {
-            var cls = box.ClassName.ToLowerInvariant();
-            if (cls.Contains("disease") || cls.Contains("pest") || cls.Contains("bug"))
-                disease++;
-            else if (cls.Contains("drought") || cls.Contains("dry") || cls.Contains("irrig"))
-                drought++;
-            else if (cls.Contains("bare") || cls.Contains("soil"))
-                bare++;
-            else if (cls.Contains("stress"))
-                stressed++;
-            else
-                healthy++;
+            switch (box.ClassName.ToLowerInvariant())
+            {
+                case "disease":             disease++;      break;
+                case "pest":                pest++;         break;
+                case "inconsistent_growth": inconsistent++; break;
+                case "soil_issues":         soil++;         break;
+                case "well_irrigated":      wellIrrig++;    break;
+                default:                    lushGreen++;    break;  // lush_green + unknown
+            }
         }
 
-        int total = Math.Max(1, healthy + stressed + disease + drought + bare);
-        SummaryHealthyCount.Text  = $"{healthy  * 100 / total}%";
-        SummaryStressCount.Text   = $"{stressed * 100 / total}%";
-        SummaryDiseaseCount.Text  = $"{disease  * 100 / total}%";
-        SummaryDroughtCount.Text  = $"{drought  * 100 / total}%";
-        SummaryBaresoilCount.Text = $"{bare     * 100 / total}%";
+        int total           = Math.Max(1, lushGreen + wellIrrig + inconsistent + soil + disease + pest);
+        var lushGreenPct    = lushGreen   * 100 / total;
+        var wellIrrigPct    = wellIrrig   * 100 / total;
+        var inconsistentPct = inconsistent * 100 / total;
+        var soilPct         = soil        * 100 / total;
+        var diseasePct      = disease     * 100 / total;
+        var pestPct         = pest        * 100 / total;
 
-        // Priority based on detections
-        var priority = disease > 0 ? "High" : stressed > 0 || drought > 0 ? "Medium" : "Low";
+        SummaryHealthyCount.Text = $"{lushGreenPct:F0}%";
+        SummaryStressCount.Text  = $"{inconsistentPct:F0}%";
+        SummaryDiseaseCount.Text = $"{diseasePct:F0}%";
+        SummaryPestCount.Text    = $"{pestPct:F0}%";
+        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = $"{wellIrrigPct:F0}%";
+        if (SummarySoilIssuesCount    != null) SummarySoilIssuesCount.Text    = $"{soilPct:F0}%";
+
+        if (SummaryHealthyBar        != null) SummaryHealthyBar.Value        = lushGreenPct;
+        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = wellIrrigPct;
+        if (SummaryStressBar         != null) SummaryStressBar.Value         = inconsistentPct;
+        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = soilPct;
+        if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = diseasePct;
+        if (SummaryPestBar           != null) SummaryPestBar.Value           = pestPct;
+
+        var maxHealthy = Math.Max(lushGreenPct, wellIrrigPct);
+        var dominant = diseasePct >= inconsistentPct && diseasePct >= maxHealthy
+            ? $"Disease {diseasePct:F0}%"
+            : inconsistentPct >= maxHealthy
+                ? $"Inconsistent Growth {inconsistentPct:F0}%"
+                : lushGreenPct >= wellIrrigPct
+                    ? $"Lush Green {lushGreenPct:F0}%"
+                    : $"Well Irrigated {wellIrrigPct:F0}%";
+        if (SummaryDominantText != null) SummaryDominantText.Text = dominant;
+
+        var priority = disease > 0 || pest > 0 ? "High" : inconsistent > 0 ? "Medium" : "Low";
         SummaryPriorityText.Text = priority;
         SummaryPriorityPill.Style = (Style)(priority switch
         {
@@ -1035,25 +1181,6 @@ public sealed partial class DashboardPage : Page
             "Medium" => Color.FromArgb(255, 178, 107, 0),
             _ => Color.FromArgb(255, 6, 95, 70)
         });
-
-        // Vegetation Health (NDVI) — derive from detection distribution
-        double healthyPct2  = healthy  * 100.0 / total;
-        double stressedPct2 = stressed * 100.0 / total;
-        double criticalPct2 = (disease + drought) * 100.0 / total;
-        double moderatePct2 = bare     * 100.0 / total;
-
-        NdviHealthyBar.Value = healthyPct2;
-        NdviHealthyText.Text = $"{healthyPct2:F0}%";
-        NdviModerateBar.Value = moderatePct2;
-        NdviModerateText.Text = $"{moderatePct2:F0}%";
-        NdviStressedBar.Value = stressedPct2;
-        NdviStressedText.Text = $"{stressedPct2:F0}%";
-        NdviCriticalBar.Value = criticalPct2;
-        NdviCriticalText.Text = $"{criticalPct2:F0}%";
-
-        double avgNdvi = (healthyPct2 * 0.8 + moderatePct2 * 0.5 + stressedPct2 * 0.3 + criticalPct2 * 0.1) / 100.0;
-        NdviAvgText.Text = avgNdvi.ToString("F2");
-        NdviCoverageText.Text = $"{total * 0.1:F1} ha";
     }
 
     private void OnDashboardCameraStreamingChanged(object? sender, bool isStreaming)
@@ -1062,12 +1189,10 @@ public sealed partial class DashboardPage : Page
         {
             if (isStreaming)
             {
-                // Force the control to refresh so the next frame is drawn immediately.
                 try { DashboardVideoStream?.HideOverlay(); } catch { }
             }
             else
             {
-                // Only show a status when we genuinely lost the stream, not when another page is drawing.
                 DashboardVideoStream?.ShowStatus("Camera stopped", false);
             }
         });
@@ -1150,8 +1275,6 @@ public sealed partial class DashboardPage : Page
     }
 
     private void VegToggle_Toggled(object sender, RoutedEventArgs e) => ApplyLayerVisibility();
-    private void GridToggle_Toggled(object sender, RoutedEventArgs e) => ApplyLayerVisibility();
-    private void HeatmapToggle_Toggled(object sender, RoutedEventArgs e) => ApplyLayerVisibility();
     private void ImuToggle_Toggled(object sender, RoutedEventArgs e)
     {
         _showImuHud = ImuToggleSwitch.IsOn;
@@ -1161,8 +1284,8 @@ public sealed partial class DashboardPage : Page
     private void ApplyLayerVisibility()
     {
         VegetationOverlayLayer.Visibility = VegToggleSwitch.IsOn ? Visibility.Visible : Visibility.Collapsed;
-        GridOverlayCanvas.Visibility = GridToggleSwitch.IsOn ? Visibility.Visible : Visibility.Collapsed;
-        HeatmapOverlayLayer.Visibility = HeatmapToggleSwitch.IsOn ? Visibility.Visible : Visibility.Collapsed;
+        GridOverlayCanvas.Visibility = Visibility.Collapsed;
+        HeatmapOverlayLayer.Visibility = Visibility.Collapsed;
         ImuHudPanel.Visibility = ImuToggleSwitch.IsOn ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -1294,22 +1417,39 @@ public sealed partial class DashboardPage : Page
 
         try
         {
-            // 1. Video — prefer pre-annotated output, fall back to raw derr.mp4
+            // 1. Video — use HSV+YOLO classify stream (Python annotates frames, C# skips double ONNX)
             var videoPath = ResolveDetectedVideoPath() ?? ResolveDerpVideoPath();
             if (!string.IsNullOrWhiteSpace(videoPath) && File.Exists(videoPath) && _cameraService != null)
             {
-                await _cameraService.StopCameraAsync();
-                await _cameraService.StartCameraAsync(videoPath);
-                _timelineService?.Add("camera", $"Camera stream: {System.IO.Path.GetFileName(videoPath)}", "success");
+                var pythonSvc = _cameraService as PythonCameraService;
+                if (pythonSvc != null)
+                {
+                    // HSV pixel-level stream: much faster than 35-cell YOLO grid
+                    var modelPath = PythonCameraService.ResolveHealthModelPath();
+                    await _cameraService.StopCameraAsync();
+                    await pythonSvc.StartHsvStreamAsync(
+                        videoPath,
+                        modelPath: modelPath,
+                        maxFps: 15f,
+                        showOverlay: true,
+                        demo: true);
+                    _timelineService?.Add("camera", $"HSV detection: {System.IO.Path.GetFileName(videoPath)}", "success");
+                }
+                else
+                {
+                    await _cameraService.StopCameraAsync();
+                    await _cameraService.StartCameraAsync(videoPath);
+                    _timelineService?.Add("camera", $"Camera stream: {System.IO.Path.GetFileName(videoPath)}", "success");
+                }
             }
 
-            // 2. AI on
+            // 2. AI on (C# ONNX skipped when classify stream is active — Python already annotates frames)
             _aiOn = true;
             if (YoloToggleSwitch != null) YoloToggleSwitch.IsOn = true;
 
-            // 3. Activate geofence — covers 5 ha survey area (240m×200m) + 80m safety buffer
+            // 3. Activate geofence — covers 2700m straight transect + 250m lateral buffer
             _geofenceService?.SetGeofenceCenter(-6.8148, 107.6172);
-            _geofenceService?.SetGeofenceRadius(280);
+            _geofenceService?.SetGeofenceRadius(1600);
             _geofenceService?.SetGeofenceActive(true);
 
             // 4. Simulate connection — fires real MAVLink ConnectionStatusChanged so ALL pages respond
@@ -1325,7 +1465,7 @@ public sealed partial class DashboardPage : Page
                     var (wpLat, wpLon) = DemoWaypoints[i];
                     _mapViewModel.Waypoints.Add(new WaypointData
                     {
-                        Sequence    = i + 1,
+                        Sequence    = DemoWaypointStartSequence + i,
                         Latitude    = wpLat,
                         Longitude   = wpLon,
                         Altitude    = 82,
@@ -1335,10 +1475,14 @@ public sealed partial class DashboardPage : Page
                 // Mirror the geofence into MapViewModel so MapPage draws the boundary
                 _mapViewModel.GeofenceCenterLat = -6.8148;
                 _mapViewModel.GeofenceCenterLon = 107.6172;
-                _mapViewModel.GeofenceRadius    = 280;
+                _mapViewModel.GeofenceRadius    = 1600;
                 _mapViewModel.GeofenceType      = GeofenceType.Circular;
                 _mapViewModel.IsGeofenceActive  = true;
             }
+
+            // 4b. Center map on Lembang demo area and follow UAV
+            DashboardMapControl?.SetCenter(-6.8148, 107.6172, 16);
+            DashboardMapControl?.SetFollowVehicle(true);
 
             // 5. Initial telemetry
             InjectDemoTelemetry(0);
@@ -1346,8 +1490,8 @@ public sealed partial class DashboardPage : Page
             // 6. Seed timeline
             _timelineService?.Add("connected", "MAVLink connected · Lembang Field B",              "success");
             _timelineService?.Add("tlog",      "Auto TLOG recorder armed",                         "success");
-            _timelineService?.Add("armed",     "Armed · AUTO mode · altitude 82m · survey aktif", "success");
-            _timelineService?.Add("waypoint",  "Survey grid aktif · Lembang Zone B · 7×6 · ~5 ha", "info");
+            _timelineService?.Add("armed",     "Armed · AUTO mode · altitude 82m · survey active", "success");
+            _timelineService?.Add("waypoint",  "Jalur lurus aktif · 900m E-W · WP 10-13 · Lembang Zone B", "info");
             RenderIncidentTimeline();
             UpdateAlertCenter(_flightViewModel?.Telemetry, true);
 
@@ -1355,8 +1499,8 @@ public sealed partial class DashboardPage : Page
             _lastDetectionCount = 0;
             _lastConfidence = 0;
             DetectionCountText.Text = "0 det";
-            FpsHudText.Text = "YOLOv8 · live inference...";
-            AddAlertRow("UAV survey aktif · Lembang Field B · AUTO mode", "info");
+            FpsHudText.Text = "HSV+YOLO · starting...";
+            AddAlertRow("UAV survey active · Lembang Field B · AUTO mode", "info");
 
             // 8. Start tick timer (1 s interval)
             _demoTimer.Tick -= OnDemoTick;
@@ -1374,18 +1518,25 @@ public sealed partial class DashboardPage : Page
     private void StopDemoMode()
     {
         _isDemoRunning = false;
+        _classifyRealData = null;
+        _classifyFirstFrameReceived = false;
+        _classifyFps = 0;
+        _classifyFrameCount = 0;
+        _classifyFrameStart = DateTime.MinValue;
         _demoTimer.Stop();
         _demoTimer.Tick -= OnDemoTick;
         _geofenceService?.SetGeofenceActive(false);
         _mavLinkService?.SimulateConnection(false);
         if (_flightViewModel != null) _flightViewModel.IsConnected = false;
 
-        // Restore MapViewModel to idle state
+        // Restore MapViewModel and map control to idle state
         if (_mapViewModel != null)
         {
             _mapViewModel.Waypoints.Clear();
             _mapViewModel.IsGeofenceActive = false;
         }
+        DashboardMapControl?.SetFollowVehicle(false);
+        DashboardMapControl?.ClearWaypoints();
         SetDemoButtonState(running: false);
         _timelineService?.Add("disconnected", "Koneksi diputus", "warning");
         AddAlertRow("Koneksi UAV diputus", "warning");
@@ -1400,7 +1551,8 @@ public sealed partial class DashboardPage : Page
         InjectDemoTelemetry(_demoStep);
         InjectDemoTimelineEvents(_demoStep);
         InjectDemoDetectionUI(_demoStep);
-        if (_demoStep >= DemoWaypoints.Length * 3) _demoStep = 0;
+        int _demoLoopPeriod = (DemoWaypoints.Length - 1) * DemoTicksPerSegment; // 30 steps = full route
+        if (_demoStep >= _demoLoopPeriod) _demoStep = 0;
     }
 
     private void InjectDemoTelemetry(int step)
@@ -1431,10 +1583,10 @@ public sealed partial class DashboardPage : Page
         // Altitude: gentle oscillation ±1.5 m around 82 m (air turbulence)
         double altitude     = 82.0 + Math.Sin(step * 0.31) * 1.5;
 
-        // Roll: banking during turns, slight waggle on straights
+        // Roll: banking during turns, visible waggle on straights for IMU animation
         double roll = isTurning
-            ? Math.Sign(headingDelta) * 15.0
-            : Math.Sin(step * 0.4) * 2.5;
+            ? Math.Sign(headingDelta) * 18.0
+            : Math.Sin(step * 0.4) * 12.0;
 
         // Speed: slightly slower through turns
         double speed = isTurning ? 7.2 : 9.4;
@@ -1459,8 +1611,8 @@ public sealed partial class DashboardPage : Page
             FlightMode         = HarvestmoonGCS.Core.Models.FlightMode.AUTO,
             IsArmed            = true,
             ThrottlePercent    = isTurning ? 60 : 68,
-            Roll               = roll,
-            Pitch              = isTurning ? -1.5 : -3.0,
+            Roll               = roll  * Math.PI / 180.0,
+            Pitch              = Math.Sin(step * 0.23) * 8.0 * Math.PI / 180.0,
             Yaw                = newHeading,
             VerticalSpeed      = verticalSpeed,
         };
@@ -1503,96 +1655,127 @@ public sealed partial class DashboardPage : Page
 
     private void InjectDemoTimelineEvents(int step)
     {
-        // DemoWaypoints = 7 rows × 6 cols = 42 waypoints. Row transitions at wp 6, 12, 18, 24, 30, 36.
+        // DemoWaypoints = WP 10-13, straight east, 300m spacing → 900m transect. 3 segments × 10 ticks = 30s loop.
         switch (step)
         {
-            case 2:  _timelineService?.Add("yolo",     "YOLO inference aktif · scan row 1 of 7",               "success"); break;
-            case 5:  _timelineService?.Add("waypoint", "WP 1 → Survey row 1 · Lembang Zone B North",           "success"); break;
+            case 2:  _timelineService?.Add("yolo",     "YOLO inference aktif · scan dimulai",                  "success"); break;
+            case 5:  _timelineService?.Add("waypoint", "WP 1 → Titik awal · ujung barat lahan",                "success"); break;
             case 10: _timelineService?.Add("yolo",     DemoClassificationEvents[0],                             "info");    break;
-            case 14: _timelineService?.Add("waypoint", "WP 7 → Survey row 2 · tracking East",                  "success"); break;
-            case 18: _timelineService?.Add("yolo",     DemoClassificationEvents[1],                             "warning"); break;
-            case 22: _timelineService?.Add("waypoint", "WP 13 → Survey row 3 · mid-field",                     "success"); break;
-            case 26: _timelineService?.Add("geofence", "Geofence safe · 85m to boundary (zona aman)",          "info");    break;
-            case 30: _timelineService?.Add("yolo",     DemoClassificationEvents[2],                             "info");    break;
-            case 34: _timelineService?.Add("waypoint", "WP 19 → Survey row 4 · tracking West",                 "success"); break;
-            case 38: _timelineService?.Add("yolo",     DemoClassificationEvents[3],                             "warning"); break;
-            case 42: _timelineService?.Add("waypoint", "WP 25 → Survey row 5 · 60% area covered",              "success"); break;
-            case 46: _timelineService?.Add("yolo",     DemoClassificationEvents[4],                             "critical"); break;
-            case 50: _timelineService?.Add("waypoint", "WP 31 → Survey row 6 · 80% area covered",              "success"); break;
-            case 54: _timelineService?.Add("yolo",     DemoClassificationEvents[5],                             "info");    break;
-            case 58: _timelineService?.Add("waypoint", "WP 37 → Survey row 7 · 95% area covered",              "success"); break;
+            case 15: _timelineService?.Add("waypoint", "WP 3 → Memasuki zona tengah · 600m dari start",        "success"); break;
+            case 20: _timelineService?.Add("yolo",     DemoClassificationEvents[1],                             "warning"); break;
+            case 25: _timelineService?.Add("waypoint", "WP 5 → Tengah lintasan · 1350m",                       "success"); break;
+            case 30: _timelineService?.Add("geofence", "Geofence safe · 250m ke batas (zona aman)",            "info");    break;
+            case 35: _timelineService?.Add("yolo",     DemoClassificationEvents[2],                             "info");    break;
+            case 40: _timelineService?.Add("waypoint", "WP 7 → 2100m · 78% jalur terselesaikan",               "success"); break;
+            case 45: _timelineService?.Add("yolo",     DemoClassificationEvents[3],                             "warning"); break;
+            case 50: _timelineService?.Add("waypoint", "WP 9 → Mendekati titik akhir · 2400m",                 "success"); break;
+            case 54: _timelineService?.Add("yolo",     DemoClassificationEvents[4],                             "critical"); break;
+            case 58: _timelineService?.Add("waypoint", "WP 10 → Jalur selesai · RTL dimulai",                  "success"); break;
             case 62: _timelineService?.Add("tlog",     $"Telemetry batch flushed · {step * 2} packets saved",  "info");    break;
         }
         if (step % 5 == 0 && step > 0) RenderIncidentTimeline();
     }
 
-    // Rotating demo detection frames — each entry is a snapshot of crop health detections
+    // Rotating demo detection frames — proposal-aligned 4-class labels only
     private static readonly (string Class, double Conf)[][] DemoDetectionFrames =
     {
-        new[] { ("healthy_crop", 0.93), ("healthy_crop", 0.88), ("stressed_crop", 0.79) },
-        new[] { ("healthy_crop", 0.91), ("stressed_crop", 0.82), ("drought_stress", 0.74), ("bare_soil", 0.68) },
-        new[] { ("healthy_crop", 0.96), ("healthy_crop", 0.90), ("healthy_crop", 0.85), ("stressed_crop", 0.77) },
-        new[] { ("disease_stress_vegetation", 0.87), ("stressed_crop", 0.81), ("healthy_crop", 0.89) },
-        new[] { ("healthy_crop", 0.94), ("drought_stress", 0.76), ("bare_soil", 0.71), ("stressed_crop", 0.83) },
-        new[] { ("healthy_crop", 0.92), ("healthy_crop", 0.88), ("disease_stress_vegetation", 0.80) },
-        new[] { ("stressed_crop", 0.85), ("drought_stress", 0.78), ("healthy_crop", 0.91) },
-        new[] { ("healthy_crop", 0.95), ("healthy_crop", 0.89), ("bare_soil", 0.65), ("stressed_crop", 0.72) },
+        new[] { ("Healthy", 0.93), ("Healthy", 0.88), ("Stress", 0.79) },
+        new[] { ("Healthy", 0.91), ("Stress", 0.82), ("Stress", 0.74) },
+        new[] { ("Healthy", 0.96), ("Healthy", 0.90), ("Healthy", 0.85), ("Stress", 0.77) },
+        new[] { ("Disease", 0.87), ("Stress", 0.81), ("Healthy", 0.89) },
+        new[] { ("Healthy", 0.94), ("Stress", 0.76), ("Stress", 0.71), ("Stress", 0.83) },
+        new[] { ("Healthy", 0.92), ("Healthy", 0.88), ("Disease", 0.80) },
+        new[] { ("Stress", 0.85), ("Stress", 0.78), ("Healthy", 0.91) },
+        new[] { ("Healthy", 0.95), ("Healthy", 0.89), ("Stress", 0.65), ("Stress", 0.72) },
     };
 
     private void InjectDemoDetectionUI(int step)
     {
-        var frame = DemoDetectionFrames[step % DemoDetectionFrames.Length];
-        int count = frame.Length;
-        double avgConf = frame.Average(f => f.Conf);
+        double dHealthy, dStress, dDisease, dPest, avgConf;
+        int count;
+
+        // Use REAL Python detection data when classify stream has sent at least one result
+        if (_classifyRealData.HasValue)
+        {
+            var r = _classifyRealData.Value;
+            double tot = Math.Max(1, r.Total);
+            dHealthy = r.Healthy * 100.0 / tot;
+            dStress  = r.Stress  * 100.0 / tot;
+            dDisease = r.Disease * 100.0 / tot;
+            dPest    = r.Pest    * 100.0 / tot;
+            count    = r.Total;
+            avgConf  = 0.82 + Math.Sin(step * 0.3) * 0.06; // realistic jitter
+
+            // Build detection rows from real class counts
+            DetectionsListStack.Children.Clear();
+            if (r.Stress  > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Inconsistent Growth", 0.80 + Math.Sin(step * 0.4) * 0.05));
+            if (r.Healthy > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Lush Green",           0.88 + Math.Sin(step * 0.2) * 0.05));
+            if (r.Disease > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Disease",              0.76 + Math.Sin(step * 0.5) * 0.04));
+            if (r.Pest    > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Pest",                 0.72 + Math.Sin(step * 0.6) * 0.03));
+        }
+        else
+        {
+            // Fall back to fake cyclic data while Python model is loading
+            var frame = DemoDetectionFrames[step % DemoDetectionFrames.Length];
+            count   = frame.Length;
+            avgConf = frame.Average(f => f.Conf);
+            double jitter   = Math.Sin(step * 0.7) * 1.5;
+            double rawH = Math.Max(0, 33.8 + jitter);
+            double rawS = Math.Max(0, 24.8 - jitter * 0.4);
+            double rawD = Math.Max(0, 4.9  + Math.Abs(jitter) * 0.2);
+            double rawT = Math.Max(1, rawH + rawS + rawD);
+            dHealthy = rawH * 100 / rawT;
+            dStress  = rawS * 100 / rawT;
+            dDisease = rawD * 100 / rawT;
+            dPest    = 0;
+            DetectionsListStack.Children.Clear();
+            foreach (var (cls, conf) in frame)
+                DetectionsListStack.Children.Add(BuildCropDetectionRow(cls, conf));
+        }
 
         _lastDetectionCount = count;
         _lastConfidence = avgConf;
 
-        // Update counters
-        DetectionCountText.Text = $"{count} det";
+        DetectionCountText.Text  = $"{count} det";
         MissionDetectionsText.Text = ((_demoStep / 2) + count).ToString();
-        ConfAvgText.Text = $"Conf avg {avgConf * 100:F0}%";
+        ConfAvgText.Text         = $"Conf avg {avgConf * 100:F0}%";
         SummaryConfidenceText.Text = $"{avgConf * 100:F0}%";
-        DetectionsListTitle.Text = $"Live Detections ({count})";
+        DetectionsListTitle.Text = $"Live Detections ({Math.Min(count, 4)})";
 
-        // Render detection rows
-        DetectionsListStack.Children.Clear();
-        foreach (var (cls, conf) in frame)
-        {
-            DetectionsListStack.Children.Add(BuildCropDetectionRow(cls, conf));
-        }
+        double demoFps;
+        if (_classifyFps > 1.0)
+            demoFps = _classifyFps + Math.Sin(step * 0.4) * 0.5;          // real measured FPS ±0.5
+        else if (_classifyRealData.HasValue)
+            demoFps = 10.0 + Math.Abs(Math.Sin(step * 0.4)) * 3.0;        // HSV stream ~10-13 FPS
+        else
+            demoFps = 12.0 + Math.Abs(Math.Sin(step * 0.4)) * 2.0;        // placeholder ~12-14 FPS
+        FpsHudText.Text = $"HSV+YOLO · {demoFps:F0} FPS";
 
-        // Class distribution from fusion video (hsvv_fused.mp4)
-        // healthy 33.8%, stressed 19.4%, disease 4.9%, drought 5.4%, bare_soil 36.5%
-        double jitter = Math.Sin(step * 0.7) * 2.5;
-        if (SummaryHealthyCount  != null) SummaryHealthyCount.Text  = $"{33.8 + jitter:F0}%";
-        if (SummaryStressCount   != null) SummaryStressCount.Text   = $"{19.4 - jitter * 0.5:F0}%";
-        if (SummaryDiseaseCount  != null) SummaryDiseaseCount.Text  = $"{4.9  + Math.Abs(jitter) * 0.3:F0}%";
-        if (SummaryDroughtCount  != null) SummaryDroughtCount.Text  = $"{5.4  - jitter * 0.2:F0}%";
-        if (SummaryBaresoilCount != null) SummaryBaresoilCount.Text = $"{36.5 + jitter * 0.4:F0}%";
+        // Split healthy into Lush Green (60%) + Well Irrigated (40%) for display
+        var dLushGreen    = dHealthy * 0.6;
+        var dWellIrrig    = dHealthy * 0.4;
+        // Treat stress as Inconsistent Growth; disease stays; soil issues ~small residual
+        var dSoilIssues   = Math.Max(0, 100 - dHealthy - dStress - dDisease - dPest) * 0.5;
 
-        // NDVI bars — derived from fusion class distribution
-        double jitter2      = Math.Sin(step * 0.5) * 1.5;
-        double ndviHealthy  = Math.Max(0, 33.8 + jitter2);
-        double ndviModerate = Math.Max(0, 36.5 - jitter2 * 0.5);   // bare soil → moderate cover
-        double ndviStressed = Math.Max(0, 19.4 + jitter2 * 0.3);
-        double ndviCritical = Math.Max(0, 10.3 - Math.Abs(jitter2) * 0.2);
-        double avgNdvi      = (ndviHealthy * 0.75 + ndviModerate * 0.45 + ndviStressed * 0.25 + ndviCritical * 0.05) / 100.0;
+        if (SummaryHealthyCount       != null) SummaryHealthyCount.Text       = $"{dLushGreen:F0}%";
+        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = $"{dWellIrrig:F0}%";
+        if (SummaryStressCount        != null) SummaryStressCount.Text        = $"{dStress:F0}%";
+        if (SummarySoilIssuesCount    != null) SummarySoilIssuesCount.Text    = $"{dSoilIssues:F0}%";
+        if (SummaryDiseaseCount       != null) SummaryDiseaseCount.Text       = $"{dDisease:F0}%";
+        if (SummaryPestCount          != null) SummaryPestCount.Text          = $"{dPest:F0}%";
+        if (SummaryHealthyBar        != null) SummaryHealthyBar.Value        = dLushGreen;
+        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = dWellIrrig;
+        if (SummaryStressBar         != null) SummaryStressBar.Value         = dStress;
+        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = dSoilIssues;
+        if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = dDisease;
+        if (SummaryPestBar           != null) SummaryPestBar.Value           = dPest;
 
-        if (NdviHealthyBar   != null) { NdviHealthyBar.Value   = ndviHealthy;  NdviHealthyText.Text   = $"{ndviHealthy:F0}%"; }
-        if (NdviModerateBar  != null) { NdviModerateBar.Value  = ndviModerate; NdviModerateText.Text  = $"{ndviModerate:F0}%"; }
-        if (NdviStressedBar  != null) { NdviStressedBar.Value  = ndviStressed; NdviStressedText.Text  = $"{ndviStressed:F0}%"; }
-        if (NdviCriticalBar  != null) { NdviCriticalBar.Value  = ndviCritical; NdviCriticalText.Text  = $"{ndviCritical:F0}%"; }
-        if (NdviAvgText      != null) NdviAvgText.Text      = avgNdvi.ToString("F2");
-        if (NdviCoverageText != null) NdviCoverageText.Text = "4.8 ha";
-
-        // Auto-retry video if camera stopped (e.g. after bad file was fixed)
-        if (step % 10 == 0 && _cameraService != null && !_cameraService.IsStreaming && _isDemoRunning)
-        {
-            var vp = ResolveDetectedVideoPath() ?? ResolveDerpVideoPath();
-            if (!string.IsNullOrWhiteSpace(vp) && File.Exists(vp))
-                _ = _cameraService.StartCameraAsync(vp);
-        }
+        var dDominant = dLushGreen >= dStress && dLushGreen >= dDisease
+            ? $"Lush Green {dLushGreen:F0}%"
+            : dStress >= dDisease
+                ? $"Inconsistent Growth {dStress:F0}%"
+                : $"Disease {dDisease:F0}%";
+        if (SummaryDominantText != null) SummaryDominantText.Text = dDominant;
 
         UpdateAlertCenter(_flightViewModel?.Telemetry, true);
     }
@@ -1606,22 +1789,92 @@ public sealed partial class DashboardPage : Page
             Children =
             {
                 new FontIcon { Glyph = running ? "" : "", FontSize = 11 },
-                new TextBlock { Text = running ? "Stop Demo" : "Start Demo" }
+                new TextBlock { Text = running ? "Stop Detection" : "Start Detection" }
             }
         };
+        VideoSwitcherPanel.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        HighlightActiveVideoButton(_activeDemoVideoIndex);
+    }
+
+    private static readonly string[] DemoVideoPaths =
+    {
+        "/home/fawwazfa/Program/Harvestmoon/demo_videos/YDXJ0012_demo_1min.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/demo_videos/YDXJ0013_burned_1min.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/demo_videos/YDXJ0013_stress_1min.mp4",
+    };
+    private int _activeDemoVideoIndex;
+
+    private void HighlightActiveVideoButton(int idx)
+    {
+        var btns = new[] { VidBtn0, VidBtn1, VidBtn2 };
+        for (int i = 0; i < btns.Length; i++)
+            btns[i].Opacity = i == idx ? 1.0 : 0.45;
+    }
+
+    private async void VidSwitchButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isDemoRunning) return;
+        if (sender is not Button btn || btn.Tag is not string tagStr) return;
+        if (!int.TryParse(tagStr, out int idx) || idx < 0 || idx >= DemoVideoPaths.Length) return;
+        if (idx == _activeDemoVideoIndex) return;
+
+        var path = DemoVideoPaths[idx];
+        if (!File.Exists(path)) return;
+
+        await SwitchDemoVideoAsync(path, idx);
+    }
+
+    private async Task SwitchDemoVideoAsync(string videoPath, int idx)
+    {
+        _activeDemoVideoIndex = idx;
+        HighlightActiveVideoButton(idx);
+
+        var pythonSvc = _cameraService as PythonCameraService;
+        if (pythonSvc == null) return;
+
+        _classifyFirstFrameReceived = false;
+        await _cameraService!.StopCameraAsync();
+
+        var modelPath = PythonCameraService.ResolveHealthModelPath();
+        await pythonSvc.StartHsvStreamAsync(
+            videoPath,
+            modelPath: modelPath,
+            maxFps: 15f,
+            showOverlay: true,
+            demo: true);
+
+        FpsHudText.Text = $"HSV+YOLO · {System.IO.Path.GetFileNameWithoutExtension(videoPath)}";
+        _timelineService?.Add("camera", $"Switched to: {System.IO.Path.GetFileName(videoPath)}", "info");
     }
 
     private static string? ResolveDetectedVideoPath()
     {
         var candidates = new[]
         {
-            "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused_only.mp4",
-            "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/derr.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/test_program/hsvv.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_output/hsvv_annotated.mp4",
             "/home/fawwazfa/Program/Harvestmoon/runs/uav_detection/derr_detected.mp4",
-            "/home/fawwazfa/Program/Harvestmoon/runs/demo/detection_output.mp4",
             Path.Combine(AppContext.BaseDirectory, "derr_detected.mp4"),
         };
-        return candidates.FirstOrDefault(File.Exists);
+        return candidates.FirstOrDefault(p => File.Exists(p) && new FileInfo(p).Length > 10_000);
+    }
+
+    private static (double Lat, double Lon)[] GenerateStraightLineWaypoints(
+        double centerLat, double centerLon, int count, double totalMeters, double bearingDeg)
+    {
+        const double mPerDegLat = 111320.0;
+        double mPerDegLon = mPerDegLat * Math.Cos(centerLat * Math.PI / 180);
+        double spacingMeters = totalMeters / (count - 1);
+        double bearingRad = bearingDeg * Math.PI / 180;
+        double dLat = spacingMeters * Math.Cos(bearingRad) / mPerDegLat;
+        double dLon = spacingMeters * Math.Sin(bearingRad) / mPerDegLon;
+        double startLat = centerLat - dLat * (count - 1) / 2.0;
+        double startLon = centerLon - dLon * (count - 1) / 2.0;
+        var wps = new (double, double)[count];
+        for (int i = 0; i < count; i++)
+            wps[i] = (startLat + i * dLat, startLon + i * dLon);
+        return wps;
     }
 
     private static (double Lat, double Lon)[] GenerateSurveyWaypoints(
@@ -1787,9 +2040,9 @@ public sealed partial class DashboardPage : Page
         {
             // Gentle idle animation when disconnected so the artificial horizon isn't frozen.
             var rnd = Random.Shared;
-            _pitch = Math.Clamp(_pitch + (rnd.NextDouble() - 0.5) * 4, -30, 30);
-            _roll = Math.Clamp(_roll + (rnd.NextDouble() - 0.5) * 6, -45, 45);
-            _yaw = (_yaw + (rnd.NextDouble() - 0.5) * 4 + 360) % 360;
+            _pitch = Math.Clamp(_pitch + (rnd.NextDouble() - 0.5) * 10, -25, 25);
+            _roll  = Math.Clamp(_roll  + (rnd.NextDouble() - 0.5) * 14, -35, 35);
+            _yaw   = (_yaw + (rnd.NextDouble() - 0.5) * 6 + 360) % 360;
         }
 
         ImuRollTransform.Angle = _roll;
@@ -1869,38 +2122,7 @@ public sealed partial class DashboardPage : Page
 
     private void RenderIncidentTimeline()
     {
-        if (IncidentTimelineStack == null)
-        {
-            return;
-        }
-
-        IncidentTimelineStack.Children.Clear();
-        var entries = _timelineService?.Entries.Take(8).ToList() ?? new List<IncidentTimelineEntry>();
-        if (entries.Count == 0)
-        {
-            IncidentTimelineStack.Children.Add(new TextBlock
-            {
-                Text = "Belum ada event misi.",
-                FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromArgb(255, 148, 163, 184))
-            });
-            return;
-        }
-
-        foreach (var entry in entries)
-        {
-            IncidentTimelineStack.Children.Add(new TextBlock
-            {
-                Text = $"{entry.Timestamp:HH:mm:ss} · {entry.Type}: {entry.Message}",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(entry.Severity == "critical"
-                    ? Color.FromArgb(255, 185, 28, 28)
-                    : entry.Severity == "success"
-                        ? Color.FromArgb(255, 6, 95, 70)
-                        : Color.FromArgb(255, 79, 107, 92))
-            });
-        }
+        // IncidentTimelineStack removed — log is now inside Mission Log panel
     }
 
     private IEnumerable<(string Text, string Severity)> BuildRuntimeAlerts(TelemetryData? telemetry, bool connected)
@@ -2125,23 +2347,20 @@ public sealed partial class DashboardPage : Page
     private void SeedSummary()
     {
         SummaryHealthyCount.Text = "0%";
-        SummaryStressCount.Text = "0%";
+        SummaryStressCount.Text  = "0%";
         SummaryDiseaseCount.Text = "0%";
-        SummaryDroughtCount.Text = "0%";
-        SummaryBaresoilCount.Text = "0%";
-        SummaryPriorityText.Text = "Standby";
+        SummaryPestCount.Text    = "0%";
+        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = "0%";
+        if (SummarySoilIssuesCount    != null) SummarySoilIssuesCount.Text    = "0%";
+        SummaryPriorityText.Text   = "Standby";
         SummaryConfidenceText.Text = "0%";
-
-        NdviHealthyBar.Value = 0;
-        NdviHealthyText.Text = "0%";
-        NdviModerateBar.Value = 0;
-        NdviModerateText.Text = "0%";
-        NdviStressedBar.Value = 0;
-        NdviStressedText.Text = "0%";
-        NdviCriticalBar.Value = 0;
-        NdviCriticalText.Text = "0%";
-        NdviAvgText.Text = "0.00";
-        NdviCoverageText.Text = "0 ha";
+        if (SummaryDominantText      != null) SummaryDominantText.Text      = "—";
+        if (SummaryHealthyBar        != null) SummaryHealthyBar.Value        = 0;
+        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = 0;
+        if (SummaryStressBar         != null) SummaryStressBar.Value         = 0;
+        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = 0;
+        if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = 0;
+        if (SummaryPestBar           != null) SummaryPestBar.Value           = 0;
     }
 
     private static bool IsValidCoordinate(double lat, double lon)
@@ -2153,28 +2372,6 @@ public sealed partial class DashboardPage : Page
 
     private void UpdateTopBarAiFps(double fps)
     {
-        try
-        {
-            // Walk up to MainPage_Modern which hosts the TopBar
-            if (this.Frame?.Parent is Grid grid && grid.Parent is HarvestmoonGCS.MainPage_Modern mainPage)
-            {
-                // Access TopBar via FindName or direct field — use reflection-free approach
-                // MainPage_Modern exposes TopBar as x:Name in XAML
-            }
-            // Simpler: find TopBar from the window's visual tree
-            var window = App.MainWindow;
-            if (window?.Content is Frame rootFrame && rootFrame.Content is HarvestmoonGCS.MainPage_Modern mp)
-            {
-                var topBar = mp.FindName("TopBar") as HarvestmoonGCS.Controls.ModernTopBar;
-                if (topBar != null)
-                {
-                    topBar.AiFps = fps;
-                }
-            }
-        }
-        catch
-        {
-            // Non-critical UI update, swallow errors
-        }
+        // FPS shown in video HUD only (FpsHudText) — top bar FPS removed to avoid duplication
     }
 }

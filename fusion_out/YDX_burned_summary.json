@@ -1,0 +1,11 @@
+{
+  "video": "YDX_burned.mp4",
+  "frames": 549,
+  "avg_field_health": {
+    "yolo": 58.9,
+    "hsv": 94.3,
+    "fused": 90.1
+  },
+  "avg_agreement_pct": 34.5,
+  "proc_seconds": 132.2
+}

@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml.Input;
 using HarvestmoonGCS.Controls;
 using HarvestmoonGCS.Core.Models;
 using HarvestmoonGCS.Core.Services;
+using HarvestmoonGCS.ViewModels;
 
 namespace HarvestmoonGCS.Views;
 
@@ -26,10 +27,11 @@ public sealed partial class MissionPlannerPage : Page
 
     private readonly IMissionService _missionService;
     private readonly IMavLinkService _mavLinkService;
+    private readonly MapViewModel? _mapViewModel;
     private readonly List<MissionWaypointItem> _waypoints = new();
     private bool _initialized;
-    private double _defaultLat = -6.9175;
-    private double _defaultLon = 107.6191;
+    private double _defaultLat = -6.8148;
+    private double _defaultLon = 107.6172;
 
     public MissionPlannerPage()
     {
@@ -37,6 +39,7 @@ public sealed partial class MissionPlannerPage : Page
 
         _missionService = App.GetService<IMissionService>();
         _mavLinkService = App.GetService<IMavLinkService>();
+        _mapViewModel   = App.GetService<MapViewModel>();
 
         Loaded += MissionPlannerPage_Loaded;
         Unloaded += MissionPlannerPage_Unloaded;
@@ -44,7 +47,35 @@ public sealed partial class MissionPlannerPage : Page
 
     public void OnPageActivated()
     {
+        MissionMapControl?.SetActive(true);
         MissionMapControl?.InvalidateArrange();
+        SyncFromMapViewModel();
+    }
+
+    private void SyncFromMapViewModel()
+    {
+        if (_mapViewModel == null || _mapViewModel.Waypoints.Count == 0)
+            return;
+
+        // Sinkron waypoints dari MapViewModel (diisi oleh Dashboard saat demo aktif)
+        _waypoints.Clear();
+        foreach (var wp in _mapViewModel.Waypoints.OrderBy(w => w.Sequence))
+        {
+            _waypoints.Add(new MissionWaypointItem
+            {
+                Sequence  = wp.Sequence,
+                Latitude  = wp.Latitude,
+                Longitude = wp.Longitude,
+                Altitude  = wp.Altitude,
+            });
+        }
+        RefreshWaypointList();
+        RenderMap();
+
+        // Center peta pada centroid waypoints
+        double cLat = _waypoints.Average(w => w.Latitude);
+        double cLon = _waypoints.Average(w => w.Longitude);
+        MissionMapControl?.SetCenter(cLat, cLon, 14);
     }
 
     private void MissionPlannerPage_Loaded(object sender, RoutedEventArgs e)
@@ -52,20 +83,50 @@ public sealed partial class MissionPlannerPage : Page
         MissionMapControl.WaypointMoved -= MissionMapControl_WaypointMoved;
         MissionMapControl.WaypointMoved += MissionMapControl_WaypointMoved;
 
+        if (_mapViewModel != null)
+        {
+            _mapViewModel.PropertyChanged -= OnMapViewModelPropertyChanged;
+            _mapViewModel.PropertyChanged += OnMapViewModelPropertyChanged;
+        }
+
         if (!_initialized)
         {
             MapProviderComboBox.SelectedIndex = 0;
-            MissionMapControl.SetCenter(_defaultLat, _defaultLon, 16);
+            MissionMapControl.SetCenter(_defaultLat, _defaultLon, 14);
             SeedInitialWaypoints();
             _initialized = true;
         }
 
         RenderMap();
+
+        // Tampilkan posisi UAV jika sudah tersedia dari demo/telemetri
+        if (_mapViewModel?.VehiclePosition != null)
+        {
+            var vp = _mapViewModel.VehiclePosition;
+            MissionMapControl.UpdateVehiclePosition(vp.Latitude, vp.Longitude);
+        }
     }
 
     private void MissionPlannerPage_Unloaded(object sender, RoutedEventArgs e)
     {
+        MissionMapControl.SetActive(false);
         MissionMapControl.WaypointMoved -= MissionMapControl_WaypointMoved;
+        if (_mapViewModel != null)
+            _mapViewModel.PropertyChanged -= OnMapViewModelPropertyChanged;
+    }
+
+    private void OnMapViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(_mapViewModel.VehiclePosition))
+            return;
+        var vp = _mapViewModel?.VehiclePosition;
+        if (vp == null) return;
+        var lat = vp.Latitude;
+        var lon = vp.Longitude;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            MissionMapControl?.UpdateVehiclePosition(lat, lon);
+        });
     }
 
     private void SeedInitialWaypoints()
@@ -75,9 +136,11 @@ public sealed partial class MissionPlannerPage : Page
             return;
         }
 
-        _waypoints.Add(new MissionWaypointItem { Sequence = 1, Latitude = _defaultLat + 0.0012, Longitude = _defaultLon + 0.0009, Altitude = 150 });
-        _waypoints.Add(new MissionWaypointItem { Sequence = 2, Latitude = _defaultLat + 0.0019, Longitude = _defaultLon + 0.0017, Altitude = 165 });
-        _waypoints.Add(new MissionWaypointItem { Sequence = 3, Latitude = _defaultLat + 0.0010, Longitude = _defaultLon + 0.0024, Altitude = 160 });
+        // WP 10-13: jalur lurus arah timur, spacing ~300m, area Lembang
+        _waypoints.Add(new MissionWaypointItem { Sequence = 10, Latitude = -6.8148, Longitude = 107.6128, Altitude = 82 });
+        _waypoints.Add(new MissionWaypointItem { Sequence = 11, Latitude = -6.8148, Longitude = 107.6155, Altitude = 82 });
+        _waypoints.Add(new MissionWaypointItem { Sequence = 12, Latitude = -6.8148, Longitude = 107.6182, Altitude = 82 });
+        _waypoints.Add(new MissionWaypointItem { Sequence = 13, Latitude = -6.8148, Longitude = 107.6209, Altitude = 82 });
     }
 
     private void MapProviderComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)

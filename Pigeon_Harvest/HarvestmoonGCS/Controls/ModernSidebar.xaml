@@ -63,7 +63,7 @@
 
             <StackPanel Margin="0,16,0,0" HorizontalAlignment="Center">
                 <Image Source="ms-appx:///Assets/logo/pigeonlogo.png" Height="38" Stretch="Uniform" HorizontalAlignment="Center"/>
-                <TextBlock Text="PIGEON HARVEST" 
+                <TextBlock Text="MOONHARVEST"
                            FontWeight="Bold" 
                            FontSize="11" 
                            CharacterSpacing="100"
@@ -90,19 +90,6 @@
                         <FontIcon Grid.Column="0" Glyph="&#xE709;" FontSize="16" Foreground="{ThemeResource NavFlightBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
                         <TextBlock Grid.Column="1" Text="Dashboard · Live" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
                         <Ellipse x:Name="FlightActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
-                    </Grid>
-                </Button>
-
-                <Button x:Name="ConnectionNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Connection">
-                    <Grid HorizontalAlignment="Stretch">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <FontIcon Grid.Column="0" Glyph="&#xE912;" FontSize="16" Foreground="{ThemeResource NavDiagnosticsBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="Connection" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
-                        <Ellipse x:Name="ConnectionActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
 

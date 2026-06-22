@@ -33,6 +33,8 @@ public sealed partial class VideoStreamControl : UserControl
     private bool _showFps;
     private bool _isStreaming;
     private List<VideoDetectionOverlay> _detectionOverlays = new();
+    // Frame drop: skip decode jika frame sebelumnya belum selesai di-render
+    private volatile bool _framePending;
 
     public VideoStreamControl()
     {
@@ -80,16 +82,23 @@ public sealed partial class VideoStreamControl : UserControl
 
     /// <summary>
     /// Updates the video frame from byte array (JPEG encoded).
+    /// Decode dilakukan di background thread — UI thread hanya Invalidate().
+    /// Frame drop otomatis jika frame sebelumnya belum selesai di-render.
     /// </summary>
     public void UpdateFrame(byte[] frameData)
     {
         if (frameData == null || frameData.Length == 0)
-        {
             return;
-        }
+
+        // Jika frame sebelumnya masih menunggu di antrian UI, drop frame ini
+        if (_framePending)
+            return;
+
+        _framePending = true;
 
         try
         {
+            // Decode JPEG di background thread (bukan UI thread)
             using var stream = new MemoryStream(frameData);
             var newBitmap = SKBitmap.Decode(stream);
 
@@ -101,13 +110,10 @@ public sealed partial class VideoStreamControl : UserControl
                     _currentFrame = newBitmap;
                 }
 
-                // Update FPS counter
                 UpdateFpsCounter();
 
-                // Trigger redraw
                 DispatcherQueue.TryEnqueue(() =>
                 {
-                    // Show video canvas and hide background image when streaming
                     if (!_isStreaming)
                     {
                         _isStreaming = true;
@@ -115,13 +121,18 @@ public sealed partial class VideoStreamControl : UserControl
                         VideoCanvas.Visibility = Visibility.Visible;
                         OverlayGrid.Visibility = Visibility.Collapsed;
                     }
-                    
                     VideoCanvas.Invalidate();
+                    _framePending = false;
                 });
+            }
+            else
+            {
+                _framePending = false;
             }
         }
         catch (Exception ex)
         {
+            _framePending = false;
             Debug.WriteLine($"Error updating frame: {ex.Message}");
         }
     }
@@ -270,11 +281,11 @@ public sealed partial class VideoStreamControl : UserControl
 
                 var destRect = new SKRect(x, y, x + scaledWidth, y + scaledHeight);
 
-                // Draw the frame with high-quality filtering
+                // None = nearest-neighbour — paling cepat untuk live stream
                 using var paint = new SKPaint
                 {
-                    FilterQuality = SKFilterQuality.High,
-                    IsAntialias = true
+                    FilterQuality = SKFilterQuality.None,
+                    IsAntialias = false
                 };
 
                 canvas.DrawBitmap(_currentFrame, destRect, paint);

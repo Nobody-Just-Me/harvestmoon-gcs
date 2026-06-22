@@ -1,0 +1,11 @@
+{
+  "video": "demo_best10s.mp4",
+  "frames": 50,
+  "avg_field_health": {
+    "yolo": 42.4,
+    "hsv": 94.0,
+    "fused": 89.5
+  },
+  "avg_agreement_pct": 26.6,
+  "proc_seconds": 16.9
+}

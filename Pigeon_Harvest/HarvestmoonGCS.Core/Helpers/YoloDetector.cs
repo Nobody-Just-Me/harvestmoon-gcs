@@ -17,8 +17,8 @@ namespace HarvestmoonGCS.Core.Helpers
         private InferenceSession _session;
         private string[] _classNames;
         private string _inputName = "images";
-        private int _inputWidth = 640;
-        private int _inputHeight = 640;
+        private int _inputWidth = 416;
+        private int _inputHeight = 416;
         private float _confThreshold = 0.25f; // Lowered from 0.35 so more detections surface on the dashboard overlay
         private float _nmsThreshold = 0.5f;
         private bool _isInitialized = false;
@@ -79,8 +79,11 @@ namespace HarvestmoonGCS.Core.Helpers
 #if __ANDROID__
                 try
                 {
-                    sessionOptions.AppendExecutionProvider_Nnapi(NnapiFlags.NNAPI_FLAG_USE_FP16);
-                    System.Diagnostics.Debug.WriteLine("[YoloDetector] NNAPI execution provider enabled");
+                    // INT8 model: use CPU fallback flag so NNAPI runs INT8 ops natively.
+                    // NNAPI_FLAG_CPU_ONLY is omitted intentionally — we want NPU/DSP if available.
+                    sessionOptions.AppendExecutionProvider_Nnapi(
+                        NnapiFlags.NNAPI_FLAG_CPU_DISABLED | NnapiFlags.NNAPI_FLAG_USE_FP16);
+                    System.Diagnostics.Debug.WriteLine("[YoloDetector] NNAPI execution provider enabled (INT8 + FP16 fallback)");
                 }
                 catch (Exception nnapiEx)
                 {
@@ -215,6 +218,27 @@ namespace HarvestmoonGCS.Core.Helpers
             return results;
         }
 
+        // Maps internal model class names (v3) → display labels
+        private static readonly Dictionary<string, string> _classDisplayMap = new(StringComparer.OrdinalIgnoreCase)
+        {
+            { "lush_green",          "Lush Green"          },
+            { "well_irrigated",      "Well Irrigated"      },
+            { "inconsistent_growth", "Inconsistent Growth" },
+            { "soil_issues",         "Soil Issues"         },
+            { "disease",             "Disease"             },
+            { "pest",                "Pest"                },
+        };
+
+        private static readonly Dictionary<string, Scalar> _demoColorMap = new(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Lush Green",          new Scalar(50,  205,  50)  },  // green  (BGR)
+            { "Well Irrigated",      new Scalar(200, 150,   2)  },  // teal
+            { "Inconsistent Growth", new Scalar(0,   200, 255)  },  // yellow
+            { "Soil Issues",         new Scalar(55,   64,  93)  },  // brown
+            { "Disease",             new Scalar(0,    60, 255)  },  // red
+            { "Pest",                new Scalar(0,   140, 255)  },  // orange
+        };
+
         /// <summary>
         /// Draw detection results on frame
         /// </summary>
@@ -225,14 +249,18 @@ namespace HarvestmoonGCS.Core.Helpers
 
             foreach (var det in detections)
             {
-                // Get color based on class ID
-                var color = GetClassColor(det.ClassId);
+                // Remap internal class name to demo display label; skip hidden classes (null)
+                if (_classDisplayMap.TryGetValue(det.ClassName, out var displayLabel) && displayLabel == null)
+                    continue;
+                var labelName = displayLabel ?? det.ClassName;
+
+                var color = _demoColorMap.TryGetValue(labelName, out var dc) ? dc : GetClassColor(det.ClassId);
 
                 // Draw bounding box
                 Cv2.Rectangle(output, det.BoundingBox, color, 2);
 
                 // Draw label background
-                string label = $"{det.ClassName} {det.Confidence:P0}";
+                string label = $"{labelName} {det.Confidence:P0}";
                 var textSize = Cv2.GetTextSize(label, HersheyFonts.HersheySimplex, 0.6, 2, out int baseline);
                 var labelRect = new Rect(
                     det.BoundingBox.X,

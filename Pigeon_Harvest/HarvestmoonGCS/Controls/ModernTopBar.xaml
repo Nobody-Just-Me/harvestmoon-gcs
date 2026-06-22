@@ -138,8 +138,8 @@
                     </StackPanel>
                 </Border>
 
-                <!-- AI FPS Pill -->
-                <Border x:Name="AIFpsPill" Padding="10,6" CornerRadius="6" Background="{ThemeResource InfoBrush20}" BorderBrush="{ThemeResource InfoBrush40}" BorderThickness="1">
+                <!-- AI FPS Pill — hidden, FPS shown in video HUD only -->
+                <Border x:Name="AIFpsPill" Padding="10,6" CornerRadius="6" Background="{ThemeResource InfoBrush20}" BorderBrush="{ThemeResource InfoBrush40}" BorderThickness="1" Visibility="Collapsed">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon x:Name="AIIcon" Glyph="&#xE7C1;" FontSize="12" Foreground="{ThemeResource InfoBrush}" VerticalAlignment="Center"/>
                         <TextBlock x:Name="AIFpsText" Text="AI — FPS" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource InfoBrush}" VerticalAlignment="Center"/>

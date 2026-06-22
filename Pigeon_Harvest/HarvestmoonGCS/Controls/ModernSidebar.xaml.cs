@@ -146,7 +146,6 @@ public sealed partial class ModernSidebar : UserControl
     private void UpdateActiveDot(Button button, double opacity)
     {
         if (button == FlightNavButton) FlightActiveDot.Opacity = opacity;
-        else if (button == ConnectionNavButton) ConnectionActiveDot.Opacity = opacity;
         else if (button == CameraNavButton) CameraActiveDot.Opacity = opacity;
         else if (button == MapNavButton) MapActiveDot.Opacity = opacity;
         else if (button == StatsNavButton) StatsActiveDot.Opacity = opacity;
@@ -160,7 +159,6 @@ public sealed partial class ModernSidebar : UserControl
     private Brush GetActiveBorderBrushForButton(Button button)
     {
         if (button == FlightNavButton) return (Brush)Application.Current.Resources["NavFlightBrush"];
-        if (button == ConnectionNavButton) return (Brush)Application.Current.Resources["NavDiagnosticsBrush"];
         if (button == CameraNavButton) return (Brush)Application.Current.Resources["NavCameraBrush"];
         if (button == MapNavButton) return (Brush)Application.Current.Resources["NavMapBrush"];
         if (button == StatsNavButton) return (Brush)Application.Current.Resources["NavStatsBrush"];

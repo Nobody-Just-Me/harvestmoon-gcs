@@ -29,11 +29,11 @@ public partial class App : Application
             .Enrich.FromLogContext()
             .WriteTo.Console(outputTemplate: "{Timestamp:HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
             .WriteTo.File(
-                System.IO.Path.Combine(System.AppContext.BaseDirectory, "logs", "pigeon-harvest-.log"),
+                System.IO.Path.Combine(System.AppContext.BaseDirectory, "logs", "moonharvest-.log"),
                 rollingInterval: RollingInterval.Day,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
             .CreateLogger();
-        Log.Information("[App] Pigeon Harvest starting. BaseDirectory={Dir}", System.AppContext.BaseDirectory);
+        Log.Information("[App] MoonHarvest GCS starting. BaseDirectory={Dir}", System.AppContext.BaseDirectory);
 
         try
         {

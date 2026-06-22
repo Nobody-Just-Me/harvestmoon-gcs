@@ -400,7 +400,7 @@ public sealed class HarvestFunctionalService : IDisposable
                         continue;
                     }
 
-                    var className = healthy == best ? "healthy_crop" : stressed == best ? "crop_stress" : "dry_soil";
+                    var className = healthy == best ? "lush_green" : stressed == best ? "inconsistent_growth" : "soil_issues";
                     boxes.Add(new HarvestDetectionBox
                     {
                         ClassName = className,

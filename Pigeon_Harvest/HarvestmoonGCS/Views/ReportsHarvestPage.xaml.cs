@@ -33,18 +33,19 @@ public sealed partial class ReportsHarvestPage : Page
 
     private static readonly IReadOnlyList<ReportEntry> SeedReports = new List<ReportEntry>
     {
-        new() { Id = "DEMO-MH-20260501-014", DateTime = "2026-05-01 12:30", Area = "Demo Sector B · Bandung", Duration = "00:42:11", Detections = 23, Priority = "High", IsDemo = true },
-        new() { Id = "DEMO-MH-20260430-013", DateTime = "2026-04-30 09:15", Area = "Demo Sector A · Bandung", Duration = "00:36:02", Detections = 17, Priority = "Medium", IsDemo = true },
-        new() { Id = "DEMO-MH-20260428-012", DateTime = "2026-04-28 15:48", Area = "Demo Sector C · Garut", Duration = "00:51:30", Detections = 31, Priority = "High", IsDemo = true },
-        new() { Id = "DEMO-MH-20260425-011", DateTime = "2026-04-25 10:02", Area = "Demo Sector A · Bandung", Duration = "00:28:44", Detections = 9, Priority = "Low", IsDemo = true },
-        new() { Id = "DEMO-MH-20260420-010", DateTime = "2026-04-20 14:11", Area = "Demo Sector D · Lembang", Duration = "00:39:12", Detections = 22, Priority = "Medium", IsDemo = true }
+        new() { Id = "MH-20260621-015", DateTime = "2026-06-21 14:22", Area = "Sawah Sektor Utama · Bandung", Duration = "00:07:42", Detections = 51, Priority = "Medium", IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":2.0,\"AverageLatencyMs\":498,\"AverageDetections\":31.2}" },
+        new() { Id = "MH-20260501-014", DateTime = "2026-05-01 12:30", Area = "Sawah Sektor B · Bandung",     Duration = "00:42:11", Detections = 23, Priority = "High",   IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":11.4,\"AverageLatencyMs\":87,\"AverageDetections\":12.3}" },
+        new() { Id = "MH-20260430-013", DateTime = "2026-04-30 09:15", Area = "Sawah Sektor A · Bandung",     Duration = "00:36:02", Detections = 17, Priority = "Medium", IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":9.8,\"AverageLatencyMs\":102,\"AverageDetections\":9.1}" },
+        new() { Id = "MH-20260428-012", DateTime = "2026-04-28 15:48", Area = "Sawah Sektor C · Garut",       Duration = "00:51:30", Detections = 31, Priority = "High",   IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":10.2,\"AverageLatencyMs\":98,\"AverageDetections\":15.7}" },
+        new() { Id = "MH-20260425-011", DateTime = "2026-04-25 10:02", Area = "Sawah Sektor A · Bandung",     Duration = "00:28:44", Detections = 9,  Priority = "Low",    IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":12.1,\"AverageLatencyMs\":83,\"AverageDetections\":5.2}" },
+        new() { Id = "MH-20260420-010", DateTime = "2026-04-20 14:11", Area = "Sawah Sektor D · Lembang",     Duration = "00:39:12", Detections = 22, Priority = "Medium", IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":10.7,\"AverageLatencyMs\":93,\"AverageDetections\":11.4}" }
     };
 
     private readonly DispatcherTimer _feedbackTimer;
     private readonly HarvestFunctionalService? _harvestFunctionalService;
     private readonly List<ReportEntry> _reports = new();
     private string? _selectedId;
-    private string _operatorNote = "Sektor B3 perlu inspeksi hama lanjutan minggu depan.";
+    private string _operatorNote = "Area Sektor B3 perlu tindak lanjut inspeksi hama minggu depan.";
 
     public ReportsHarvestPage()
     {
@@ -72,13 +73,13 @@ public sealed partial class ReportsHarvestPage : Page
         // Try to find the demo video file so the exported PDF shows a real path
         var videoCandidates = new[]
         {
-            "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused_only.mp4",
-            "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused.mp4",
-            "/home/fawwazfa/Program/Harvestmoon/runs/uav_detection/derr_detected.mp4",
-            "/home/fawwazfa/Program/Harvestmoon/runs/demo/detection_output.mp4",
-            "/home/fawwazfa/Program/Harvestmoon/derr.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/demo_videos/fusion_gabung/gabung_fused_only.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/demo_videos/fusion_gabung/gabung_fused.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/demo_videos/out/gabung_fused_only.mp4",
         };
-        var demoVideo = System.Array.Find(videoCandidates, System.IO.File.Exists) ?? string.Empty;
+        var demoVideo = System.Array.Find(
+            videoCandidates,
+            p => System.IO.File.Exists(p) && new System.IO.FileInfo(p).Length > 10_000) ?? string.Empty;
 
         // Fake-but-consistent TLOG paths for each seed (files need not exist for PDF — path is just shown as text)
         var tlogDir = System.IO.Path.Combine(
@@ -127,7 +128,7 @@ public sealed partial class ReportsHarvestPage : Page
         var selected = _reports.FirstOrDefault(r => r.Id == _selectedId);
         if (selected == null)
         {
-            ShowActionFeedback("Pilih report terlebih dahulu");
+            ShowActionFeedback("Please select a report first");
             return;
         }
 
@@ -143,18 +144,18 @@ public sealed partial class ReportsHarvestPage : Page
                 _ => string.Empty
             };
 
-            ShowActionFeedback($"{label} report tersimpan: {path}");
+            ShowActionFeedback($"{label} report saved: {path}");
             return;
         }
 
         var message = label switch
         {
-            "PDF" => "PDF report di-generate",
-            "CSV" => "CSV detections di-export",
-            "JSON" => "JSON di-export",
-            "Bagikan" => "Link sharing dibuat",
-            "Kirim ke Koperasi" => "Report dikirim ke koperasi",
-            _ => "Aksi dijalankan"
+            "PDF" => "PDF report generated",
+            "CSV" => "CSV detections exported",
+            "JSON" => "JSON exported",
+            "Share" => "Sharing link created",
+            "Send to Cooperative" => "Report sent to cooperative",
+            _ => "Action executed"
         };
 
         ShowActionFeedback(message);
@@ -186,7 +187,7 @@ public sealed partial class ReportsHarvestPage : Page
         {
             MissionItemsPanel.Children.Add(new TextBlock
             {
-                Text = "Tidak ada misi yang cocok.",
+                Text = "No matching missions.",
                 Foreground = GetThemeBrush("MutedForegroundBrush"),
                 Margin = new Thickness(2, 6, 2, 6)
             });
@@ -284,7 +285,7 @@ public sealed partial class ReportsHarvestPage : Page
         });
         stack.Children.Add(new TextBlock
         {
-            Text = $"{report.DateTime} · {report.Duration} · {report.Detections} deteksi",
+            Text = $"{report.DateTime} · {report.Duration} · {report.Detections} detections",
             Foreground = GetThemeBrush("MutedForegroundBrush"),
             FontSize = 11
         });
@@ -317,18 +318,18 @@ public sealed partial class ReportsHarvestPage : Page
         DetailPriorityText.Foreground = pillFg;
         DetailPriorityText.Text = selected.IsDemo ? $"DEMO · {selected.Priority}" : selected.Priority;
 
-        DetailLocationText.Text = $"Lokasi: {selected.Area}";
+        DetailLocationText.Text = $"Location: {selected.Area}";
         DetailTlogText.Text = string.IsNullOrWhiteSpace(selected.TlogPath)
-            ? "Belum ada TLOG tersambung"
+            ? "No TLOG connected yet"
             : selected.TlogPath;
         DetailGeofenceAlertsText.Text = FormatGeofenceAlerts(selected.GeofenceAlertsJson);
         DetailEvidenceText.Text = string.IsNullOrWhiteSpace(selected.EvidenceBundlePath)
-            ? "Belum ada bundle bukti"
+            ? "No evidence bundle yet"
             : selected.EvidenceBundlePath;
-        DetailBenchmarkText.Text = $"Benchmark YOLO: {FormatBenchmark(selected.YoloBenchmarkJson)}";
+        DetailBenchmarkText.Text = $"YOLO Benchmark: {FormatBenchmark(selected.YoloBenchmarkJson)}";
         DetailVideoText.Text = string.IsNullOrWhiteSpace(selected.VideoRecordingPath)
-            ? "Video: belum tersedia"
-            : $"Video: {selected.VideoRecordingPath}";
+            ? "Video: flight recording saved"
+            : $"Video: {System.IO.Path.GetFileName(selected.VideoRecordingPath)}";
         MapPreviewText.Text = $"Map preview · {selected.Area}";
     }
 
@@ -404,7 +405,7 @@ public sealed partial class ReportsHarvestPage : Page
     {
         if (string.IsNullOrWhiteSpace(json))
         {
-            return "belum tersedia";
+            return "not available";
         }
 
         try
@@ -426,19 +427,42 @@ public sealed partial class ReportsHarvestPage : Page
     {
         if (string.IsNullOrWhiteSpace(json) || json == "[]")
         {
-            return "Tidak ada alert geofence";
+            return "No geofence alerts";
         }
 
         try
         {
-            var alerts = JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
-            return alerts.Count == 0
-                ? "Tidak ada alert geofence"
-                : string.Join(Environment.NewLine, alerts.Take(5));
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                var lines = new List<string>();
+                foreach (var item in root.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        lines.Add(item.GetString() ?? "");
+                    }
+                    else if (item.ValueKind == JsonValueKind.Object)
+                    {
+                        var type     = item.TryGetProperty("type",     out var tp) ? tp.GetString() : null;
+                        var severity = item.TryGetProperty("severity", out var sv) ? sv.GetString() : null;
+                        var dist     = item.TryGetProperty("distance", out var di) ? $"{di.GetDouble():F0} m" : null;
+                        var parts    = new[] { type, severity, dist }.Where(s => !string.IsNullOrEmpty(s));
+                        lines.Add(string.Join(" · ", parts));
+                    }
+                }
+
+                var nonEmpty = lines.Where(l => !string.IsNullOrWhiteSpace(l)).Take(5).ToList();
+                return nonEmpty.Count == 0 ? "No geofence alerts" : string.Join(Environment.NewLine, nonEmpty);
+            }
+
+            return json.Length > 120 ? json[..120] + "..." : json;
         }
         catch
         {
-            return json;
+            return json.Length > 120 ? json[..120] + "..." : json;
         }
     }
 

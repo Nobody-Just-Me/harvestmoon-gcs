@@ -132,7 +132,7 @@
                                     <Button x:Name="StartDemoButton" Style="{StaticResource HarvestPrimaryButton}" Padding="10,5" Click="StartDemoButton_Click">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <FontIcon Glyph="&#xE768;" FontSize="11"/>
-                                            <TextBlock Text="Start Demo"/>
+                                            <TextBlock Text="Start Detection"/>
                                         </StackPanel>
                                     </Button>
                                     <Border x:Name="AiStatusPill" Style="{StaticResource PillSuccessStyle}">
@@ -165,7 +165,7 @@
                                     </Rectangle>
 
                                     <!-- Grid overlay -->
-                                    <Canvas x:Name="GridOverlayCanvas" IsHitTestVisible="False" Opacity="0.3"/>
+                                    <Canvas x:Name="GridOverlayCanvas" IsHitTestVisible="False" Opacity="0.3" Visibility="Collapsed"/>
 
                                     <!-- Heatmap overlay (radial gradients) -->
                                     <Grid x:Name="HeatmapOverlayLayer" Visibility="Collapsed" IsHitTestVisible="False">
@@ -214,6 +214,29 @@
                                             </StackPanel>
                                         </Border>
                                     </Grid>
+
+                                    <!-- Video switcher (demo mode only) -->
+                                    <StackPanel x:Name="VideoSwitcherPanel"
+                                                Orientation="Horizontal" Spacing="6"
+                                                VerticalAlignment="Top" HorizontalAlignment="Right"
+                                                Margin="0,48,12,0"
+                                                Visibility="Collapsed">
+                                        <Border Background="#CC000000" CornerRadius="6" Padding="6,3">
+                                            <TextBlock Text="Scene:" Foreground="#AAFFFFFF" FontSize="10" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <Button x:Name="VidBtn0" Style="{StaticResource HudActionButton}"
+                                                Tag="0" Click="VidSwitchButton_Click">
+                                            <TextBlock Text="Demo" FontSize="10"/>
+                                        </Button>
+                                        <Button x:Name="VidBtn1" Style="{StaticResource HudActionButton}"
+                                                Tag="1" Click="VidSwitchButton_Click">
+                                            <TextBlock Text="Burned" FontSize="10"/>
+                                        </Button>
+                                        <Button x:Name="VidBtn2" Style="{StaticResource HudActionButton}"
+                                                Tag="2" Click="VidSwitchButton_Click">
+                                            <TextBlock Text="Stress" FontSize="10"/>
+                                        </Button>
+                                    </StackPanel>
 
                                     <!-- Bottom HUD bar -->
                                     <Grid VerticalAlignment="Bottom" Margin="12">
@@ -312,7 +335,7 @@
                                         <TextBlock x:Name="DetectionsListTitle" Text="Live Detections (0)" FontSize="12" Foreground="#4F6B5C"/>
                                         <ScrollViewer Height="170" VerticalScrollBarVisibility="Auto">
                                             <StackPanel x:Name="DetectionsListStack" Spacing="4">
-                                                <TextBlock x:Name="DetectionsEmptyText" Text="Tidak ada deteksi di atas threshold." FontSize="12" Foreground="#94A3B8"/>
+                                                <TextBlock x:Name="DetectionsEmptyText" Text="No detections above threshold." FontSize="12" Foreground="#94A3B8"/>
                                             </StackPanel>
                                         </ScrollViewer>
                                     </StackPanel>
@@ -322,15 +345,14 @@
                     </Grid>
                 </Border>
 
-                <!-- === Row of 3: Overlay & AI Controls / Alert Center / Mission Log === -->
+                <!-- === Row of 2: Overlay & AI Controls / Mission Log + Alerts === -->
                 <Grid ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="2*"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Overlay & AI Controls -->
+                    <!-- Mission Readiness -->
                     <Border Grid.Column="0" Style="{StaticResource HarvestCardStyle}">
                         <Grid>
                             <Grid.RowDefinitions>
@@ -339,35 +361,32 @@
                             </Grid.RowDefinitions>
                             <Border Grid.Row="0" Style="{StaticResource HarvestCardHeaderStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                    <FontIcon Glyph="&#xE8F4;" FontSize="14" Foreground="#2E7D32"/>
-                                    <TextBlock Text="Overlay &amp; AI Controls" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
+                                    <FontIcon Glyph="&#xE9D5;" FontSize="14" Foreground="#2E7D32"/>
+                                    <TextBlock Text="Mission Readiness" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
                                 </StackPanel>
                             </Border>
-                            <StackPanel Grid.Row="1" Padding="12" Spacing="6">
-                                <ToggleSwitch x:Name="YoloToggleSwitch" Header="YOLO Bounding Box" IsOn="True" Toggled="YoloToggle_Toggled" MinWidth="0"/>
-                                <TextBlock Text="ONNX Runtime · runtime swappable" FontSize="10" Foreground="#64766B" Margin="0,-4,0,4"/>
-                                <ToggleSwitch x:Name="VegToggleSwitch" Header="Vegetation Overlay" IsOn="True" Toggled="VegToggle_Toggled"/>
-                                <TextBlock Text="OpenCV color transform" FontSize="10" Foreground="#64766B" Margin="0,-4,0,4"/>
-                                <ToggleSwitch x:Name="GridToggleSwitch" Header="Grid Survey" IsOn="True" Toggled="GridToggle_Toggled"/>
-                                <TextBlock Text="Garis grid area survey · 7×6 waypoints" FontSize="10" Foreground="#64766B" Margin="0,-4,0,4"/>
-                                <ToggleSwitch x:Name="HeatmapToggleSwitch" Header="Detection Heatmap" IsOn="False" Toggled="HeatmapToggle_Toggled"/>
-                                <TextBlock Text="Hotspot deteksi · kerapatan per region" FontSize="10" Foreground="#64766B" Margin="0,-4,0,4"/>
-                                <ToggleSwitch x:Name="ImuToggleSwitch" Header="IMU HUD" IsOn="True" Toggled="ImuToggle_Toggled"/>
-                                <TextBlock Text="Pitch · roll · yaw" FontSize="10" Foreground="#64766B" Margin="0,-4,0,4"/>
-                                <Grid Margin="0,4,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Confidence threshold" FontSize="12" Foreground="#4F6B5C"/>
-                                    <TextBlock Grid.Column="1" x:Name="ConfThresholdValue" Text="25%" FontSize="12" FontWeight="SemiBold" Foreground="#166534"/>
-                                </Grid>
-                                <Slider x:Name="ConfThresholdSlider" Minimum="10" Maximum="95" Value="25" ValueChanged="ConfThresholdSlider_ValueChanged"/>
+                            <StackPanel Grid.Row="1" Padding="12" Spacing="5">
+                                <TextBlock x:Name="ReadyTelemetryText" Text="○ Telemetry connected" FontSize="12" Foreground="#64766B"/>
+                                <TextBlock x:Name="ReadyGpsText" Text="○ GPS fix" FontSize="12" Foreground="#64766B"/>
+                                <TextBlock x:Name="ReadyBatteryText" Text="○ Battery" FontSize="12" Foreground="#64766B"/>
+                                <TextBlock x:Name="ReadyCameraText" Text="○ Camera active" FontSize="12" Foreground="#64766B"/>
+                                <TextBlock x:Name="ReadyYoloText" Text="○ YOLO ready" FontSize="12" Foreground="#64766B"/>
+                                <TextBlock x:Name="ReadyGeofenceText" Text="○ Geofence loaded" FontSize="12" Foreground="#64766B"/>
+                                <TextBlock x:Name="ReadyWaypointText" Text="○ Waypoints loaded" FontSize="12" Foreground="#64766B"/>
+                                <TextBlock x:Name="ReadyRecorderText" Text="○ Recorder ready" FontSize="12" Foreground="#64766B"/>
+                                <!-- Hidden controls — kept for code-behind compatibility -->
+                                <StackPanel Visibility="Collapsed">
+                                    <ToggleSwitch x:Name="YoloToggleSwitch" IsOn="True" Toggled="YoloToggle_Toggled"/>
+                                    <ToggleSwitch x:Name="VegToggleSwitch" IsOn="True" Toggled="VegToggle_Toggled"/>
+                                    <ToggleSwitch x:Name="ImuToggleSwitch" IsOn="True" Toggled="ImuToggle_Toggled"/>
+                                    <Slider x:Name="ConfThresholdSlider" Minimum="10" Maximum="95" Value="40" ValueChanged="ConfThresholdSlider_ValueChanged"/>
+                                    <TextBlock x:Name="ConfThresholdValue" Text="40%"/>
+                                </StackPanel>
                             </StackPanel>
                         </Grid>
                     </Border>
 
-                    <!-- Alert Center -->
+                    <!-- Mission Log + Alerts (merged) -->
                     <Border Grid.Column="1" Style="{StaticResource HarvestCardStyle}">
                         <Grid>
                             <Grid.RowDefinitions>
@@ -376,96 +395,81 @@
                             </Grid.RowDefinitions>
                             <Border Grid.Row="0" Style="{StaticResource HarvestCardHeaderStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                    <FontIcon Glyph="&#xE7BA;" FontSize="14" Foreground="#F59E0B"/>
-                                    <TextBlock Text="Alert Center" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
-                                </StackPanel>
-                            </Border>
-                            <ScrollViewer Grid.Row="1" Padding="12" MaxHeight="220">
-                                <StackPanel x:Name="AlertsStack" Spacing="6"/>
-                            </ScrollViewer>
-                        </Grid>
-                    </Border>
-
-                    <!-- Mission Log · Export -->
-                    <Border Grid.Column="2" Style="{StaticResource HarvestCardStyle}">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <Border Grid.Row="0" Style="{StaticResource HarvestCardHeaderStyle}">
-                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                     <FontIcon Glyph="&#xE8A5;" FontSize="14" Foreground="#2E7D32"/>
-                                    <TextBlock Text="Mission Log · Export" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
+                                    <TextBlock Text="Mission Log" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
                                 </StackPanel>
                             </Border>
-                            <StackPanel Grid.Row="1" Padding="12" Spacing="6">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Mission ID" FontSize="12" Foreground="#64766B"/>
-                                    <TextBlock Grid.Column="1" x:Name="MissionIdText" Text="MH-20260501-014" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
-                                </Grid>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Operator" FontSize="12" Foreground="#64766B"/>
-                                    <TextBlock Grid.Column="1" Text="Operator Satu" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
-                                </Grid>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Started" FontSize="12" Foreground="#64766B"/>
-                                    <TextBlock Grid.Column="1" x:Name="MissionStartedText" Text="--:--:--" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
-                                </Grid>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Detections" FontSize="12" Foreground="#64766B"/>
-                                    <TextBlock Grid.Column="1" x:Name="MissionDetectionsText" Text="0" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
-                                </Grid>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Telemetry log" FontSize="12" Foreground="#64766B"/>
-                                    <TextBlock Grid.Column="1" x:Name="MissionFramesText" Text="0 frames" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
-                                </Grid>
-                                <Grid ColumnSpacing="6" Margin="0,8,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Button Grid.Column="0" Style="{StaticResource HarvestOutlineButton}" Click="ExportPdfButton_Click" HorizontalAlignment="Stretch">
-                                        <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <FontIcon Glyph="&#xE896;" FontSize="11"/>
-                                            <TextBlock Text="PDF"/>
+                            <Grid Grid.Row="1" Padding="12" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" MinWidth="180"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <!-- Left: mission metadata + export buttons -->
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Mission ID" FontSize="12" Foreground="#64766B"/>
+                                        <TextBlock Grid.Column="1" x:Name="MissionIdText" Text="MH-20260501-014" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
+                                    </Grid>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Operator" FontSize="12" Foreground="#64766B"/>
+                                        <TextBlock Grid.Column="1" Text="Operator Satu" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
+                                    </Grid>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Started" FontSize="12" Foreground="#64766B"/>
+                                        <TextBlock Grid.Column="1" x:Name="MissionStartedText" Text="--:--:--" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
+                                    </Grid>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Detections" FontSize="12" Foreground="#64766B"/>
+                                        <TextBlock Grid.Column="1" x:Name="MissionDetectionsText" Text="0" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
+                                    </Grid>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Telemetry log" FontSize="12" Foreground="#64766B"/>
+                                        <TextBlock Grid.Column="1" x:Name="MissionFramesText" Text="0 frames" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
+                                    </Grid>
+                                    <Grid ColumnSpacing="6" Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0" Style="{StaticResource HarvestOutlineButton}" Click="ExportPdfButton_Click" HorizontalAlignment="Stretch">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <FontIcon Glyph="&#xE896;" FontSize="11"/>
+                                                <TextBlock Text="PDF"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Grid.Column="1" Style="{StaticResource HarvestOutlineButton}" Click="ExportCsvButton_Click" HorizontalAlignment="Stretch">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <FontIcon Glyph="&#xE896;" FontSize="11"/>
+                                                <TextBlock Text="CSV"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Grid.Column="2" Style="{StaticResource HarvestOutlineButton}" Click="ExportJsonButton_Click" HorizontalAlignment="Stretch">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <FontIcon Glyph="&#xE896;" FontSize="11"/>
+                                                <TextBlock Text="JSON"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                </StackPanel>
+                                <!-- Right: alerts log -->
+                                <Border Grid.Column="1" BorderBrush="#E5F3E8" BorderThickness="1,0,0,0" Padding="12,0,0,0">
+                                    <StackPanel Spacing="6">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE7BA;" FontSize="12" Foreground="#F59E0B"/>
+                                            <TextBlock Text="Alerts" FontSize="12" FontWeight="SemiBold" Foreground="#4F6B5C"/>
                                         </StackPanel>
-                                    </Button>
-                                    <Button Grid.Column="1" Style="{StaticResource HarvestOutlineButton}" Click="ExportCsvButton_Click" HorizontalAlignment="Stretch">
-                                        <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <FontIcon Glyph="&#xE896;" FontSize="11"/>
-                                            <TextBlock Text="CSV"/>
-                                        </StackPanel>
-                                    </Button>
-                                    <Button Grid.Column="2" Style="{StaticResource HarvestOutlineButton}" Click="ExportJsonButton_Click" HorizontalAlignment="Stretch">
-                                        <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <FontIcon Glyph="&#xE896;" FontSize="11"/>
-                                            <TextBlock Text="JSON"/>
-                                        </StackPanel>
-                                    </Button>
-                                </Grid>
-                            </StackPanel>
+                                        <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto">
+                                            <StackPanel x:Name="AlertsStack" Spacing="6"/>
+                                        </ScrollViewer>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
                         </Grid>
                     </Border>
                 </Grid>
@@ -627,69 +631,115 @@
                             </StackPanel>
                         </Border>
                         <StackPanel Grid.Row="1" Padding="14" Spacing="4">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#ECFDF5" Margin="0,0,10,0">
-                                    <TextBlock Text="🟢" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <TextBlock Grid.Column="1" Text="Tanaman Sehat" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" x:Name="SummaryHealthyCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#2E7D32" VerticalAlignment="Center"/>
-                            </Grid>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#FFFBEB" Margin="0,0,10,0">
-                                    <TextBlock Text="🟡" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <TextBlock Grid.Column="1" Text="Tanaman Stress" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" x:Name="SummaryStressCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#B26B00" VerticalAlignment="Center"/>
-                            </Grid>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#FEF2F2" Margin="0,0,10,0">
-                                    <TextBlock Text="🔴" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <TextBlock Grid.Column="1" Text="Terserang Penyakit" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" x:Name="SummaryDiseaseCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#D32F2F" VerticalAlignment="Center"/>
-                            </Grid>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#FFF7ED" Margin="0,0,10,0">
-                                    <TextBlock Text="🟠" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <TextBlock Grid.Column="1" Text="Stress Kekeringan" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" x:Name="SummaryDroughtCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#D97706" VerticalAlignment="Center"/>
-                            </Grid>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#F5F5F5" Margin="0,0,10,0">
-                                    <TextBlock Text="⚫" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <TextBlock Grid.Column="1" Text="Tanah Kosong" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" x:Name="SummaryBaresoilCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#616161" VerticalAlignment="Center"/>
-                            </Grid>
+                            <!-- Lush Green -->
+                            <StackPanel Spacing="2">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Width="28" Height="28" CornerRadius="6" Background="#ECFDF5" Margin="0,0,8,0">
+                                        <TextBlock Text="🌿" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="Lush Green" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" x:Name="SummaryHealthyCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#2E7D32" VerticalAlignment="Center"/>
+                                </Grid>
+                                <ProgressBar x:Name="SummaryHealthyBar" Minimum="0" Maximum="100" Value="0" Height="5" Foreground="#2E7D32" Background="#ECFDF5"/>
+                            </StackPanel>
+                            <!-- Well Irrigated -->
+                            <StackPanel Spacing="2">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Width="28" Height="28" CornerRadius="6" Background="#E0F7FA" Margin="0,0,8,0">
+                                        <TextBlock Text="💧" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="Well Irrigated" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" x:Name="SummaryWellIrrigatedCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#0288D1" VerticalAlignment="Center"/>
+                                </Grid>
+                                <ProgressBar x:Name="SummaryWellIrrigatedBar" Minimum="0" Maximum="100" Value="0" Height="5" Foreground="#0288D1" Background="#E0F7FA"/>
+                            </StackPanel>
+                            <!-- Inconsistent Growth -->
+                            <StackPanel Spacing="2">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Width="28" Height="28" CornerRadius="6" Background="#FFFBEB" Margin="0,0,8,0">
+                                        <TextBlock Text="🟡" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="Inconsistent Growth" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" x:Name="SummaryStressCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#B26B00" VerticalAlignment="Center"/>
+                                </Grid>
+                                <ProgressBar x:Name="SummaryStressBar" Minimum="0" Maximum="100" Value="0" Height="5" Foreground="#FBC02D" Background="#FFFBEB"/>
+                            </StackPanel>
+                            <!-- Soil Issues -->
+                            <StackPanel Spacing="2">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Width="28" Height="28" CornerRadius="6" Background="#EFEBE9" Margin="0,0,8,0">
+                                        <TextBlock Text="🟤" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="Soil Issues" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" x:Name="SummarySoilIssuesCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#5D4037" VerticalAlignment="Center"/>
+                                </Grid>
+                                <ProgressBar x:Name="SummarySoilIssuesBar" Minimum="0" Maximum="100" Value="0" Height="5" Foreground="#795548" Background="#EFEBE9"/>
+                            </StackPanel>
+                            <!-- Disease -->
+                            <StackPanel Spacing="2">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Width="28" Height="28" CornerRadius="6" Background="#FEF2F2" Margin="0,0,8,0">
+                                        <TextBlock Text="🔴" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="Disease" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" x:Name="SummaryDiseaseCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#D32F2F" VerticalAlignment="Center"/>
+                                </Grid>
+                                <ProgressBar x:Name="SummaryDiseaseBar" Minimum="0" Maximum="100" Value="0" Height="5" Foreground="#D32F2F" Background="#FEF2F2"/>
+                            </StackPanel>
+                            <!-- Pest -->
+                            <StackPanel Spacing="2">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Width="28" Height="28" CornerRadius="6" Background="#F5F3FF" Margin="0,0,8,0">
+                                        <TextBlock Text="🟣" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="Pest" FontSize="12" Foreground="#0F3024" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" x:Name="SummaryPestCount" Text="0%" FontSize="13" FontWeight="SemiBold" Foreground="#7C3AED" VerticalAlignment="Center"/>
+                                </Grid>
+                                <ProgressBar x:Name="SummaryPestBar" Minimum="0" Maximum="100" Value="0" Height="5" Foreground="#7C3AED" Background="#F5F3FF"/>
+                            </StackPanel>
 
-                            <Border Height="1" Background="#E5F3E8" Margin="0,10,0,8"/>
+                            <Border Height="1" Background="#E5F3E8" Margin="0,8,0,6"/>
 
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Dominant" FontSize="12" Foreground="#64766B" VerticalAlignment="Center"/>
+                                <Border Grid.Column="1" x:Name="SummaryDominantPill" Style="{StaticResource PillSuccessStyle}">
+                                    <TextBlock x:Name="SummaryDominantText" Text="—" FontSize="11" FontWeight="SemiBold" Foreground="#065F46"/>
+                                </Border>
+                            </Grid>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -709,7 +759,7 @@
                                 <TextBlock Grid.Column="1" x:Name="SummaryConfidenceText" Text="0%" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
                             </Grid>
                             <Button Style="{StaticResource HarvestOutlineButton}" HorizontalAlignment="Stretch" Margin="0,8,0,0" Click="GoCropAnalysisButton_Click">
-                                <TextBlock Text="Lihat Detail Crop Analysis"/>
+                                <TextBlock Text="View Crop Analysis Details"/>
                             </Button>
                         </StackPanel>
                     </Grid>
@@ -736,124 +786,7 @@
                     </Grid>
                 </Border>
 
-                <!-- Mission Readiness Checklist -->
-                <Border Style="{StaticResource HarvestCardStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <Border Grid.Row="0" Style="{StaticResource HarvestCardHeaderStyle}">
-                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <FontIcon Glyph="&#xE9D5;" FontSize="14" Foreground="#2E7D32"/>
-                                <TextBlock Text="Mission Readiness" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
-                            </StackPanel>
-                        </Border>
-                        <StackPanel Grid.Row="1" Padding="14" Spacing="4">
-                            <TextBlock x:Name="ReadyTelemetryText" Text="○ Telemetry connected" FontSize="12" Foreground="#64766B"/>
-                            <TextBlock x:Name="ReadyGpsText" Text="○ GPS fix" FontSize="12" Foreground="#64766B"/>
-                            <TextBlock x:Name="ReadyBatteryText" Text="○ Battery" FontSize="12" Foreground="#64766B"/>
-                            <TextBlock x:Name="ReadyCameraText" Text="○ Camera active" FontSize="12" Foreground="#64766B"/>
-                            <TextBlock x:Name="ReadyYoloText" Text="○ YOLO ready" FontSize="12" Foreground="#64766B"/>
-                            <TextBlock x:Name="ReadyGeofenceText" Text="○ Geofence loaded" FontSize="12" Foreground="#64766B"/>
-                            <TextBlock x:Name="ReadyWaypointText" Text="○ Waypoint loaded" FontSize="12" Foreground="#64766B"/>
-                            <TextBlock x:Name="ReadyRecorderText" Text="○ Recorder ready" FontSize="12" Foreground="#64766B"/>
-                        </StackPanel>
-                    </Grid>
-                </Border>
 
-                <!-- Incident Timeline -->
-                <Border Style="{StaticResource HarvestCardStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <Border Grid.Row="0" Style="{StaticResource HarvestCardHeaderStyle}">
-                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <FontIcon Glyph="&#xE81C;" FontSize="14" Foreground="#F59E0B"/>
-                                <TextBlock Text="Incident Timeline" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
-                            </StackPanel>
-                        </Border>
-                        <ScrollViewer Grid.Row="1" Padding="14" MaxHeight="180">
-                            <StackPanel x:Name="IncidentTimelineStack" Spacing="5">
-                                <TextBlock Text="Belum ada event misi." FontSize="12" Foreground="#94A3B8"/>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </Grid>
-                </Border>
-
-                <!-- Vegetation Health NDVI -->
-                <Border Style="{StaticResource HarvestCardStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <Border Grid.Row="0" Style="{StaticResource HarvestCardHeaderStyle}">
-                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <FontIcon Glyph="&#xE81E;" FontSize="14" Foreground="#2E7D32"/>
-                                <TextBlock Text="Vegetation Health (NDVI)" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
-                            </StackPanel>
-                        </Border>
-                        <StackPanel Grid.Row="1" Padding="14" Spacing="6">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="Healthy" FontSize="12" Foreground="#64766B"/>
-                                <TextBlock Grid.Column="1" x:Name="NdviHealthyText" Text="0%" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
-                            </Grid>
-                            <ProgressBar x:Name="NdviHealthyBar" Minimum="0" Maximum="100" Value="0" Height="8" Foreground="#2E7D32" Background="#ECFDF5"/>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="Moderate" FontSize="12" Foreground="#64766B"/>
-                                <TextBlock Grid.Column="1" x:Name="NdviModerateText" Text="0%" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
-                            </Grid>
-                            <ProgressBar x:Name="NdviModerateBar" Minimum="0" Maximum="100" Value="0" Height="8" Foreground="#9CCC65" Background="#ECFDF5"/>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="Stressed" FontSize="12" Foreground="#64766B"/>
-                                <TextBlock Grid.Column="1" x:Name="NdviStressedText" Text="0%" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
-                            </Grid>
-                            <ProgressBar x:Name="NdviStressedBar" Minimum="0" Maximum="100" Value="0" Height="8" Foreground="#FBC02D" Background="#FFFBEB"/>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="Critical" FontSize="12" Foreground="#64766B"/>
-                                <TextBlock Grid.Column="1" x:Name="NdviCriticalText" Text="0%" FontSize="12" FontWeight="SemiBold" Foreground="#0F3024"/>
-                            </Grid>
-                            <ProgressBar x:Name="NdviCriticalBar" Minimum="0" Maximum="100" Value="0" Height="8" Foreground="#D32F2F" Background="#FEF2F2"/>
-                            <Grid ColumnSpacing="8" Margin="0,10,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Background="#ECFDF5" CornerRadius="6" Padding="8">
-                                    <StackPanel>
-                                        <TextBlock Text="Avg NDVI" FontSize="10" Foreground="#64766B" HorizontalAlignment="Center"/>
-                                        <TextBlock x:Name="NdviAvgText" Text="0.00" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024" HorizontalAlignment="Center"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border Grid.Column="1" Background="#ECFDF5" CornerRadius="6" Padding="8">
-                                    <StackPanel>
-                                        <TextBlock Text="Coverage" FontSize="10" Foreground="#64766B" HorizontalAlignment="Center"/>
-                                        <TextBlock x:Name="NdviCoverageText" Text="0 ha" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024" HorizontalAlignment="Center"/>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </StackPanel>
-                    </Grid>
-                </Border>
 
             </StackPanel>
         </Grid>

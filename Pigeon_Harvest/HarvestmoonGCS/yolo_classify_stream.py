@@ -16,7 +16,8 @@ DEMO_MODE (MOONHARVEST_DEMO=1 or --demo flag):
   - Hides bare_soil (background)
   - Merges drought_stress → Stress
   - Uses connected-component merging of adjacent same-class cells
-  - Uses imgsz=640
+  - Uses imgsz=640 (matches proposal Figure 3)
+  - Applies NMS (IoU threshold 0.45) on merged regional boxes
   - Adds Pest to legend (configurable, rarely/never triggered)
 """
 
@@ -37,48 +38,52 @@ from ultralytics import YOLO
 # ---------------------------------------------------------------------------
 DEMO_MODE = os.environ.get("MOONHARVEST_DEMO", "1") == "1"
 
-INFERENCE_SIZE = 640  # imgsz for proposal compliance
+INFERENCE_SIZE = 640  # imgsz — matches proposal Figure 3 (OpenCV Resize 640×640)
 
 # ---------------------------------------------------------------------------
 # Class mappings
 # ---------------------------------------------------------------------------
 
-# Display labels for demo (None = hidden / background)
+# v3 model class names → display labels (semua ditampilkan, tidak ada yang hidden)
 DISPLAY_MAP = {
-    "healthy_crop":              "Healthy",
-    "stressed_crop":             "Stress",
-    "disease_stress_vegetation": "Disease",
-    "drought_stress":            "Stress",   # merged into Stress
-    "bare_soil":                 None,        # hidden
-    "pest":                      "Pest",
+    "lush_green":          "Lush Green",
+    "well_irrigated":      "Well Irrigated",
+    "inconsistent_growth": "Inconsistent Growth",
+    "soil_issues":         "Soil Issues",
+    "disease":             "Disease",
+    "pest":                "Pest",
 }
 
-HIDDEN_CLASSES = {"bare_soil"}
+HIDDEN_CLASSES: set = set()  # v3: tidak ada kelas yang disembunyikan
 
 # Colors keyed by demo display label (BGR)
 DEMO_COLORS = {
-    "Healthy": (0, 255, 0),
-    "Stress":  (0, 255, 255),
-    "Disease": (0, 0, 255),
-    "Pest":    (0, 140, 255),
+    "Lush Green":          (50,  205,  50),
+    "Well Irrigated":      (200, 150,   2),
+    "Inconsistent Growth": (0,   200, 255),
+    "Soil Issues":         (55,   64,  93),
+    "Disease":             (0,    60, 255),
+    "Pest":                (0,   140, 255),
 }
 
-# Internal class colors (non-demo path)
+# Internal class colors (non-demo path) — sama dengan DEMO_COLORS untuk v3
 INTERNAL_COLORS = {
-    "healthy_crop":              (0, 255, 0),
-    "stressed_crop":             (0, 165, 255),
-    "disease_stress_vegetation": (0, 0, 255),
-    "drought_stress":            (0, 255, 255),
-    "bare_soil":                 (128, 128, 128),
+    "lush_green":          (50,  205,  50),
+    "well_irrigated":      (200, 150,   2),
+    "inconsistent_growth": (0,   200, 255),
+    "soil_issues":         (55,   64,  93),
+    "disease":             (0,    60, 255),
+    "pest":                (0,   140, 255),
 }
 
 # Short labels for non-demo overlay
 SHORT_LABELS = {
-    "healthy_crop":              "Healthy",
-    "stressed_crop":             "Stressed",
-    "disease_stress_vegetation": "Disease",
-    "drought_stress":            "Drought",
-    "bare_soil":                 "Bare Soil",
+    "lush_green":          "Lush Green",
+    "well_irrigated":      "Well Irrigated",
+    "inconsistent_growth": "Inconsistent",
+    "soil_issues":         "Soil Issues",
+    "disease":             "Disease",
+    "pest":                "Pest",
 }
 
 # ---------------------------------------------------------------------------
@@ -169,6 +174,35 @@ def merge_grid_to_regions(detections, frame_w, frame_h, grid_rows, grid_cols):
 
 
 # ---------------------------------------------------------------------------
+# NMS — suppress overlapping regional boxes
+# ---------------------------------------------------------------------------
+
+def apply_nms(detections, iou_threshold=0.45):
+    """IoU-based NMS on merged regional bounding boxes.
+
+    BFS merge already prevents same-class overlaps; NMS here is the
+    final pipeline stage matching proposal Figure 3, handling any
+    residual cross-class overlaps and acting as a safety net.
+    """
+    if len(detections) <= 1:
+        return detections
+
+    boxes = []
+    scores = []
+    for d in detections:
+        x1, y1, x2, y2 = d["bbox"]
+        boxes.append([int(x1), int(y1), int(x2 - x1), int(y2 - y1)])
+        scores.append(float(d["confidence"]))
+
+    indices = cv2.dnn.NMSBoxes(boxes, scores, score_threshold=0.0, nms_threshold=iou_threshold)
+    if len(indices) == 0:
+        return []
+
+    flat = indices.flatten() if hasattr(indices, "flatten") else list(indices)
+    return [detections[i] for i in flat]
+
+
+# ---------------------------------------------------------------------------
 # Grid classification
 # ---------------------------------------------------------------------------
 
@@ -189,7 +223,7 @@ def classify_grid(frame, model, grid_rows: int, grid_cols: int, min_conf: float)
             y2 = y1 + cell_h
 
             cell = frame[y1:y2, x1:x2]
-            results = model(cell, verbose=False, imgsz=INFERENCE_SIZE)
+            results = model(cell, verbose=False, imgsz=INFERENCE_SIZE, device=0)
             if not results:
                 continue
 
@@ -302,15 +336,17 @@ def add_statistics_overlay(frame, detections):
 
 
 def add_legend(frame):
-    """Bottom-right legend for proposal-aligned 4 classes."""
+    """Bottom-right legend for 6-class proposal Zone Analysis."""
     if not DEMO_MODE:
         return frame
     h, w = frame.shape[:2]
     entries = [
-        ("Healthy", DEMO_COLORS["Healthy"]),
-        ("Stress",  DEMO_COLORS["Stress"]),
-        ("Disease", DEMO_COLORS["Disease"]),
-        ("Pest",    DEMO_COLORS["Pest"]),
+        ("Lush Green",          DEMO_COLORS["Lush Green"]),
+        ("Well Irrigated",      DEMO_COLORS["Well Irrigated"]),
+        ("Inconsistent Growth", DEMO_COLORS["Inconsistent Growth"]),
+        ("Soil Issues",         DEMO_COLORS["Soil Issues"]),
+        ("Disease",             DEMO_COLORS["Disease"]),
+        ("Pest",                DEMO_COLORS["Pest"]),
     ]
     padding, row_h = 8, 20
     legend_h = padding * 2 + len(entries) * row_h
@@ -357,7 +393,9 @@ def main():
     signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
 
     try:
+        import torch as _torch
         model = YOLO(args.model)
+        model.to("cuda" if _torch.cuda.is_available() else "cpu")
     except Exception as exc:
         emit({"type": "error", "data": f"Failed to load model: {exc}"})
         return 1
@@ -397,11 +435,12 @@ def main():
                 frame, model, args.grid_rows, args.grid_cols, args.min_conf
             )
 
-            # Merge adjacent cells → regional boxes (DEMO_MODE only)
+            # Merge adjacent cells → regional boxes, then NMS (DEMO_MODE only)
             if DEMO_MODE:
-                render_dets = merge_grid_to_regions(
+                merged = merge_grid_to_regions(
                     detections, width, height, args.grid_rows, args.grid_cols
                 )
+                render_dets = apply_nms(merged, iou_threshold=0.45)
             else:
                 render_dets = detections
 

@@ -1,0 +1,98 @@
+{
+  "_comment": "Parameter final MoonHarvest Demo — dikunci 2026-06-21. JANGAN diubah saat demo.",
+  "_mode": "Fusion HSV + YOLO v1 (5 kelas)",
+  "_model": "health_train_v1-2/weights/best.pt",
+
+  "demo": {
+    "mode": "fusion",
+    "primary_video": "gabung.mp4",
+    "backup_video": "demo_videos/gabung_fused_only.mp4",
+    "output_dir": "demo_videos/out/"
+  },
+
+  "yolo": {
+    "weights": "runs/classify/Pigeon_Harvest/runs/health_classification/health_train_v1-2/weights/best.pt",
+    "imgsz": 224,
+    "min_conf": 0.40,
+    "min_patch_px": 48,
+    "max_regions": 80
+  },
+
+  "detection": {
+    "fps": 2.0,
+    "width": 1280,
+    "panel_w": 480,
+    "max_display_regions": 15,
+    "conf_agree_gap": 0.25
+  },
+
+  "hsv": {
+    "white_balance": true,
+    "clahe_clip": 2.0,
+    "clahe_grid": 8,
+    "shadow_v_max": 45,
+    "exg_veg_thr": 0.0213,
+    "exg_healthy_min": 0.0693,
+    "bg_h": [100, 140],
+    "bg_s_min": 34,
+    "healthy":  {"h": [30, 100], "s_lo": 15, "v": [69, 255]},
+    "stressed": {"h": [15,  46], "s_lo": 15, "v": [80, 255]},
+    "drought":  {"h": [10,  20], "s_lo": 28, "v": [90, 255]},
+    "disease":  {"h1": [0, 10], "h2": [168, 179], "s_lo": 45, "v": [25, 215]},
+    "soil":     {"s_max": 30, "v": [110, 240]},
+    "texture_win": 9,
+    "disease_texture_min": 16.0,
+    "morph_kernel": 5,
+    "label_median": 7,
+    "min_region_area_frac": 0.0015,
+    "suppress_structures": true,
+    "road_open_kernel": 11,
+    "struct_min_area_frac": 0.0008,
+    "stat_reject_maha": 90.0,
+    "stressed_to_healthy": true,
+    "yellow_h": [18, 36],
+    "yellow_exg_max": 0.085,
+    "yellow_s_min": 36,
+    "dark_as_soil": true,
+    "dark_v_max": 55,
+    "ema_alpha": 0.4
+  },
+
+  "fusion_weights": {
+    "healthy_crop":              {"alpha_yolo": 0.20, "alpha_hsv": 0.80},
+    "stressed_crop":             {"alpha_yolo": 0.55, "alpha_hsv": 0.45},
+    "disease_stress_vegetation": {"alpha_yolo": 0.45, "alpha_hsv": 0.55},
+    "drought_stress":            {"alpha_yolo": 0.50, "alpha_hsv": 0.50},
+    "bare_soil":                 {"alpha_yolo": 0.45, "alpha_hsv": 0.55}
+  },
+
+  "classes_internal": [
+    "healthy_crop",
+    "stressed_crop",
+    "disease_stress_vegetation",
+    "drought_stress",
+    "bare_soil"
+  ],
+
+  "classes_display": {
+    "healthy_crop":              "Lush Green",
+    "stressed_crop":             "Inconsistent Growth",
+    "disease_stress_vegetation": "Disease",
+    "drought_stress":            "Soil Issues",
+    "bare_soil":                 null
+  },
+
+  "severity": {
+    "healthy_crop": 0.0,
+    "stressed_crop": 0.45,
+    "drought_stress": 0.75,
+    "disease_stress_vegetation": 1.0,
+    "bare_soil": 0.0
+  },
+
+  "field_health_status": {
+    "baik":      [75, 100],
+    "perhatian": [50,  75],
+    "kritis":    [  0,  50]
+  }
+}
