@@ -1,0 +1,42 @@
+{
+  "_title": "YDXJ_config — Kalibrasi berbasis jurnal ilmiah + empiris YDXJ.mp4",
+
+  "_ref_healthy":   "Sensors MDPI 2018, DOI:10.3390/s18051453 — H=36-77° real (H=18-39 OpenCV), S≥43; ExG>0.08 sehat",
+  "_ref_stressed":  "arXiv 2505.07840 2025 — ExG 0.08-0.22 stres ringan; H=10-30 OpenCV (20-60° real), S<80",
+  "_ref_disease":   "Scientific Reports Nature 2024, DOI:10.1038/s41598-024 — H=0-15 OpenCV (0-30° real), S=50-200, tekstur tinggi",
+  "_ref_drought":   "Precision Agriculture Springer 2024, DOI:10.1007/s11119-024-10168-3 — H=5-20 OpenCV, ExG rendah, V turun",
+  "_ref_soil":      "Remote Sensing MDPI 2025, DOI:10.3390/rs17 — S≤40 OpenCV, ExG<0.03, VDVI<0.03",
+  "_ref_pest":      "Remote Sensing MDPI 2025, PMC12349311 — pola coklat-kuning tersebar, tekstur lokal std>15 sebagai pembeda utama",
+
+  "_empiris_YDXJ": {
+    "H_dominant": "H=50-90 OpenCV (kuning-hijau, ExG≥0.07) dan H=10-30 (oranye-coklat, ExG~0.01)",
+    "S_mean_video": 38,
+    "note": "Saturasi lebih rendah dari gabung.mp4 — threshold disesuaikan ke bawah ~60%"
+  },
+
+  "exg_veg_thr":    0.012,
+  "exg_healthy_min": 0.045,
+
+  "_healthy_note": "Jurnal: H=18-39 OpenCV; Empiris YDXJ: H=30-90 dominan hijau-kuning. Digunakan union keduanya.",
+  "healthy": {"h": [25, 92], "s_lo": 35, "v": [58, 200]},
+
+  "_stressed_note": "Jurnal: H=10-30, S<80; Empiris: S=12-44. ExG harus >0.01 (masih ada klorofil sedikit).",
+  "stressed_to_healthy": false,
+  "stressed": {"h": [10, 55], "s_lo": 10, "s_max": 48, "v": [68, 235]},
+
+  "_disease_note": "Jurnal: H=0-15 OpenCV, S=50-200. Tekstur tinggi (tekstur local_std>15 pembeda pest vs disease). Diperluas ke H=22 karena data empiris menunjukkan H hingga 40.",
+  "disease":  {"h1": [0, 22], "h2": [148, 179], "s_lo": 22, "s_max": 200,
+               "s_hi_bypass": 60, "v": [45, 215]},
+  "disease_texture_min": 4.0,
+
+  "_drought_note": "Jurnal: H=5-20 OpenCV (10-40° real), ExG rendah, V turun. Empiris YDXJ: Soil Issues = bright+low-S, hue menyebar. Gunakan H lebar + ExG<0.025 sebagai gate utama.",
+  "drought": {"h": [0, 180], "s_lo": 12, "s_max": 42, "v": [122, 248]},
+  "drought_exg_max": 0.025,
+
+  "_soil_note": "Jurnal: S≤40 OpenCV, ExG<0.03. Empiris: S≤22 cukup ketat untuk bare soil murni.",
+  "soil": {"s_max": 22, "v": [102, 246]},
+
+  "_pest_note": "Jurnal: tekstur local_std>15 sebagai pembeda utama (PMC12349311). Warna coklat-oranye H=22-68 OpenCV, tidak tertangkap disease.",
+  "pest": {"h": [22, 68], "s_lo": 18, "s_max": 72, "v": [62, 218]},
+  "pest_texture_min": 5.0
+}

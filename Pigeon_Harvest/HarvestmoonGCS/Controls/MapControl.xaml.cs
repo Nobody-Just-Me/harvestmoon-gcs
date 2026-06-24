@@ -395,35 +395,6 @@ public sealed partial class MapControl : UserControl
         geofencePointsList.ItemsSource = ViewModel.GeofenceVertices;
     }
 
-    private void UpdateGeofenceParameters()
-    {
-        // Update geofence parameters from UI controls
-        if (double.TryParse(tbGeofenceRadius.Text, out double radius))
-        {
-            ViewModel.SetGeofenceRadius(radius);
-        }
-
-        if (double.TryParse(tbGeofenceAltitude.Text, out double altitude))
-        {
-            ViewModel.SetGeofenceMaxAltitude(altitude);
-        }
-
-        // Update geofence type
-        var selectedType = cbGeofenceType.SelectedIndex == 0 
-            ? HarvestmoonGCS.Core.Models.GeofenceType.Circular 
-            : HarvestmoonGCS.Core.Models.GeofenceType.Polygon;
-        
-        if (selectedType != ViewModel.GeofenceType)
-        {
-            ViewModel.SetGeofenceType(selectedType);
-            
-            // Show/hide polygon points list
-            geofencePointsBorder.Visibility = selectedType == HarvestmoonGCS.Core.Models.GeofenceType.Polygon
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-        }
-    }
-
     private void GeofenceType_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ViewModel == null) return;
