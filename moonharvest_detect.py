@@ -31,6 +31,7 @@ HSV_CLASSES = [
     "disease_stress_vegetation",
     "drought_stress",
     "bare_soil",
+    "pest_damage",          # idx 5 — HSV-only, tidak ada di model YOLO v1
 ]
 
 PALETTE = {
@@ -39,6 +40,7 @@ PALETTE = {
     "disease_stress_vegetation": ( 40,  40, 230),
     "drought_stress":            ( 30, 140, 250),
     "bare_soil":                 (110, 120, 140),
+    "pest_damage":               (  0, 106, 255),  # oranye BGR
     "background":                (200, 160,  90),
     "shadow":                    ( 50,  50,  50),
 }
@@ -49,6 +51,7 @@ SEVERITY = {
     "drought_stress": 0.75,
     "disease_stress_vegetation": 1.0,
     "bare_soil": 0.0,
+    "pest_damage": 0.85,
 }
 
 # Threshold HSV — dikalibrasi dari gabung.mp4
@@ -66,8 +69,10 @@ DEFAULT_CFG = {
     "drought":  {"h": [ 8,  16], "s_lo": 65, "v": [80, 235]},
     "disease":  {"h1": [0, 10], "h2": [168, 179], "s_lo": 45, "v": [25, 215]},
     "soil":     {"s_max": 18, "v": [110, 240]},
+    "pest":     {"h": [18, 32], "s_lo": 50, "v": [85, 215]},
     "texture_win": 9,
     "disease_texture_min": 16.0,
+    "pest_texture_min": 14.0,
     "morph_kernel": 5,
     "label_median": 7,
     "min_region_area_frac": 0.0015,
@@ -89,9 +94,11 @@ IGNORE = {"background": 250, "shadow": 251, "unknown": 255}
 # =============================================================================
 # KONFIGURASI FUSION
 # =============================================================================
-YOLO_CLASSES  = sorted(HSV_CLASSES)          # urutan alfabet = urutan training
-YOLO_TO_HSV   = [HSV_CLASSES.index(c) for c in YOLO_CLASSES]
-HSV_IDX       = {c: i for i, c in enumerate(HSV_CLASSES)}
+# YOLO v1 hanya tahu 5 kelas lama — pest_damage tidak ada di model
+YOLO_CLASSES = ["bare_soil", "disease_stress_vegetation", "drought_stress",
+                "healthy_crop", "stressed_crop"]
+YOLO_TO_HSV  = [HSV_CLASSES.index(c) for c in YOLO_CLASSES]
+HSV_IDX      = {c: i for i, c in enumerate(HSV_CLASSES)}
 
 YOLO_MIN_CONF  = 0.40
 YOLO_MIN_PATCH = 48
@@ -103,6 +110,7 @@ CLASS_ALPHA_YOLO = {
     "disease_stress_vegetation": 0.45,
     "drought_stress":            0.50,
     "bare_soil":                 0.45,
+    "pest_damage":               0.10,  # HSV-only — YOLO tidak dilatih kelas ini
 }
 
 HSV_WINS_CONFLICT = {
@@ -121,12 +129,14 @@ DISPLAY_MAP = {
     "disease_stress_vegetation": "Disease",
     "drought_stress":            "Soil Issues",
     "bare_soil":                 None,   # disembunyikan
+    "pest_damage":               "Pest Damage",
 }
 DEMO_PALETTE = {
     "Lush Green":          ( 50, 205,  50),
     "Inconsistent Growth": (  0, 200, 255),
     "Disease":             (  0,  60, 255),
     "Soil Issues":         ( 55,  64,  93),
+    "Pest Damage":         (  0, 106, 255),  # oranye BGR
 }
 
 # Status Field Health Index
@@ -220,16 +230,30 @@ def _classify_pixels(hsv, exg, texture, cfg):
     redish = (((H >= c["h1"][0]) & (H <= c["h1"][1])) |
               ((H >= c["h2"][0]) & (H <= c["h2"][1]))) & (S >= c["s_lo"])
     high_tex = texture >= cfg["disease_texture_min"]
-    disease = redish & (high_tex | (S >= 80)) & (V >= c["v"][0]) & (V <= c["v"][1])
+    s_hi_disease = c.get("s_max", 255)
+    disease = redish & (high_tex | (S >= c.get("s_hi_bypass", 80))) & (S <= s_hi_disease) & (V >= c["v"][0]) & (V <= c["v"][1])
     commit(disease, 2, 0.4 + 0.6*tex_score)
+
+    # Pest damage: kuning-oranye-coklat DENGAN tekstur tinggi (bercak tidak merata)
+    cp = cfg.get("pest", {"h": [18, 32], "s_lo": 50, "v": [85, 215]})
+    pest_tex_min = cfg.get("pest_texture_min", 14.0)
+    pest = ((H >= cp["h"][0]) & (H <= cp["h"][1]) & (S >= cp["s_lo"]) &
+            (S <= cp.get("s_max", 255)) &
+            (V >= cp["v"][0]) & (V <= cp["v"][1]) &
+            (texture >= pest_tex_min))
+    commit(pest, 5, 0.40 + 0.50*tex_score)
 
     c = cfg["stressed"]
     stressed = ((H >= c["h"][0]) & (H <= c["h"][1]) & (S >= c["s_lo"]) &
+                (S <= c.get("s_max", 255)) &
                 (V >= c["v"][0]) & (exg >= 0.02))
     commit(stressed, 1, 0.4 + 0.4*sat_score)
 
     c = cfg["drought"]
-    drought = ((H >= c["h"][0]) & (H < c["h"][1]) & (S >= c["s_lo"]) & (V >= c["v"][0]))
+    drought_exg_max = cfg.get("drought_exg_max", 1.0)
+    drought = ((H >= c["h"][0]) & (H < c["h"][1]) & (S >= c["s_lo"]) &
+               (S <= c.get("s_max", 255)) & (V >= c["v"][0]) &
+               (exg < drought_exg_max))
     commit(drought, 3, 0.45 + 0.35*sat_score)
 
     cs = cfg["soil"]
@@ -483,6 +507,10 @@ def _fuse_region(region, alpha=0.55):
     yolo_cls = region["yolo_class"]
     agree    = yolo_cls == hsv_cls
 
+    # pest_damage tidak ada di YOLO — HSV selalu menang
+    if hsv_cls == "pest_damage":
+        return hsv_cls, region["confidence"], False
+
     if not region.get("yolo_valid", False):
         return hsv_cls, region["confidence"], agree
 
@@ -691,7 +719,7 @@ def cmd_video(args):
     base = os.path.splitext(os.path.basename(args.input))[0]
     t0   = time.time()
 
-    shared = {"display": None, "done": False, "log_rows": [], "timeline": []}
+    shared = {"display": None, "fused_display": None, "done": False, "log_rows": [], "timeline": []}
     lock   = threading.Lock()
     wr_3panel = [None]
     wr_fused  = [None]
@@ -718,6 +746,33 @@ def cmd_video(args):
                     frame, cfg, yolo_model, ema, panel_w=args.panel_w)
                 disp_c = np.ascontiguousarray(display)
 
+                # panel fused-only (2x ukuran panel)
+                orig_h2, orig_w2 = frame.shape[:2]
+                fw = args.panel_w * 2
+                fh2 = int(orig_h2 * fw / orig_w2)
+                fused_only = _draw_panel(
+                    cv2.resize(frame, (fw, fh2)),
+                    regions, "fused_class", "fused_conf",
+                    f"FUSED  FH={metrics['field_health_fused']:.1f}",
+                    orig_w2, orig_h2)
+                fo_c = np.ascontiguousarray(fused_only)
+
+                # Bar kecocokan YOLO+HSV
+                agree_pct = metrics["agreement_pct"]
+                n_ok    = sum(1 for r in regions if r.get("agree", False))
+                n_total = len(regions)
+                _, agree_col = _fhi_status(agree_pct)
+                bar_h = 40
+                agree_bar = np.zeros((bar_h, fo_c.shape[1], 3), np.uint8)
+                fill_w = int(fo_c.shape[1] * agree_pct / 100)
+                cv2.rectangle(agree_bar, (0, 0), (fill_w, bar_h), agree_col, -1)
+                cv2.putText(agree_bar,
+                            f"Kecocokan YOLO+HSV: {agree_pct:.0f}%  "
+                            f"({n_ok}/{n_total} region setuju)",
+                            (10, 27), cv2.FONT_HERSHEY_SIMPLEX, 0.62,
+                            (255, 255, 255), 1, cv2.LINE_AA)
+                fo_display = np.vstack([fo_c, agree_bar])
+
                 if not args.no_video:
                     if wr_3panel[0] is None:
                         wr_3panel[0] = _make_writer(
@@ -725,16 +780,6 @@ def cmd_video(args):
                             args.fps, disp_c.shape[1], disp_c.shape[0])
                     if wr_3panel[0]: wr_3panel[0].write(disp_c)
 
-                    # panel fused-only (2x ukuran panel)
-                    orig_h2, orig_w2 = frame.shape[:2]
-                    fw = args.panel_w * 2
-                    fh2 = int(orig_h2 * fw / orig_w2)
-                    fused_only = _draw_panel(
-                        cv2.resize(frame, (fw, fh2)),
-                        regions, "fused_class", "fused_conf",
-                        f"FUSED  FH={metrics['field_health_fused']:.1f}",
-                        orig_w2, orig_h2)
-                    fo_c = np.ascontiguousarray(fused_only)
                     if wr_fused[0] is None:
                         wr_fused[0] = _make_writer(
                             os.path.join(args.output, f"{base}_fused_only.mp4"),
@@ -756,6 +801,7 @@ def cmd_video(args):
 
                 with lock:
                     shared["display"] = disp_c
+                    shared["fused_display"] = fo_display
                     shared["timeline"].append({"t": t, **metrics})
                     shared["log_rows"].extend(rows)
 
@@ -776,14 +822,14 @@ def cmd_video(args):
     t_compute = threading.Thread(target=compute_loop, daemon=True)
     t_compute.start()
 
-    WIN = "MoonHarvest — YOLO | FUSED | HSV"
+    WIN = "MoonHarvest — Fused Detection"
     if not args.no_display:
         cv2.namedWindow(WIN, cv2.WINDOW_KEEPRATIO)
 
     while True:
         with lock:
             done = shared["done"]
-            disp = shared["display"]
+            disp = shared["fused_display"]
         if not args.no_display:
             if disp is not None:
                 cv2.imshow(WIN, disp)

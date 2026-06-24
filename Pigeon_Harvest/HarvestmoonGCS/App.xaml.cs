@@ -116,7 +116,6 @@ public partial class App : Application
 #else
         services.AddSingleton<ISerialPortService, DesktopSerialPortService>();
         services.AddSingleton<ICameraService, PythonCameraService>();
-        services.AddSingleton<IVideoPlayerService, DesktopVideoPlayerService>();
 #endif
         services.AddSingleton<IVideoRecorderService, VideoRecorderService>();
         services.AddSingleton<IncidentTimelineService>();

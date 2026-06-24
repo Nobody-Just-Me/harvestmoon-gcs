@@ -1792,59 +1792,6 @@ public sealed partial class DashboardPage : Page
                 new TextBlock { Text = running ? "Stop Detection" : "Start Detection" }
             }
         };
-        VideoSwitcherPanel.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
-        HighlightActiveVideoButton(_activeDemoVideoIndex);
-    }
-
-    private static readonly string[] DemoVideoPaths =
-    {
-        "/home/fawwazfa/Program/Harvestmoon/demo_videos/YDXJ0012_demo_1min.mp4",
-        "/home/fawwazfa/Program/Harvestmoon/demo_videos/YDXJ0013_burned_1min.mp4",
-        "/home/fawwazfa/Program/Harvestmoon/demo_videos/YDXJ0013_stress_1min.mp4",
-    };
-    private int _activeDemoVideoIndex;
-
-    private void HighlightActiveVideoButton(int idx)
-    {
-        var btns = new[] { VidBtn0, VidBtn1, VidBtn2 };
-        for (int i = 0; i < btns.Length; i++)
-            btns[i].Opacity = i == idx ? 1.0 : 0.45;
-    }
-
-    private async void VidSwitchButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!_isDemoRunning) return;
-        if (sender is not Button btn || btn.Tag is not string tagStr) return;
-        if (!int.TryParse(tagStr, out int idx) || idx < 0 || idx >= DemoVideoPaths.Length) return;
-        if (idx == _activeDemoVideoIndex) return;
-
-        var path = DemoVideoPaths[idx];
-        if (!File.Exists(path)) return;
-
-        await SwitchDemoVideoAsync(path, idx);
-    }
-
-    private async Task SwitchDemoVideoAsync(string videoPath, int idx)
-    {
-        _activeDemoVideoIndex = idx;
-        HighlightActiveVideoButton(idx);
-
-        var pythonSvc = _cameraService as PythonCameraService;
-        if (pythonSvc == null) return;
-
-        _classifyFirstFrameReceived = false;
-        await _cameraService!.StopCameraAsync();
-
-        var modelPath = PythonCameraService.ResolveHealthModelPath();
-        await pythonSvc.StartHsvStreamAsync(
-            videoPath,
-            modelPath: modelPath,
-            maxFps: 15f,
-            showOverlay: true,
-            demo: true);
-
-        FpsHudText.Text = $"HSV+YOLO · {System.IO.Path.GetFileNameWithoutExtension(videoPath)}";
-        _timelineService?.Add("camera", $"Switched to: {System.IO.Path.GetFileName(videoPath)}", "info");
     }
 
     private static string? ResolveDetectedVideoPath()

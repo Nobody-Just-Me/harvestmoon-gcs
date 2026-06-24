@@ -215,28 +215,6 @@
                                         </Border>
                                     </Grid>
 
-                                    <!-- Video switcher (demo mode only) -->
-                                    <StackPanel x:Name="VideoSwitcherPanel"
-                                                Orientation="Horizontal" Spacing="6"
-                                                VerticalAlignment="Top" HorizontalAlignment="Right"
-                                                Margin="0,48,12,0"
-                                                Visibility="Collapsed">
-                                        <Border Background="#CC000000" CornerRadius="6" Padding="6,3">
-                                            <TextBlock Text="Scene:" Foreground="#AAFFFFFF" FontSize="10" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <Button x:Name="VidBtn0" Style="{StaticResource HudActionButton}"
-                                                Tag="0" Click="VidSwitchButton_Click">
-                                            <TextBlock Text="Demo" FontSize="10"/>
-                                        </Button>
-                                        <Button x:Name="VidBtn1" Style="{StaticResource HudActionButton}"
-                                                Tag="1" Click="VidSwitchButton_Click">
-                                            <TextBlock Text="Burned" FontSize="10"/>
-                                        </Button>
-                                        <Button x:Name="VidBtn2" Style="{StaticResource HudActionButton}"
-                                                Tag="2" Click="VidSwitchButton_Click">
-                                            <TextBlock Text="Stress" FontSize="10"/>
-                                        </Button>
-                                    </StackPanel>
 
                                     <!-- Bottom HUD bar -->
                                     <Grid VerticalAlignment="Bottom" Margin="12">

@@ -41,8 +41,6 @@ public sealed partial class VideoStreamControl : UserControl
         this.InitializeComponent();
         _fpsStopwatch.Start();
         
-        // Initially hide overlay and show background image
-        OverlayGrid.Visibility = Visibility.Collapsed;
         BackgroundImage.Visibility = Visibility.Visible;
         VideoCanvas.Visibility = Visibility.Collapsed;
     }
@@ -119,7 +117,7 @@ public sealed partial class VideoStreamControl : UserControl
                         _isStreaming = true;
                         BackgroundImage.Visibility = Visibility.Collapsed;
                         VideoCanvas.Visibility = Visibility.Visible;
-                        OverlayGrid.Visibility = Visibility.Collapsed;
+
                     }
                     VideoCanvas.Invalidate();
                     _framePending = false;
@@ -162,32 +160,9 @@ public sealed partial class VideoStreamControl : UserControl
         });
     }
 
-    /// <summary>
-    /// Shows a status message on the overlay.
-    /// </summary>
-    public void ShowStatus(string message, bool showLoading = false)
-    {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            StatusText.Text = message;
-            LoadingRing.IsActive = showLoading;
-            LoadingRing.Visibility = showLoading ? Visibility.Visible : Visibility.Collapsed;
-            OverlayGrid.Visibility = Visibility.Visible;
-            
-            // Hide video canvas when showing status
-            VideoCanvas.Visibility = Visibility.Collapsed;
-            BackgroundImage.Visibility = Visibility.Visible;
-        });
-    }
+    public void ShowStatus(string message, bool showLoading = false) { }
 
-    /// <summary>
-    /// Hides the status overlay.
-    /// </summary>
-    public void HideOverlay()
-    {
-        OverlayGrid.Visibility = Visibility.Collapsed;
-        LoadingRing.IsActive = false;
-    }
+    public void HideOverlay() { }
 
     /// <summary>
     /// Force the video canvas to be visible and repaint the last cached frame.
@@ -205,7 +180,6 @@ public sealed partial class VideoStreamControl : UserControl
                     _isStreaming = true;
                     BackgroundImage.Visibility = Visibility.Collapsed;
                     VideoCanvas.Visibility = Visibility.Visible;
-                    OverlayGrid.Visibility = Visibility.Collapsed;
                     VideoCanvas.Invalidate();
                 }
             }
@@ -239,7 +213,6 @@ public sealed partial class VideoStreamControl : UserControl
             VideoCanvas.Invalidate();
             VideoCanvas.Visibility = Visibility.Collapsed;
             BackgroundImage.Visibility = Visibility.Visible;
-            OverlayGrid.Visibility = Visibility.Collapsed;
         });
     }
 

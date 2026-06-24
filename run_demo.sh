@@ -65,10 +65,11 @@ case "$MODE" in
       exit 1
     fi
     echo -e "${YELLOW}[RUN]${NC} Fusion HSV + YOLO v1..."
-    python3 moonharvest_detect.py video \
+    python3 moonharvest_detect.py \
+      --weights "$MODEL_FUSION" \
+      video \
       -i "$VIDEO" \
       -o "$OUTDIR" \
-      --weights "$MODEL_FUSION" \
       --fps 2 \
       --width 1280 \
       --no-display
