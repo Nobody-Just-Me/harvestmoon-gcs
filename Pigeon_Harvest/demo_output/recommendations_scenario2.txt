@@ -1,0 +1,112 @@
+================================================================================
+MOONHARVEST FIELD HEALTH RECOMMENDATION REPORT
+Evidence-Based Agronomic Guidance
+================================================================================
+
+FIELD SUMMARY
+--------------------------------------------------------------------------------
+Field Health Index (FHI): 73.5/100
+Field Status: Good
+Dominant Condition: Good Field Health with Minor Stress
+Urgency Level: MODERATE
+Field Area: 2.50 hectares
+Generated: 2026-06-28 12:41:12
+
+CROP HEALTH DISTRIBUTION
+--------------------------------------------------------------------------------
+Healthy Crop                  :  42.3%
+Stressed Crop                 :  38.5%
+Drought Stress                :  12.2%
+Bare Soil                     :   7.0%
+
+PRIMARY DIAGNOSIS
+--------------------------------------------------------------------------------
+Condition: Good Field Health with Minor Stress
+Urgency: MODERATE
+
+Risk Factors:
+  • Stress may spread to healthy areas
+  • Yield reduction risk 5-15%
+  • Window for intervention is narrowing
+
+RECOMMENDED ACTIONS
+================================================================================
+
+
+THIS WEEK
+--------------------------------------------------------------------------------
+
+1. Investigate Stress Zones
+   Priority: 1 | Deadline: Wednesday, July 01 by 12:41 PM
+   Identify and address areas showing early stress symptoms
+
+   Action Steps:
+   • Use UAV imagery to map stress distribution
+   • Ground-truth stressed areas to identify cause
+   • Check for irrigation uniformity issues
+   • Assess nutrient deficiency symptoms
+
+   Evidence: Hassanein2018, Yu2022
+
+
+2. Enhance Monitoring Frequency
+   Priority: 2 | Deadline: Wednesday, July 01 by 12:41 PM
+   Increase surveillance to prevent stress escalation
+
+   Action Steps:
+   • Conduct UAV flights every 3 days
+   • Focus on stressed zones for detailed inspection
+   • Monitor stress progression rate
+
+   Evidence: Zhao2025, Logavitool2025
+
+
+ESTIMATED COSTS
+--------------------------------------------------------------------------------
+Total Estimated Cost: $87.50 USD
+Per Hectare: $35.00 USD/ha
+
+Cost Breakdown:
+  Investigate Stress Zones                : $   37.50
+  Enhance Monitoring Frequency            : $   50.00
+
+Estimates only. Actual costs vary by region, suppliers, and market conditions.
+
+
+GROWTH STAGE GUIDANCE
+--------------------------------------------------------------------------------
+Stage: Transplanting to Panicle Initiation (0-50 DAT)
+
+Key Focus Areas:
+  • Establish uniform crop stand
+  • Promote healthy tillering
+  • Build disease/pest resistance
+
+
+INTEGRATED PEST MANAGEMENT (IPM) GUIDELINES
+--------------------------------------------------------------------------------
+General Principles:
+  • Use UAV monitoring as primary surveillance tool (Zhao2025)
+  • Implement economic threshold-based interventions (Mahmood2025)
+  • Prioritize cultural and biological control before chemical (Logavitool2025)
+  • Rotate pesticide modes of action to prevent resistance
+  • Always follow label rates and pre-harvest intervals
+
+
+EVIDENCE BASE
+--------------------------------------------------------------------------------
+All recommendations are based on peer-reviewed international journals
+
+Primary References:
+  • Hassanein et al. (2018) - Sensors, MDPI
+  • Zhao et al. (2025) - Sensors, MDPI
+  • Mahmood et al. (2025) - Scientific Reports, Nature
+  • Logavitool et al. (2025) - PLOS ONE
+  • Zhang et al. (2023) - Plant Phenomics
+  • Bouguettaya et al. (2022) - Neural Computing and Applications
+
+Methodology: Recommendations based on UAV-based crop health monitoring combined with agronomic best practices from 2018-2026 peer-reviewed literature
+
+================================================================================
+END OF REPORT
+================================================================================

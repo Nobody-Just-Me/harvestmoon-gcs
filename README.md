@@ -57,37 +57,64 @@ MoonHarvest adalah sistem monitoring kesehatan tanaman menggunakan AI yang diran
 
 ## 🚀 **Quick Start**
 
-### **1. Setup Environment**
+### **Deteksi v3 — HSV+ONNX Fusion (DIREKOMENDASIKAN)**
 
-```bash
-cd Pigeon_Harvest
-python3 -m venv .venv-yolo
-source .venv-yolo/bin/activate
-pip install ultralytics opencv-python numpy
-```
-
-### **2. Run UAV Detection (with Bounding Boxes)**
+Program terbaru: `moonharvest_detect_v3.py`
+- WB + CLAHE preprocessing
+- HSV connected-component per-object bounding box
+- ONNX batch inference (model v5: 82.2% aerial accuracy)
+- Compatibility matrix HSV–ONNX (mencegah mislabel)
+- FHI sidebar + EMA temporal smoothing
+- CSV log otomatis
 
 ```bash
 cd /home/fawwazfa/Program/Harvestmoon
-./RUN_UAV_DETECTION.sh your_video.mp4
+
+# Simpan video output
+CUDA_VISIBLE_DEVICES="" python moonharvest_detect_v3.py YDXJ.mp4
+
+# Tampilkan window real-time
+CUDA_VISIBLE_DEVICES="" DISPLAY=:1 python moonharvest_detect_v3.py YDXJ.mp4 --show
+
+# Pilih model lain
+CUDA_VISIBLE_DEVICES="" python moonharvest_detect_v3.py YDXJ.mp4 \
+  --model runs/classify/health_train_v5-20260626/weights/best.pt \
+  --output out/hasil.mp4 --skip 2 --scale 0.7
 ```
 
-**Or with Python:**
+> Tekan **Q** atau **Esc** di window untuk berhenti.
+
+### **Opsi moonharvest_detect_v3.py**
+
+| Opsi | Default | Keterangan |
+|------|---------|-----------|
+| `--model` | model v5 | Path `.pt` (ONNX sidecar otomatis dipakai) |
+| `--output` | `out/<nama>_v3.mp4` | Path video output |
+| `--skip N` | `2` | Skip N frame antar inferensi (2 = 3× lebih cepat) |
+| `--scale S` | `0.7` | Skala output (0.7 = 70% ukuran asli) |
+| `--show` | off | Tampilkan window real-time |
+| `--no-log` | off | Nonaktifkan CSV log |
+
+---
+
+### **Buka hasil video**
 
 ```bash
-python3 Pigeon_Harvest/scripts/run_detection_video.py \
-    your_video.mp4 \
-    --show \
-    --output results/detected_video.mp4 \
-    --grid-rows 5 \
-    --grid-cols 8
+DISPLAY=:1 ffplay out/YDXJ_v3.mp4
+# atau
+vlc out/YDXJ_v3.mp4
 ```
 
-### **3. Check Training Success**
+---
+
+### **Deteksi lama (HSV+YOLO — masih tersedia)**
 
 ```bash
-./Pigeon_Harvest/scripts/check_training_success.sh
+CUDA_VISIBLE_DEVICES="" DISPLAY=:1 python run_detection_video.py \
+  YDXJ.mp4 \
+  --model runs/classify/health_train_v5-20260626/weights/best.pt \
+  --output out/YDXJ_hsv_yolo.mp4 \
+  --skip-frames 2 --output-scale 0.7 --demo --show
 ```
 
 ---
@@ -119,8 +146,7 @@ runs/classify/Pigeon_Harvest/runs/health_classification/health_train_v1-2/weight
 
 ---
 
-## 🚁 **UAV Detection**
-
+## 🚁 **UAV Detection
 ### **Basic Usage**
 
 ```bash
@@ -500,19 +526,22 @@ For questions or issues:
 ## 🎉 **Quick Start Summary**
 
 ```bash
-# 1. Run detection on video
-./RUN_UAV_DETECTION.sh your_video.mp4
+# 1. Deteksi dengan window (YDXJ.mp4)
+CUDA_VISIBLE_DEVICES="" DISPLAY=:1 python run_detection_video.py \
+  YDXJ.mp4 \
+  --model runs/classify/health_train_v3-20260621/weights/best.pt \
+  --output out/YDXJ_hsv_yolo.mp4 \
+  --skip-frames 2 --output-scale 0.7 --demo --show
 
-# 2. View results
-vlc runs/uav_detection/your_video_detected.mp4
+# 2. Deteksi video lain (simpan saja)
+CUDA_VISIBLE_DEVICES="" python run_detection_video.py \
+  VIDEO.mp4 \
+  --model runs/classify/health_train_v3-20260621/weights/best.pt \
+  --output out/hasil.mp4 \
+  --skip-frames 2 --output-scale 0.7 --demo
 
-# 3. Optimize if needed
-python3 Pigeon_Harvest/scripts/run_detection_video.py \
-    your_video.mp4 \
-    --show \
-    --grid-rows 6 \
-    --grid-cols 10 \
-    --min-conf 0.5
+# 3. Buka hasil
+DISPLAY=:1 ffplay out/YDXJ_hsv_yolo.mp4
 ```
 
 ---

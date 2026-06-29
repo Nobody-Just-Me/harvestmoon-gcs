@@ -528,6 +528,7 @@ public sealed partial class MainPage_Modern : Page
         yield return typeof(AISettingsPage);
         yield return typeof(ReportsHarvestPage);
         yield return typeof(SettingsPage);
+        yield return typeof(EdgeModePage);
     }
 
     private static Type? ResolvePageType(string target)
@@ -552,6 +553,7 @@ public sealed partial class MainPage_Modern : Page
             "Diagnostics" => typeof(DiagnosticsPage),
             "Theme" => typeof(ThemePage),
             "Flight" => typeof(DashboardPage),
+            "EdgeMode" => typeof(EdgeModePage),
             _ => null
         };
     }
@@ -643,6 +645,9 @@ public sealed partial class MainPage_Modern : Page
                 break;
             case "Theme":
                 TopBar.UpdatePageTitle("Theme", "/ Layout and visual preferences", "\uE771");
+                break;
+            case "EdgeMode":
+                TopBar.UpdatePageTitle("Edge Mode", "/ Offline AI · Zero-Internet YOLO Inference", "\uE950");
                 break;
             default:
                 TopBar.UpdatePageTitle("Dashboard", "/ Live Operations", "\uE80F");

@@ -149,6 +149,7 @@ public sealed partial class ModernSidebar : UserControl
         else if (button == CameraNavButton) CameraActiveDot.Opacity = opacity;
         else if (button == MapNavButton) MapActiveDot.Opacity = opacity;
         else if (button == StatsNavButton) StatsActiveDot.Opacity = opacity;
+        else if (button == EdgeModeNavButton) EdgeModeActiveDot.Opacity = opacity;
         else if (button == AISettingsNavButton) AISettingsActiveDot.Opacity = opacity;
         else if (button == TlogNavButton) TlogActiveDot.Opacity = opacity;
 #if !__WASM__

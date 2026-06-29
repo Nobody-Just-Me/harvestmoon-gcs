@@ -156,7 +156,6 @@ namespace HarvestmoonGCS.Tests.Diagnostics
     }
 
     /// <summary>
-    /// Mock MAVLink service for testing
     /// </summary>
     internal class MockMavLinkService : IMavLinkService
     {
@@ -209,9 +208,17 @@ namespace HarvestmoonGCS.Tests.Diagnostics
         public void SendRawBytes(byte[] data) { }
         public void InjectPacket(MavLinkNet.MavLinkPacketBase packet) { }
         public void ProcessTlogPacket(byte[] rawPacket) { }
-        public bool EnterPlaybackMode() => true;
+        public bool EnterPlaybackMode() => false;
         public void ExitPlaybackMode() { }
         public bool IsInPlaybackMode => false;
+        public void SimulateConnection(bool connected) 
+        {
+            ConnectionStatusChanged?.Invoke(this, connected);
+        }
+        public void SimulateTelemetry(FlightData data) 
+        {
+            TelemetryReceived?.Invoke(this, data);
+        }
         public IDiagnosticLogger GetDiagnosticLogger() => new DiagnosticLogger();
         public IPerformanceMonitor GetPerformanceMonitor() => new PerformanceMonitor();
         public string GetDiagnosticSummary() => "";

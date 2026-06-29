@@ -12,11 +12,10 @@ Penggunaan:
   python3 moonharvest_detect.py hsv    -i gabung.mp4  -o out/   [HSV saja, tanpa YOLO]
 
 Model YOLO default:
-  runs/classify/Pigeon_Harvest/runs/health_classification/health_train_v1-2/weights/best.pt
+  runs/classify/health_train_v4-20260625/weights/best.pt
 
-Kelas v1 (5 kelas):
-  0=bare_soil  1=disease_stress_vegetation  2=drought_stress
-  3=healthy_crop  4=stressed_crop
+Kelas v4 (4 kelas):
+  0=bare_soil  1=drought_stress  2=healthy_crop  3=stressed_crop
 """
 import argparse, json, os, sys, time, threading, csv
 import cv2
@@ -49,9 +48,9 @@ SEVERITY = {
     "healthy_crop": 0.0,
     "stressed_crop": 0.45,
     "drought_stress": 0.75,
-    "disease_stress_vegetation": 1.0,
+    "disease_stress_vegetation": 0.45,   # anomali stres — tidak diklaim sebagai penyakit
     "bare_soil": 0.0,
-    "pest_damage": 0.85,
+    "pest_damage": 0.45,                 # anomali stres — tidak diklaim sebagai hama
 }
 
 # Threshold HSV — dikalibrasi dari gabung.mp4
@@ -60,18 +59,18 @@ DEFAULT_CFG = {
     "clahe_clip": 2.0,
     "clahe_grid": 8,
     "shadow_v_max": 45,
-    "exg_veg_thr": 0.0213,
-    "exg_healthy_min": 0.0693,
+    "exg_veg_thr": 0.0150,
+    "exg_healthy_min": 0.040,
     "bg_h": [100, 140],
     "bg_s_min": 34,
-    "healthy":  {"h": [30, 100], "s_lo": 15, "v": [69, 255]},
-    "stressed": {"h": [15,  46], "s_lo": 15, "v": [80, 255]},
-    "drought":  {"h": [ 8,  16], "s_lo": 65, "v": [80, 235]},
-    "disease":  {"h1": [0, 10], "h2": [168, 179], "s_lo": 45, "v": [25, 215]},
-    "soil":     {"s_max": 18, "v": [110, 240]},
+    "healthy":  {"h": [25, 100], "s_lo": 18, "v": [60, 255]},
+    "stressed": {"h": [10,  95], "s_lo": 10, "v": [50, 255]},  # perluas H agar tangkap sawah gelap/muda
+    "drought":  {"h": [ 8,  40], "s_lo": 30, "v": [80, 235]},
+    "disease":  {"h1": [0, 6], "h2": [173, 179], "s_lo": 65, "v": [40, 200]},
+    "soil":     {"s_max": 12, "v": [90, 240]},  # ketatkan: hanya tanah benar-benar kosong (S≤12)
     "pest":     {"h": [18, 32], "s_lo": 50, "v": [85, 215]},
     "texture_win": 9,
-    "disease_texture_min": 16.0,
+    "disease_texture_min": 28.0,
     "pest_texture_min": 14.0,
     "morph_kernel": 5,
     "label_median": 7,
@@ -80,12 +79,12 @@ DEFAULT_CFG = {
     "road_open_kernel": 11,
     "struct_min_area_frac": 0.0008,
     "stat_reject_maha": 90.0,
-    "stressed_to_healthy": True,
-    "yellow_h": [18, 36],
-    "yellow_exg_max": 0.085,
-    "yellow_s_min": 36,
+    "stressed_to_healthy": False,
+    "yellow_h": [18, 50],
+    "yellow_exg_max": 0.13,
+    "yellow_s_min": 25,
     "dark_as_soil": True,
-    "dark_v_max": 62,
+    "dark_v_max": 35,
     "ema_alpha": 0.4,
 }
 
@@ -95,8 +94,8 @@ IGNORE = {"background": 250, "shadow": 251, "unknown": 255}
 # KONFIGURASI FUSION
 # =============================================================================
 # YOLO v1 hanya tahu 5 kelas lama — pest_damage tidak ada di model
-YOLO_CLASSES = ["bare_soil", "disease_stress_vegetation", "drought_stress",
-                "healthy_crop", "stressed_crop"]
+# YOLO v4 — 4 kelas (disease_stress_vegetation dihapus, HSV tetap 6 internal)
+YOLO_CLASSES = ["bare_soil", "drought_stress", "healthy_crop", "stressed_crop"]
 YOLO_TO_HSV  = [HSV_CLASSES.index(c) for c in YOLO_CLASSES]
 HSV_IDX      = {c: i for i, c in enumerate(HSV_CLASSES)}
 
@@ -105,19 +104,14 @@ YOLO_MIN_PATCH = 48
 CONF_AGREE_GAP = 0.25
 
 CLASS_ALPHA_YOLO = {
-    "healthy_crop":              0.20,
-    "stressed_crop":             0.55,
-    "disease_stress_vegetation": 0.45,
-    "drought_stress":            0.50,
-    "bare_soil":                 0.45,
-    "pest_damage":               0.10,  # HSV-only — YOLO tidak dilatih kelas ini
+    "healthy_crop":  0.20,   # HSV lebih dipercaya untuk healthy (banyak FP di YOLO)
+    "stressed_crop": 0.65,   # YOLO lebih dipercaya untuk stressed (HSV sering miss)
+    "drought_stress": 0.55,
+    "bare_soil":     0.45,
+    # disease_stress_vegetation dan pest_damage: HSV-only, YOLO v4 tidak punya kelas ini
 }
 
-HSV_WINS_CONFLICT = {
-    ("healthy_crop",  "stressed_crop"),
-    ("healthy_crop",  "disease_stress_vegetation"),
-    ("stressed_crop", "disease_stress_vegetation"),
-}
+HSV_WINS_CONFLICT = set()  # biarkan fusion confidence-weighted memutuskan konflik
 
 COLOR_AGREE    = (  0, 200,  60)   # hijau
 COLOR_DISAGREE = (200,  60,   0)   # biru (BGR)
@@ -126,17 +120,16 @@ COLOR_DISAGREE = (200,  60,   0)   # biru (BGR)
 DISPLAY_MAP = {
     "healthy_crop":              "Lush Green",
     "stressed_crop":             "Inconsistent Growth",
-    "disease_stress_vegetation": "Disease",
-    "drought_stress":            "Soil Issues",
-    "bare_soil":                 None,   # disembunyikan
-    "pest_damage":               "Pest Damage",
+    "disease_stress_vegetation": "Inconsistent Growth",   # digabung ke stressed untuk display
+    "drought_stress":            "Drought / Severe Stress",
+    "bare_soil":                 "Bare Soil / Gap",
+    "pest_damage":               "Inconsistent Growth",   # digabung ke stressed untuk display
 }
 DEMO_PALETTE = {
-    "Lush Green":          ( 50, 205,  50),
-    "Inconsistent Growth": (  0, 200, 255),
-    "Disease":             (  0,  60, 255),
-    "Soil Issues":         ( 55,  64,  93),
-    "Pest Damage":         (  0, 106, 255),  # oranye BGR
+    "Lush Green":              ( 50, 205,  50),
+    "Inconsistent Growth":     (  0, 200, 255),
+    "Drought / Severe Stress": (  0, 100, 255),
+    "Bare Soil / Gap":         (120, 120, 120),
 }
 
 # Status Field Health Index
@@ -153,7 +146,7 @@ def _fhi_status(fhi):
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_WEIGHTS = os.path.join(
     _SCRIPT_DIR,
-    "runs/classify/Pigeon_Harvest/runs/health_classification/health_train_v1-2/weights/best.pt"
+    "runs/classify/health_train_v5-20260626/weights/best.pt"
 )
 
 
@@ -429,9 +422,8 @@ def hsv_process_frame(bgr, cfg, ema_state=None):
         health = 100.0 - sum(SEVERITY[k] * ema_state[k] for k in HSV_CLASSES)
         health = round(max(health, 0.0), 1)
 
-    # Buat overlay
-    color = _colorize(label)
-    overlay = cv2.addWeighted(proc, 0.55, color, 0.45, 0)
+    # Buat overlay — gambar asli sebagai background, tanpa warna HSV
+    overlay = proc.copy()
     for r in regions[:15]:   # batasi 15 region terbesar
         x, y, w, h = r["bbox"]
         display = DISPLAY_MAP.get(r["class"])
@@ -705,7 +697,8 @@ def cmd_video(args):
     cfg = json.loads(json.dumps(DEFAULT_CFG))
     if args.config and os.path.exists(args.config):
         with open(args.config) as f:
-            cfg.update(json.load(f))
+            loaded = json.load(f)
+            cfg.update(loaded.get("hsv", loaded))
 
     os.makedirs(args.output, exist_ok=True)
     print(f"[fusion] model : {args.weights}")
@@ -890,7 +883,8 @@ def cmd_hsv(args):
     cfg = json.loads(json.dumps(DEFAULT_CFG))
     if args.config and os.path.exists(args.config):
         with open(args.config) as f:
-            cfg.update(json.load(f))
+            loaded = json.load(f)
+            cfg.update(loaded.get("hsv", loaded))
 
     os.makedirs(args.output, exist_ok=True)
     cap = cv2.VideoCapture(args.input)
@@ -961,7 +955,8 @@ def cmd_image(args):
     cfg = json.loads(json.dumps(DEFAULT_CFG))
     if args.config and os.path.exists(args.config):
         with open(args.config) as f:
-            cfg.update(json.load(f))
+            loaded = json.load(f)
+            cfg.update(loaded.get("hsv", loaded))
 
     os.makedirs(args.output, exist_ok=True)
     bgr = cv2.imread(args.input)
