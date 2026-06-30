@@ -156,7 +156,6 @@ public sealed partial class VideoStreamControl : UserControl
         DispatcherQueue.TryEnqueue(() =>
         {
             VideoCanvas.Invalidate();
-            HideOverlay();
         });
     }
 

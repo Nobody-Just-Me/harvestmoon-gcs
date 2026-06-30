@@ -37,11 +37,11 @@ namespace HarvestmoonGCS.Mocks
             _heading += 0.5;
             if (_heading >= 360) _heading -= 360;
 
-            // Roll: oscillate between -30 and +30 degrees
-            _roll = 25 * Math.Sin(_time * 0.5);
+            // Roll: minimal oscillation for stable flight (±3 degrees)
+            _roll = 3 * Math.Sin(_time * 0.2);
 
-            // Pitch: oscillate between -15 and +15 degrees
-            _pitch = 12 * Math.Sin(_time * 0.3);
+            // Pitch: minimal oscillation for stable flight (±2 degrees)
+            _pitch = 2 * Math.Sin(_time * 0.15);
 
             // Vertical speed based on altitude change
             var verticalSpeed = _ascending ? 2.5 : -1.5;
@@ -64,12 +64,12 @@ namespace HarvestmoonGCS.Mocks
                 GroundSpeed = airspeed * 0.9, // Ground speed slightly less than airspeed
                 AirSpeed = airspeed,
                 VerticalSpeed = verticalSpeed,
-                BatteryVoltage = 12.6 - (_time * 0.001), // Slowly decrease
+                BatteryVoltage = 12.6, // Fixed voltage for demo
                 BatteryCurrent = 15.0 + _random.NextDouble() * 5,
-                BatteryRemaining = Math.Max(0, (int)(100 - (_time * 0.1))),
-                SatelliteCount = 12 + _random.Next(-2, 3),
-                HDOP = 0.8 + _random.NextDouble() * 0.4,
-                GPSFixType = 3, // 3D Fix
+                BatteryRemaining = 93, // Fixed at 93% for demo
+                SatelliteCount = 15 + _random.Next(-1, 2), // 14-16 satellites for RTK
+                HDOP = 0.3 + _random.NextDouble() * 0.2, // 0.3-0.5 for high precision
+                GPSFixType = 15, // GPS_FIX_TYPE_RTK_FIXED (15) - highest precision
                 FlightMode = FlightMode.MANUAL, // Changed from GUIDED to MANUAL
                 IsArmed = true,
                 SignalStrength = 85 + _random.Next(-10, 10),

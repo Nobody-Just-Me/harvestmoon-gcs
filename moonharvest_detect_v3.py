@@ -250,21 +250,28 @@ class ONNXClassifier:
             self.names = {}
         print(f"[ONNX] {Path(onnx_path).name}  kelas: {self.names}")
 
-    def infer(self, crops, imgsz=160):
-        """Batch inference. Return list of (class_name, confidence)."""
+    def infer(self, crops, imgsz=160, batch_size=32):
+        """Batch inference dengan softmax. Return list of (class_name, confidence)."""
         if not crops:
             return []
+        # Preprocess semua crops sekaligus
         batch = []
         for c in crops:
             img = cv2.resize(c, (imgsz, imgsz)).astype(np.float32) / 255.0
             batch.append(img.transpose(2, 0, 1))
-        arr  = np.stack(batch)
-        probs = self.sess.run(None, {self.iname: arr})[0]
+
         results = []
-        for row in probs:
-            cid  = int(np.argmax(row))
-            conf = float(row[cid])
-            results.append((self.names.get(cid, str(cid)), conf))
+        # Proses dalam mini-batch untuk efisiensi memori
+        for start in range(0, len(batch), batch_size):
+            arr = np.stack(batch[start:start + batch_size])
+            logits = self.sess.run(None, {self.iname: arr})[0]
+            # Softmax — ONNX YOLOv8 cls mengeluarkan logits, bukan probabilities
+            exp = np.exp(logits - logits.max(axis=1, keepdims=True))
+            probs = exp / exp.sum(axis=1, keepdims=True)
+            for row in probs:
+                cid  = int(np.argmax(row))
+                conf = float(row[cid])
+                results.append((self.names.get(cid, str(cid)), conf))
         return results
 
 
@@ -351,11 +358,50 @@ def fuse_detections(frame, regions, classifier, imgsz=160):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# NMS
+# NMS — pure NumPy (lebih reliable dari cv2.dnn.NMSBoxes untuk bbox besar)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def nms(detections, per_class_iou=0.25, cross_iou=0.65, min_conf=DISPLAY_MIN_CONF):
-    """Two-stage NMS: per-class (merge adjacent) → cross-class (resolve overlap)."""
+def _iou_matrix(boxes):
+    """Hitung IoU antar semua pasangan bbox. boxes: Nx4 array [x1,y1,x2,y2]."""
+    x1 = boxes[:, 0]; y1 = boxes[:, 1]
+    x2 = boxes[:, 2]; y2 = boxes[:, 3]
+    areas = np.maximum(0, x2 - x1) * np.maximum(0, y2 - y1)
+
+    ix1 = np.maximum(x1[:, None], x1[None, :])
+    iy1 = np.maximum(y1[:, None], y1[None, :])
+    ix2 = np.minimum(x2[:, None], x2[None, :])
+    iy2 = np.minimum(y2[:, None], y2[None, :])
+    inter = np.maximum(0, ix2 - ix1) * np.maximum(0, iy2 - iy1)
+    union = areas[:, None] + areas[None, :] - inter + 1e-6
+    return inter / union
+
+def _nms_greedy(dets, iou_thr):
+    """Greedy NMS — pilih det dengan conf tertinggi, hapus yang IoU > thr."""
+    if not dets:
+        return []
+    scores = np.array([d["conf"] for d in dets], dtype=np.float32)
+    order  = np.argsort(-scores)          # turun
+    boxes  = np.array([d["bbox"] for d in dets], dtype=np.float32)
+    iou    = _iou_matrix(boxes)
+
+    keep = []
+    suppressed = np.zeros(len(dets), bool)
+    for i in order:
+        if suppressed[i]:
+            continue
+        keep.append(i)
+        # Suppress semua det yang IoU terlalu tinggi dengan det terpilih
+        suppressed |= iou[i] > iou_thr
+        suppressed[i] = False   # jangan suppress diri sendiri
+    return [dets[i] for i in keep]
+
+def nms(detections, per_class_iou=0.30, cross_iou=0.55, min_conf=DISPLAY_MIN_CONF):
+    """
+    Two-stage NMS untuk UAV aerial crop detection:
+      Stage 1 — per-class IoU=0.30  (hapus duplikat kelas sama yang berdekatan)
+      Stage 2 — cross-class IoU=0.55 (resolve overlap antar kelas berbeda)
+    Threshold lebih ketat dari default karena region UAV cenderung besar & overlap.
+    """
     dets = [d for d in detections if d["conf"] >= min_conf]
     if not dets:
         return []
@@ -367,28 +413,13 @@ def nms(detections, per_class_iou=0.25, cross_iou=0.65, min_conf=DISPLAY_MIN_CON
 
     after_cls = []
     for cls_dets in by_cls.values():
-        if len(cls_dets) == 1:
-            after_cls.extend(cls_dets)
-            continue
-        boxes  = [[d["bbox"][0], d["bbox"][1],
-                   d["bbox"][2] - d["bbox"][0],
-                   d["bbox"][3] - d["bbox"][1]] for d in cls_dets]
-        scores = [d["conf"] for d in cls_dets]
-        idx    = cv2.dnn.NMSBoxes(boxes, scores, min_conf, per_class_iou)
-        flat   = idx.flatten().tolist() if len(idx) else []
-        after_cls.extend(cls_dets[i] for i in flat)
+        after_cls.extend(_nms_greedy(cls_dets, per_class_iou))
 
     if len(after_cls) <= 1:
         return after_cls
 
-    # Stage 2 — cross-class
-    boxes  = [[d["bbox"][0], d["bbox"][1],
-               d["bbox"][2] - d["bbox"][0],
-               d["bbox"][3] - d["bbox"][1]] for d in after_cls]
-    scores = [d["conf"] for d in after_cls]
-    idx    = cv2.dnn.NMSBoxes(boxes, scores, 0.0, cross_iou)
-    flat   = idx.flatten().tolist() if len(idx) else []
-    return [after_cls[i] for i in flat]
+    # Stage 2 — cross-class (prioritas: conf lebih tinggi menang)
+    return _nms_greedy(after_cls, cross_iou)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -577,7 +608,7 @@ def process(video_path, model_path, output_path=None,
         if frame_idx == 1 or frame_idx % infer_every == 0:
             regions      = segment_regions(frame, cfg)
             detections   = fuse_detections(frame, regions, classifier, imgsz=160)
-            cached_dets  = nms(detections, per_class_iou=0.25, cross_iou=0.65)
+            cached_dets  = nms(detections)   # per_class=0.30, cross=0.55 default
             fhi_raw, pct_raw = compute_fhi(cached_dets)
 
             # EMA temporal smoothing

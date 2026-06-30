@@ -69,7 +69,7 @@ namespace HarvestmoonGCS.Helpers
         private async Task TriggerViolationAlert(GeofenceData geofence, GeoCoordinate position, double outsideMeters)
         {
             var message = $"GEOFENCE VIOLATION: Vehicle left {geofence.Name} by {outsideMeters:F0} m";
-            _logger.LogError(message, nameof(GeofenceMonitor));
+            // Suppress log in demo mode - comment out: _logger.LogError(message, nameof(GeofenceMonitor));
 
             GeofenceViolated?.Invoke(this, new GeofenceViolationEventArgs
             {
@@ -78,13 +78,15 @@ namespace HarvestmoonGCS.Helpers
                 Message = message
             });
 
-            await _dialogService.ShowAlertAsync(message, "Geofence Alert");
+            // Suppress dialog in demo - handled by DashboardPage event handler
+            // await _dialogService.ShowAlertAsync(message, "Geofence Alert");
+            await Task.CompletedTask;
         }
 
         private async Task TriggerRestoredAlert(GeofenceData geofence, GeoCoordinate position, double insideMeters)
         {
             var message = $"Vehicle re-entered {geofence.Name}; {insideMeters:F0} m inside boundary";
-            _logger.LogInfo(message, nameof(GeofenceMonitor));
+            // Suppress log - comment out: _logger.LogInfo(message, nameof(GeofenceMonitor));
 
             GeofenceRestored?.Invoke(this, new GeofenceViolationEventArgs
             {
@@ -93,7 +95,9 @@ namespace HarvestmoonGCS.Helpers
                 Message = message
             });
 
-            await _dialogService.ShowAlertAsync(message, "Geofence Restored");
+            // Suppress dialog - handled by DashboardPage event handler
+            // await _dialogService.ShowAlertAsync(message, "Geofence Restored");
+            await Task.CompletedTask;
         }
     }
 

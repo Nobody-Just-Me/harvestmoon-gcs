@@ -125,7 +125,7 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                     <FontIcon Glyph="&#xE8F4;" FontSize="14" Foreground="#2E7D32"/>
-                                    <TextBlock Text="Live Monitoring · YOLO Crop Detection + Vegetation Overlay"
+                                    <TextBlock Text="Live Monitoring · YOLO Crop Detection"
                                                FontSize="13" FontWeight="SemiBold" Foreground="#0F3024" VerticalAlignment="Center"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
