@@ -134,6 +134,7 @@ public sealed class HarvestFunctionalService : IDisposable
     private float _runtimeNmsThreshold = 0.4f;
     public bool IsYoloOptionEnabled { get; private set; } = true;
     public bool IsYoloRuntimeReady => _initialized && _analyzer.IsYoloInitialized;
+    public bool IsDemoModeActive { get; private set; }
     public string YoloStatusMessage { get; private set; } = "YOLO standby";
     public string? RuntimeModelPath => _runtimeModelPath;
     public string? RuntimeClassPath => _runtimeClassPath;
@@ -1415,11 +1416,26 @@ public sealed class HarvestFunctionalService : IDisposable
         IsYoloOptionEnabled = enabled;
         _analyzer.UseYolo = enabled;
         YoloStatusMessage = enabled
-            ? (IsYoloRuntimeReady ? "YOLO active" : "YOLO enabled, fallback active")
+            ? (IsYoloRuntimeReady || IsDemoModeActive ? "YOLO active" : "YOLO enabled, fallback active")
             : "YOLO off";
         Serilog.Log.Information("[HarvestFunctionalService] YOLO toggle = {Enabled}, runtime ready = {Ready}, status = {Status}",
             enabled, IsYoloRuntimeReady, YoloStatusMessage);
         YoloOptionChanged?.Invoke(this, enabled);
+    }
+
+    /// <summary>
+    /// Activates or deactivates demo mode. When demo mode is active, YOLO status shows as "Active"
+    /// even if the ONNX runtime is not initialized, and geofence alerts are suppressed.
+    /// </summary>
+    public void SetDemoModeActive(bool active)
+    {
+        if (IsDemoModeActive == active) return;
+        IsDemoModeActive = active;
+        YoloStatusMessage = IsYoloOptionEnabled
+            ? (IsYoloRuntimeReady || IsDemoModeActive ? "YOLO active" : "YOLO enabled, fallback active")
+            : "YOLO off";
+        YoloOptionChanged?.Invoke(this, IsYoloOptionEnabled);
+        Serilog.Log.Information("[HarvestFunctionalService] Demo mode = {Active}", active);
     }
 
     public void Dispose() => _analyzer.Dispose();

@@ -144,14 +144,22 @@ def cmd_stream(source: str) -> int:
     if cap is None or not cap.isOpened():
         return emit_error(f"Failed to open camera source: {source}")
 
-    # Adapt playback speed to the source video's native FPS (max 15 for webcam)
+    is_file_source = os.path.isfile(source)
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 15
-    frame_delay = 1.0 / max(1.0, min(15.0, src_fps))
+    if is_file_source:
+        frame_delay = (1.0 / max(1.0, src_fps)) * 1.10
+    else:
+        # Keep live cameras/network streams capped for UI stability.
+        frame_delay = 1.0 / max(1.0, min(15.0, src_fps))
 
     try:
         while True:
             ok, frame = cap.read()
             if not ok or frame is None:
+                if is_file_source:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    time.sleep(0.05)
+                    continue
                 time.sleep(0.05)
                 continue
 

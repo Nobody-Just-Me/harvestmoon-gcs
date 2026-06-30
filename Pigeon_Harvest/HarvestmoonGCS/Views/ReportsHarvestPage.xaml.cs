@@ -100,7 +100,7 @@ public sealed partial class ReportsHarvestPage : Page
                 IsDemo              = seed.IsDemo,
                 VideoRecordingPath  = idx == 0 ? demoVideo : string.Empty,
                 TlogPath            = System.IO.Path.Combine(tlogDir, tlogName),
-                GeofenceAlertsJson  = "[{\"type\":\"boundary\",\"distance\":28,\"severity\":\"warning\"}]",
+                GeofenceAlertsJson  = "[]",
                 YoloBenchmarkJson   = seed.YoloBenchmarkJson,
                 EvidenceBundlePath  = seed.EvidenceBundlePath,
                 IncidentTimelineJson = seed.IncidentTimelineJson,

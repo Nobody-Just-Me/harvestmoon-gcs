@@ -109,12 +109,14 @@ public sealed partial class ModernSidebar : UserControl
     {
         bool enabled = _harvestFunctionalService?.IsYoloOptionEnabled == true;
         bool ready = _harvestFunctionalService?.IsYoloRuntimeReady == true;
+        bool demoMode = _harvestFunctionalService?.IsDemoModeActive == true;
+        bool showAsReady = ready || demoMode;
         YoloOptionStatusDot.Fill = enabled
-            ? (ready ? (Brush)Application.Current.Resources["SuccessBrush"] : (Brush)Application.Current.Resources["ErrorBrush"])
+            ? (showAsReady ? (Brush)Application.Current.Resources["SuccessBrush"] : (Brush)Application.Current.Resources["ErrorBrush"])
             : (Brush)Application.Current.Resources["MutedForegroundBrush"];
-        YoloOptionLabel.Text = !enabled ? "Yolo Off" : ready ? "Yolo Active" : "Yolo Fallback";
+        YoloOptionLabel.Text = !enabled ? "Yolo Off" : showAsReady ? "Yolo Active" : "Yolo Fallback";
         YoloOptionLabel.Foreground = enabled
-            ? (ready ? (Brush)Application.Current.Resources["SuccessBrush"] : (Brush)Application.Current.Resources["ErrorBrush"])
+            ? (showAsReady ? (Brush)Application.Current.Resources["SuccessBrush"] : (Brush)Application.Current.Resources["ErrorBrush"])
             : (Brush)Application.Current.Resources["MutedForegroundBrush"];
     }
 
@@ -149,6 +151,7 @@ public sealed partial class ModernSidebar : UserControl
         else if (button == CameraNavButton) CameraActiveDot.Opacity = opacity;
         else if (button == MapNavButton) MapActiveDot.Opacity = opacity;
         else if (button == StatsNavButton) StatsActiveDot.Opacity = opacity;
+        else if (button == EdgeModeNavButton) EdgeModeActiveDot.Opacity = opacity;
         else if (button == AISettingsNavButton) AISettingsActiveDot.Opacity = opacity;
         else if (button == TlogNavButton) TlogActiveDot.Opacity = opacity;
 #if !__WASM__

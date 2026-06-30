@@ -361,7 +361,8 @@ public class PythonCameraService : ICameraService
         string? modelPath = null,
         float maxFps = 15f,
         bool showOverlay = true,
-        bool demo = true)
+        bool demo = true,
+        float playbackRate = 1.0f)
     {
         // Prefer .venv-yolo (has ultralytics → YOLO fusion aktif); fallback .venv-camera
         var (yoloPython, _) = ResolvePythonCommand(".venv-yolo");
@@ -398,7 +399,8 @@ public class PythonCameraService : ICameraService
 
             var args = $"{QuoteArg(hsvScript)} " +
                        $"--source {QuoteArg(source)} " +
-                       $"--max-fps {maxFps.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}" +
+                       $"--max-fps {maxFps.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} " +
+                       $"--playback-rate {Math.Clamp(playbackRate, 0.25f, 2.0f).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}" +
                        (demo ? " --demo" : "") +
                        (showOverlay ? "" : " --no-overlay");
 
@@ -491,6 +493,7 @@ public class PythonCameraService : ICameraService
         Serilog.Log.Information("[PythonCameraService] Frame reading loop started");
         
         int frameCount = 0;
+        int ignoredOutputCount = 0;
         
         try
         {
@@ -498,15 +501,27 @@ public class PythonCameraService : ICameraService
             {
                 var line = _streamProcess.StandardOutput.ReadLine();
                 
-                if (string.IsNullOrEmpty(line))
+                if (string.IsNullOrWhiteSpace(line))
                     continue;
+
+                var trimmed = line.TrimStart();
+                if (!trimmed.StartsWith('{'))
+                {
+                    ignoredOutputCount++;
+                    if (ignoredOutputCount <= 3 || ignoredOutputCount % 50 == 0)
+                    {
+                        Serilog.Log.Debug("[PythonCameraService] Ignored non-JSON python stdout: {Line}", line);
+                    }
+                    continue;
+                }
                 
                 try
                 {
                     // Parse JSON frame data
                     var frameData = JsonSerializer.Deserialize<JsonElement>(line);
+                    var messageType = frameData.TryGetProperty("type", out var type) ? type.GetString() : null;
                     
-                    if (frameData.TryGetProperty("type", out var type) && type.GetString() == "frame")
+                    if (messageType == "frame")
                     {
                         if (frameData.TryGetProperty("data", out var data))
                         {
@@ -526,13 +541,26 @@ public class PythonCameraService : ICameraService
                             }
                         }
                     }
-                    else if (frameData.TryGetProperty("type", out var detType) && detType.GetString() == "detection")
+                    else if (messageType == "detection")
                     {
                         if (frameData.TryGetProperty("data", out var detData))
                         {
                             // Pass full data JSON so subscribers can access classes/count/summary
                             ClassificationSummaryChanged?.Invoke(this, detData.GetRawText());
                         }
+                    }
+                    else if (messageType == "info")
+                    {
+                        if (frameData.TryGetProperty("data", out var info))
+                        {
+                            Serilog.Log.Information("[PythonCameraService] {Info}", info.GetString());
+                        }
+                    }
+                    else if (messageType == "end")
+                    {
+                        Serilog.Log.Information("[PythonCameraService] Python stream ended: {Data}",
+                            frameData.TryGetProperty("data", out var endData) ? endData.GetString() : "end");
+                        break;
                     }
                     else if (frameData.TryGetProperty("error", out var error))
                     {
@@ -549,6 +577,15 @@ public class PythonCameraService : ICameraService
         catch (Exception ex)
         {
             Serilog.Log.Error(ex, "[PythonCameraService] Frame reading error");
+        }
+        finally
+        {
+            if (!ct.IsCancellationRequested)
+            {
+                IsStreaming = false;
+                IsClassificationStream = false;
+                StreamingStatusChanged?.Invoke(this, false);
+            }
         }
 
         Serilog.Log.Information("[PythonCameraService] Frame reading loop ended");

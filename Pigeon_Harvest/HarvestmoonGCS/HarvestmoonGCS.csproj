@@ -54,7 +54,6 @@
     <PackageReference Include="OpenCvSharp4" />
     <PackageReference Include="OpenCvSharp4.runtime.ubuntu.22.04-x64" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
-    <PackageReference Include="SkiaSharp.Views.Uno.WinUI" />
     <PackageReference Include="System.IO.Ports" />
     <PackageReference Include="Uno.Extensions.Navigation.Toolkit.WinUI" />
     <PackageReference Include="Uno.Toolkit.WinUI" />
@@ -67,7 +66,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\HarvestmoonGCS.Core\HarvestmoonGCS.Core.csproj" />
+    <ProjectReference Include="..\HarvestmoonGCS.Core\HarvestmoonGCS.Core.csproj" SetTargetFramework="TargetFramework=net9.0" GlobalPropertiesToRemove="RuntimeIdentifier;RuntimeIdentifiers;SelfContained" />
   </ItemGroup>
 
   <ItemGroup>
@@ -98,4 +97,5 @@
     <MakeDir Directories="$(OutDir)Assets/icons" />
     <MakeDir Directories="$(OutDir)Assets/Icons" />
   </Target>
+
 </Project>

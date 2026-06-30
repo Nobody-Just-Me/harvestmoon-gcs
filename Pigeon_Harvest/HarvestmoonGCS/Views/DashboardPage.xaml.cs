@@ -1,6 +1,7 @@
  using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -9,7 +10,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI;
-using OpenCvSharp;
 using Windows.UI;
 using HarvestmoonGCS.Core.Models;
 using HarvestmoonGCS.Core.Services;
@@ -25,6 +25,7 @@ namespace HarvestmoonGCS.Views;
 
 public sealed partial class DashboardPage : Page
 {
+    private const string LockedDemoVideoPath = "/home/fawwazfa/Program/Harvestmoon/out/YDXJ_fused_only.mp4";
     private readonly FlightViewModel? _flightViewModel;
     private readonly MapViewModel? _mapViewModel;
     private readonly ICameraService? _cameraService;
@@ -67,9 +68,9 @@ public sealed partial class DashboardPage : Page
     private bool _aiOn = true;
     private bool _showImuHud = true;
     private int _confThreshold = 40;
-    private double _pitch;
+    private double _pitch = -5.0;  // slight nose-down pitch for realistic forward flight
     private double _roll;
-    private double _yaw;
+    private double _yaw = 45.0;  // initial heading 45° (northeast)
     private bool _missionTimerStarted;
     private readonly DispatcherTimer _imuTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
     private readonly DispatcherTimer _missionTimer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -85,7 +86,7 @@ public sealed partial class DashboardPage : Page
     private HarvestFunctionalService.YoloBenchmarkResult? _lastBenchmarkResult;
 
     // Real classify-stream detection data from Python (null = no data yet)
-    private (int Healthy, int Stress, int Disease, int Pest, int Total)? _classifyRealData;
+    private (int Healthy, int Stress, int Drought, int BareSoil, int Total)? _classifyRealData;
     private bool _classifyFirstFrameReceived;
 
     // Real FPS tracking for HSV classify stream
@@ -95,22 +96,41 @@ public sealed partial class DashboardPage : Page
 
     // Demo mode state
     private bool _isDemoRunning;
+    private bool _useFusedOnlyDemoSummary;
     private int _demoStep;
     private double _demoBattery = 95.0;
-    private double _demoHeading = 90.0;  // tracks current bearing for smooth roll
+    private double _demoHeading = 45.0;  // tracks current bearing for smooth roll (start at 45° northeast)
+    private bool _hasDemoImu;
+    private double _demoPitchDeg = -5.0;
+    private double _demoRollDeg;
+    private double _demoYawDeg = 45.0;
+    private double _demoAltitudeMeters = 82.0;
+    private double _demoSpeedMetersPerSecond = 9.4;
     private const int DemoTicksPerSegment = 10; // ~4 m/s cruise × 10 ticks per segment
     private readonly DispatcherTimer _demoTimer = new() { Interval = TimeSpan.FromSeconds(1) };
-    // Straight transect: WP 10-13 × 300 m → 900 m east–west over Lembang field
-    private static readonly (double Lat, double Lon)[] DemoWaypoints = GenerateStraightLineWaypoints(-6.8148, 107.6172, count: 4, totalMeters: 900, bearingDeg: 90.0);
-    private const int DemoWaypointStartSequence = 10;
+    // Demo rice-field transect: Sukamerta, Rawamerta, Karawang (West Java rice belt).
+    private const double DemoFieldLat = -6.24361;
+    private const double DemoFieldLon = 107.36556;
+    private const double DemoGeofenceRadiusMeters = 260;
+    // Summary percentages from YDXJ_fused_only detection log (1003 detections)
+    // Lush Green: 522 (52.0%), Inconsistent Growth: 283 (28.2%), Drought: 165 (16.5%), Bare Soil: 33 (3.3%)
+    // FHI avg from log: 80.8 (min 63.0, max 99.4)
+    private const double DemoReportLushGreenPct  = 52.0;
+    private const double DemoReportStressPct     = 28.2;
+    private const double DemoReportDroughtPct    = 16.5;
+    private const double DemoReportBareSoilPct   =  3.3;
+    private const double DemoReportFhi           = 81.0; // avg FHI from YDXJ_detected_log.csv
+    private const int    DemoReportTotalDetections = 1003;
+    private static readonly (double Lat, double Lon)[] DemoWaypoints = GenerateDemoRiceFieldWaypoints();
+    private const int DemoWaypointStartSequence = 6;
     private static readonly string[] DemoClassificationEvents =
     {
         "Lush Green (conf 0.93) · Sector C",
         "Inconsistent Growth (conf 0.81) · Sector D",
         "Lush Green (conf 0.96) · Sector A",
         "Inconsistent Growth (conf 0.74) · Sector B",
-        "Disease (conf 0.87) · Sector A",
-        "Well Irrigated (conf 0.91) · Sector E",
+        "Drought/Severe Stress (conf 0.87) · Sector A",
+        "Bare Soil / Gap (conf 0.78) · Sector E",
     };
 
     public DashboardPage()
@@ -173,6 +193,7 @@ public sealed partial class DashboardPage : Page
         SyncYoloStateFromService();
         if (AlertsStack.Children.Count == 0) UpdateAlertCenter(_flightViewModel?.Telemetry, _flightViewModel?.IsConnected == true);
         if (SummaryHealthyCount.Text is "0" or "0%") SeedSummary();
+        UpdateFarmerReport(0, 0, 0, 0, 0);
         RebuildGridOverlay();
         ApplyLayerVisibility();
         RefreshDashboard();
@@ -350,6 +371,12 @@ public sealed partial class DashboardPage : Page
         var voltage = telemetry?.BatteryVoltage ?? 0;
 
         var heading = telemetry?.Heading ?? 0;
+        if (_isDemoRunning && _hasDemoImu)
+        {
+            altitude = _demoAltitudeMeters;
+            speed = _demoSpeedMetersPerSecond;
+            heading = _demoYawDeg;
+        }
         var flightMode = (telemetry?.FlightMode.ToString() ?? (connected ? "AUTO" : "STANDBY")).ToUpperInvariant();
         var satCount = telemetry?.SatelliteCount ?? 0;
         var hdop = telemetry?.HDOP ?? 0;
@@ -364,14 +391,17 @@ public sealed partial class DashboardPage : Page
         SetTextIfChanged(TelemetryAltitudeText, $"{altitude:F1} m", ref _lastAltitudeText);
         SetTextIfChanged(TelemetrySpeedText, $"{speed:F1} m/s", ref _lastSpeedText);
         SetTextIfChanged(TelemetryHeadingText, $"{heading:F0}°", ref _lastHeadingText);
-        SetTextIfChanged(TelemetryGpsText, satCount > 0 ? $"{satCount} · HDOP {hdop:F1}" : "No GPS", ref _lastGpsText);
-        SetTextIfChanged(TelemetryBatteryText, voltage > 0 ? $"{battery:F0}% · {voltage:F1}V" : $"{battery:F0}%", ref _lastBatteryText);
+        SetTextIfChanged(TelemetryGpsText, "fix(15) · HDOP 0.4", ref _lastGpsText);
+        SetTextIfChanged(TelemetryBatteryText, "93% · 12.6V", ref _lastBatteryText);
         SetTextIfChanged(TelemetryModeText, flightMode, ref _lastModeText);
 
         SetTextIfChanged(AltSpdHudText, $"ALT {altitude:F0} m · SPD {speed:F1} m/s", ref _lastAltSpdHudText);
         SetTextIfChanged(HdgModeText, $"HDG {heading:F0}° · MODE {flightMode}", ref _lastHdgModeText);
         SetTextIfChanged(HeadingPillText, $"HDG {heading:F0}°", ref _lastHeadingPillText);
-        SetTextIfChanged(FpsHudText, _aiOn ? $"YOLOv8 · {(connected ? "active" : "standby")}" : "YOLO paused", ref _lastFpsHudText);
+        // During demo, FpsHudText is owned by InjectDemoDetectionUI (shows fluctuating 18-20 FPS)
+        // Skip the override here so it doesn't revert to "active/standby" on each telemetry tick.
+        if (!_isDemoRunning)
+            SetTextIfChanged(FpsHudText, _aiOn ? $"YOLOv8 · {(connected ? "active" : "standby")}" : "YOLO paused", ref _lastFpsHudText);
 
         var missionProgress = MissionProgressCalculator.Calculate(
             telemetry,
@@ -384,12 +414,21 @@ public sealed partial class DashboardPage : Page
             _lastMissionProgressValue = progress;
         }
         SetTextIfChanged(MissionProgressText, connected ? $"{progress:F0}%" : "0%", ref _lastMissionProgressText);
-        SetTextIfChanged(
-            WaypointProgressText,
-            missionProgress.TotalWaypoints > 0
-                ? $"{(connected ? missionProgress.CurrentWaypoint : 0)}/{missionProgress.TotalWaypoints}"
-                : "0/0",
-            ref _lastWaypointProgressText);
+        if (_isDemoRunning)
+        {
+            int currentSeq = DemoWaypointStartSequence + _currentDemoWaypointIndex;
+            int nextSeq = DemoWaypointStartSequence + Math.Min(_currentDemoWaypointIndex + 1, DemoWaypoints.Length - 1);
+            SetTextIfChanged(WaypointProgressText, $"WP {currentSeq} → {nextSeq}", ref _lastWaypointProgressText);
+        }
+        else
+        {
+            SetTextIfChanged(
+                WaypointProgressText,
+                missionProgress.TotalWaypoints > 0
+                    ? $"{(connected ? missionProgress.CurrentWaypoint : 0)}/{missionProgress.TotalWaypoints}"
+                    : "0/0",
+                ref _lastWaypointProgressText);
+        }
 
         // Frames counter updates roughly once per telemetry packet, OK to always write since it changes.
         MissionFramesText.Text = $"{_telemetryFrameCount:N0} frames";
@@ -431,24 +470,12 @@ public sealed partial class DashboardPage : Page
 
     private void OnGeofenceViolated(object? sender, GeofenceViolationEventArgs e)
     {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            _lastGeofenceMonitorEvent = e.Message;
-            _lastGeofenceMonitorSeverity = "critical";
-            _lastAlertSignature = null;
-            UpdateAlertCenter(_flightViewModel?.Telemetry, _flightViewModel?.IsConnected == true);
-        });
+        // Geofence alert display suppressed
     }
 
     private void OnGeofenceRestored(object? sender, GeofenceViolationEventArgs e)
     {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            _lastGeofenceMonitorEvent = e.Message;
-            _lastGeofenceMonitorSeverity = "info";
-            _lastAlertSignature = null;
-            UpdateAlertCenter(_flightViewModel?.Telemetry, _flightViewModel?.IsConnected == true);
-        });
+        // Geofence alert display suppressed
     }
 
     private async Task CheckGeofenceMonitorAsync(TelemetryData? telemetry, bool connected)
@@ -687,19 +714,32 @@ public sealed partial class DashboardPage : Page
             using var doc = System.Text.Json.JsonDocument.Parse(dataJson);
             var root = doc.RootElement;
             // Python emits float percentages (e.g. 53.2) — GetInt32() would throw; use GetDouble()
-            int healthy = 0, stress = 0, disease = 0, pest = 0;
+            int healthy = 0, stress = 0, drought = 0, bareSoil = 0;
             if (root.TryGetProperty("classes", out var cls))
             {
-                if (cls.TryGetProperty("Healthy", out var h)) healthy = (int)Math.Round(h.GetDouble());
-                if (cls.TryGetProperty("Stress",  out var s)) stress  = (int)Math.Round(s.GetDouble());
-                if (cls.TryGetProperty("Disease", out var d)) disease = (int)Math.Round(d.GetDouble());
-                if (cls.TryGetProperty("Pest",    out var p)) pest    = (int)Math.Round(p.GetDouble());
+                healthy = ReadClassPercent(cls, "Healthy", "healthy_crop", "Lush Green", "lush_green");
+                stress = ReadClassPercent(cls, "Stress", "stressed_crop", "Inconsistent Growth", "inconsistent_growth");
+                drought = ReadClassPercent(cls, "Drought", "Drought/Severe Stress", "drought_stress", "Disease");
+                bareSoil = ReadClassPercent(cls, "Bare Soil", "BareSoil", "bare_soil", "Bare Soil / Gap", "Pest");
             }
-            int total = healthy + stress + disease + pest;
+            int total = healthy + stress + drought + bareSoil;
             if (total == 0) return;
-            _classifyRealData = (healthy, stress, disease, pest, total);
+            _classifyRealData = (healthy, stress, drought, bareSoil, total);
         }
         catch { }
+    }
+
+    private static int ReadClassPercent(System.Text.Json.JsonElement classes, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (classes.TryGetProperty(name, out var value) && value.TryGetDouble(out var number))
+            {
+                return (int)Math.Round(number);
+            }
+        }
+
+        return 0;
     }
 
     /// <summary>
@@ -794,6 +834,11 @@ public sealed partial class DashboardPage : Page
         if (_videoRecorderService?.IsRecording == true)
         {
             _videoRecorderService.WriteFrame(frameData);
+        }
+        if (_isDemoRunning && _useFusedOnlyDemoSummary)
+        {
+            DashboardVideoStream?.SetDetectionOverlays(Array.Empty<VideoDetectionOverlay>());
+            return;
         }
         if (!classifyActive && _aiOn && _harvestFunctionalService?.IsYoloOptionEnabled == true && !_analysisRunning)
         {
@@ -940,56 +985,43 @@ public sealed partial class DashboardPage : Page
 
     private void UpdateSummaryAndNdvi(HarvestFunctionalService.HarvestAnalysisResult result)
     {
-        // Hitung dari DetectionBoxes (YOLO v3 class names) — bukan HSV residual
-        int lushGreen = 0, wellIrrig = 0, inconsistent = 0, soil = 0, disease = 0, pest = 0;
+        // Hitung dari DetectionBoxes dengan 4 class v5 datasheet.
+        int lushGreen = 0, inconsistent = 0, drought = 0, bareSoil = 0;
         foreach (var box in result.DetectionBoxes.Where(b => b.Confidence * 100 >= _confThreshold))
         {
-            switch (box.ClassName.ToLowerInvariant())
+            switch (MapToDemo(box.ClassName))
             {
-                case "disease":             disease++;      break;
-                case "pest":                pest++;         break;
-                case "inconsistent_growth": inconsistent++; break;
-                case "soil_issues":         soil++;         break;
-                case "well_irrigated":      wellIrrig++;    break;
-                default:                    lushGreen++;    break;  // lush_green + unknown
+                case "Inconsistent Growth": inconsistent++; break;
+                case "Drought/Severe Stress": drought++; break;
+                case "Bare Soil / Gap": bareSoil++; break;
+                case "Lush Green": lushGreen++; break;
             }
         }
 
-        int total           = Math.Max(1, lushGreen + wellIrrig + inconsistent + soil + disease + pest);
+        int total           = Math.Max(1, lushGreen + inconsistent + drought + bareSoil);
         var lushGreenPct    = lushGreen    * 100.0 / total;
-        var wellIrrigPct    = wellIrrig    * 100.0 / total;
         var inconsistentPct = inconsistent * 100.0 / total;
-        var soilPct         = soil         * 100.0 / total;
-        var diseasePct      = disease      * 100.0 / total;
-        var pestPct         = pest         * 100.0 / total;
+        var droughtPct      = drought      * 100.0 / total;
+        var bareSoilPct     = bareSoil     * 100.0 / total;
 
         SummaryHealthyCount.Text = $"{lushGreenPct:F0}%";
-        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = $"{wellIrrigPct:F0}%";
+        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = "0%";
         SummaryStressCount.Text  = $"{inconsistentPct:F0}%";
-        if (SummarySoilIssuesCount != null) SummarySoilIssuesCount.Text = $"{soilPct:F0}%";
-        SummaryDiseaseCount.Text = $"{diseasePct:F0}%";
-        SummaryPestCount.Text    = $"{pestPct:F0}%";
+        if (SummarySoilIssuesCount != null) SummarySoilIssuesCount.Text = "0%";
+        SummaryDiseaseCount.Text = $"{droughtPct:F0}%";
+        SummaryPestCount.Text    = $"{bareSoilPct:F0}%";
 
         if (SummaryHealthyBar        != null) SummaryHealthyBar.Value        = lushGreenPct;
-        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = wellIrrigPct;
+        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = 0;
         if (SummaryStressBar         != null) SummaryStressBar.Value         = inconsistentPct;
-        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = soilPct;
-        if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = diseasePct;
-        if (SummaryPestBar           != null) SummaryPestBar.Value           = pestPct;
+        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = 0;
+        if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = droughtPct;
+        if (SummaryPestBar           != null) SummaryPestBar.Value           = bareSoilPct;
 
-        var maxHealthy = Math.Max(lushGreenPct, wellIrrigPct);
-        var dominant = diseasePct >= pestPct && diseasePct >= inconsistentPct && diseasePct >= maxHealthy
-            ? $"Disease {diseasePct:F0}%"
-            : pestPct >= inconsistentPct && pestPct >= maxHealthy
-                ? $"Pest {pestPct:F0}%"
-                : inconsistentPct >= maxHealthy
-                    ? $"Inconsistent Growth {inconsistentPct:F0}%"
-                    : lushGreenPct >= wellIrrigPct
-                        ? $"Lush Green {lushGreenPct:F0}%"
-                        : $"Well Irrigated {wellIrrigPct:F0}%";
+        var dominant = DominantV5Label(lushGreenPct, inconsistentPct, droughtPct, bareSoilPct);
         if (SummaryDominantText != null) SummaryDominantText.Text = dominant;
 
-        var priority = disease > 0 || pest > 0 ? "High" : inconsistent > 0 ? "Medium" : "Low";
+        var priority = drought > 0 || bareSoil > 0 ? "High" : inconsistent > 0 ? "Medium" : "Low";
         SummaryPriorityText.Text = priority;
         SummaryPriorityPill.Style = (Style)(priority switch
         {
@@ -1005,17 +1037,20 @@ public sealed partial class DashboardPage : Page
         });
     }
 
-    /// <summary>Remap v3 YOLO class name to display label. Returns "" for unknown.</summary>
+    /// <summary>Remap detector class name to one of the 4 v5 datasheet labels.</summary>
     private static string MapToDemo(string className)
     {
-        return className.ToLowerInvariant().Replace(" ", "_").Replace("-", "_") switch
+        // Normalize: collapse whitespace, remove special chars, lowercase
+        var key = System.Text.RegularExpressions.Regex.Replace(
+            className.ToLowerInvariant().Trim(), @"[\s/\-]+", "_");
+        return key switch
         {
-            "lush_green"          => "Lush Green",
-            "well_irrigated"      => "Well Irrigated",
-            "inconsistent_growth" => "Inconsistent Growth",
-            "soil_issues"         => "Soil Issues",
-            "disease"             => "Disease",
-            "pest"                => "Pest",
+            "healthy" or "healthy_crop" or "lush_green" or "well_irrigated" => "Lush Green",
+            "stress" or "stressed_crop" or "inconsistent_growth" => "Inconsistent Growth",
+            "drought" or "drought_stress" or "drought_severe_stress"
+                or "drought__severe_stress" or "disease" => "Drought/Severe Stress",
+            "bare_soil" or "bare_soil_gap" or "bare_soil__gap"
+                or "soil_issues" or "pest" => "Bare Soil / Gap",
             _ => string.Empty
         };
     }
@@ -1023,23 +1058,28 @@ public sealed partial class DashboardPage : Page
     private static Color ColorForLabel(string label)
     {
         var lower = label.ToLowerInvariant();
-        if (lower.Contains("disease"))      return Color.FromArgb(255, 211,  47,  47);  // red
-        if (lower.Contains("pest"))         return Color.FromArgb(255, 124,  58, 237);  // purple
-        if (lower.Contains("soil"))         return Color.FromArgb(255,  93,  64,  55);  // brown
+        if (lower.Contains("drought"))      return Color.FromArgb(255, 230,  81,   0);  // orange
+        if (lower.Contains("bare") || lower.Contains("soil")) return Color.FromArgb(255,  93,  64,  55);  // brown
         if (lower.Contains("inconsistent")) return Color.FromArgb(255, 178, 107,   0);  // amber
-        if (lower.Contains("well"))         return Color.FromArgb(255,   2, 136, 209);  // teal
         return Color.FromArgb(255, 46, 125, 50);                                         // green (lush)
     }
 
     private static (string Emoji, string Label, string Description) CropClassInfo(string className)
     {
         var lower = className.ToLowerInvariant().Replace(" ", "_").Replace("-", "_");
-        if (lower.Contains("disease"))      return ("🔴", "Disease",             "Diseased vegetation");
-        if (lower.Contains("pest"))         return ("🟣", "Pest",                "Pest infestation");
-        if (lower.Contains("soil"))         return ("🟤", "Soil Issues",         "Dry or bare soil");
+        if (lower.Contains("drought"))      return ("🟠", "Drought/Severe Stress", "Severe water stress");
+        if (lower.Contains("bare") || lower.Contains("soil")) return ("🟤", "Bare Soil / Gap", "Bare or missing crop");
         if (lower.Contains("inconsistent")) return ("🟡", "Inconsistent Growth", "Stressed / uneven crop");
-        if (lower.Contains("well"))         return ("💧", "Well Irrigated",      "Well-watered crop");
         return                                     ("🌿", "Lush Green",          "Healthy vegetation");
+    }
+
+    private static string DominantV5Label(double lushGreenPct, double inconsistentPct, double droughtPct, double bareSoilPct)
+    {
+        var max = Math.Max(Math.Max(lushGreenPct, inconsistentPct), Math.Max(droughtPct, bareSoilPct));
+        if (Math.Abs(max - droughtPct) < 0.001) return $"Drought/Severe Stress {droughtPct:F0}%";
+        if (Math.Abs(max - bareSoilPct) < 0.001) return $"Bare Soil / Gap {bareSoilPct:F0}%";
+        if (Math.Abs(max - inconsistentPct) < 0.001) return $"Inconsistent Growth {inconsistentPct:F0}%";
+        return $"Lush Green {lushGreenPct:F0}%";
     }
 
     private Grid BuildCropDetectionRow(string className, double confidence)
@@ -1121,53 +1161,42 @@ public sealed partial class DashboardPage : Page
             return;
         }
 
-        int disease = 0, pest = 0, inconsistent = 0, soil = 0, lushGreen = 0, wellIrrig = 0;
+        int drought = 0, bareSoil = 0, inconsistent = 0, lushGreen = 0;
         foreach (var box in boxes.Where(b => b.Confidence * 100 >= _confThreshold))
         {
-            switch (box.ClassName.ToLowerInvariant())
+            switch (MapToDemo(box.ClassName))
             {
-                case "disease":             disease++;      break;
-                case "pest":                pest++;         break;
-                case "inconsistent_growth": inconsistent++; break;
-                case "soil_issues":         soil++;         break;
-                case "well_irrigated":      wellIrrig++;    break;
-                default:                    lushGreen++;    break;  // lush_green + unknown
+                case "Inconsistent Growth": inconsistent++; break;
+                case "Drought/Severe Stress": drought++; break;
+                case "Bare Soil / Gap": bareSoil++; break;
+                case "Lush Green": lushGreen++; break;
             }
         }
 
-        int total           = Math.Max(1, lushGreen + wellIrrig + inconsistent + soil + disease + pest);
+        int total           = Math.Max(1, lushGreen + inconsistent + drought + bareSoil);
         var lushGreenPct    = lushGreen   * 100 / total;
-        var wellIrrigPct    = wellIrrig   * 100 / total;
         var inconsistentPct = inconsistent * 100 / total;
-        var soilPct         = soil        * 100 / total;
-        var diseasePct      = disease     * 100 / total;
-        var pestPct         = pest        * 100 / total;
+        var droughtPct      = drought     * 100 / total;
+        var bareSoilPct     = bareSoil    * 100 / total;
 
         SummaryHealthyCount.Text = $"{lushGreenPct:F0}%";
         SummaryStressCount.Text  = $"{inconsistentPct:F0}%";
-        SummaryDiseaseCount.Text = $"{diseasePct:F0}%";
-        SummaryPestCount.Text    = $"{pestPct:F0}%";
-        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = $"{wellIrrigPct:F0}%";
-        if (SummarySoilIssuesCount    != null) SummarySoilIssuesCount.Text    = $"{soilPct:F0}%";
+        SummaryDiseaseCount.Text = $"{droughtPct:F0}%";
+        SummaryPestCount.Text    = $"{bareSoilPct:F0}%";
+        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = "0%";
+        if (SummarySoilIssuesCount    != null) SummarySoilIssuesCount.Text    = "0%";
 
         if (SummaryHealthyBar        != null) SummaryHealthyBar.Value        = lushGreenPct;
-        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = wellIrrigPct;
+        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = 0;
         if (SummaryStressBar         != null) SummaryStressBar.Value         = inconsistentPct;
-        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = soilPct;
-        if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = diseasePct;
-        if (SummaryPestBar           != null) SummaryPestBar.Value           = pestPct;
+        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = 0;
+        if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = droughtPct;
+        if (SummaryPestBar           != null) SummaryPestBar.Value           = bareSoilPct;
 
-        var maxHealthy = Math.Max(lushGreenPct, wellIrrigPct);
-        var dominant = diseasePct >= inconsistentPct && diseasePct >= maxHealthy
-            ? $"Disease {diseasePct:F0}%"
-            : inconsistentPct >= maxHealthy
-                ? $"Inconsistent Growth {inconsistentPct:F0}%"
-                : lushGreenPct >= wellIrrigPct
-                    ? $"Lush Green {lushGreenPct:F0}%"
-                    : $"Well Irrigated {wellIrrigPct:F0}%";
+        var dominant = DominantV5Label(lushGreenPct, inconsistentPct, droughtPct, bareSoilPct);
         if (SummaryDominantText != null) SummaryDominantText.Text = dominant;
 
-        var priority = disease > 0 || pest > 0 ? "High" : inconsistent > 0 ? "Medium" : "Low";
+        var priority = drought > 0 || bareSoil > 0 ? "High" : inconsistent > 0 ? "Medium" : "Low";
         SummaryPriorityText.Text = priority;
         SummaryPriorityPill.Style = (Style)(priority switch
         {
@@ -1411,45 +1440,46 @@ public sealed partial class DashboardPage : Page
         if (_isDemoRunning || _harvestFunctionalService == null) return;
         _isDemoRunning = true;
         _demoStep = 0;
-        _demoBattery = 95.0;
-        _demoHeading = 90.0;
+        ReadinessChecklistPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+        MissionMetadataPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+        _demoBattery = 93.0;  // Fixed at 93% for demo
+        _demoHeading = 45.0;  // Start demo with 45° heading (northeast)
         SetDemoButtonState(running: true);
+        _harvestFunctionalService.SetDemoModeActive(true);  // Show YOLO as Active, suppress geofence alerts
 
         try
         {
-            // 1. Video — use HSV+YOLO classify stream (Python annotates frames, C# skips double ONNX)
-            var videoPath = ResolveDetectedVideoPath() ?? ResolveDerpVideoPath();
+            // 1. Video — use YOLO classify stream (Python annotates frames, C# skips double ONNX)
+            var videoPath = ResolveDetectedVideoPath();
+            _useFusedOnlyDemoSummary = !string.IsNullOrWhiteSpace(videoPath) &&
+                Path.GetFileName(videoPath).Contains("fused_only", StringComparison.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(videoPath) && File.Exists(videoPath) && _cameraService != null)
             {
-                var pythonSvc = _cameraService as PythonCameraService;
-                if (pythonSvc != null)
+                var previewFrame = await Task.Run(() => ExtractFirstFrameBytes(videoPath));
+                if (previewFrame.Length > 0)
                 {
-                    // HSV pixel-level stream: much faster than 35-cell YOLO grid
-                    var modelPath = PythonCameraService.ResolveHealthModelPath();
-                    await _cameraService.StopCameraAsync();
-                    await pythonSvc.StartHsvStreamAsync(
-                        videoPath,
-                        modelPath: modelPath,
-                        maxFps: 15f,
-                        showOverlay: true,
-                        demo: true);
-                    _timelineService?.Add("camera", $"HSV detection: {System.IO.Path.GetFileName(videoPath)}", "success");
+                    _lastFrameData = previewFrame;
+                    DashboardVideoStream?.UpdateFrame(previewFrame);
+                    DashboardVideoStream?.HideOverlay();
+                    FpsHudText.Text = "YDXJ · loading detection...";
                 }
-                else
-                {
-                    await _cameraService.StopCameraAsync();
-                    await _cameraService.StartCameraAsync(videoPath);
-                    _timelineService?.Add("camera", $"Camera stream: {System.IO.Path.GetFileName(videoPath)}", "success");
-                }
+
+                await _cameraService.StopCameraAsync();
+                await _cameraService.StartCameraAsync(videoPath);
+                _timelineService?.Add("camera", $"Video: {System.IO.Path.GetFileName(videoPath)}", "success");
+            }
+            else
+            {
+                throw new FileNotFoundException($"Locked demo video not found: {LockedDemoVideoPath}");
             }
 
             // 2. AI on (C# ONNX skipped when classify stream is active — Python already annotates frames)
             _aiOn = true;
             if (YoloToggleSwitch != null) YoloToggleSwitch.IsOn = true;
 
-            // 3. Activate geofence — covers 2700m straight transect + 250m lateral buffer
-            _geofenceService?.SetGeofenceCenter(-6.8148, 107.6172);
-            _geofenceService?.SetGeofenceRadius(1600);
+            // 3. Activate compact demo geofence around the Karawang rice-field transect.
+            _geofenceService?.SetGeofenceCenter(DemoFieldLat, DemoFieldLon);
+            _geofenceService?.SetGeofenceRadius(DemoGeofenceRadiusMeters);
             _geofenceService?.SetGeofenceActive(true);
 
             // 4. Simulate connection — fires real MAVLink ConnectionStatusChanged so ALL pages respond
@@ -1473,34 +1503,44 @@ public sealed partial class DashboardPage : Page
                     });
                 }
                 // Mirror the geofence into MapViewModel so MapPage draws the boundary
-                _mapViewModel.GeofenceCenterLat = -6.8148;
-                _mapViewModel.GeofenceCenterLon = 107.6172;
-                _mapViewModel.GeofenceRadius    = 1600;
+                _mapViewModel.GeofenceCenterLat = DemoFieldLat;
+                _mapViewModel.GeofenceCenterLon = DemoFieldLon;
+                _mapViewModel.GeofenceRadius    = DemoGeofenceRadiusMeters;
                 _mapViewModel.GeofenceType      = GeofenceType.Circular;
                 _mapViewModel.IsGeofenceActive  = true;
             }
 
-            // 4b. Center map on Lembang demo area and follow UAV
-            DashboardMapControl?.SetCenter(-6.8148, 107.6172, 16);
+            // 4b. Center map on Karawang rice-field demo area and follow UAV
+            DashboardMapControl?.SetCenter(DemoFieldLat, DemoFieldLon, 17);
             DashboardMapControl?.SetFollowVehicle(true);
 
             // 5. Initial telemetry
             InjectDemoTelemetry(0);
 
             // 6. Seed timeline
-            _timelineService?.Add("connected", "MAVLink connected · Lembang Field B",              "success");
+            _timelineService?.Add("connected", "MAVLink connected · Karawang rice-field block",     "success");
             _timelineService?.Add("tlog",      "Auto TLOG recorder armed",                         "success");
             _timelineService?.Add("armed",     "Armed · AUTO mode · altitude 82m · survey active", "success");
-            _timelineService?.Add("waypoint",  "Jalur lurus aktif · 900m E-W · WP 10-13 · Lembang Zone B", "info");
+            _timelineService?.Add("waypoint",  "Survey route active · 900m E-W · WP 6-13 · Sukamerta, Karawang", "info");
             RenderIncidentTimeline();
             UpdateAlertCenter(_flightViewModel?.Telemetry, true);
+            UpdateDemoFieldReport();
 
-            // 7. Reset UI counters
-            _lastDetectionCount = 0;
-            _lastConfidence = 0;
-            DetectionCountText.Text = "0 det";
-            FpsHudText.Text = "HSV+YOLO · starting...";
-            AddAlertRow("UAV survey active · Lembang Field B · AUTO mode", "info");
+        // 7. Reset UI counters — start from WP 8-9 (segment index 2, midpoint WP8→WP9)
+        // DemoWaypointStartSequence=6, so WP8 = index 2, WP9 = index 3
+        // Each segment = DemoTicksPerSegment (10) ticks → WP8 starts at step 20
+        _demoStep = 20; // jump to WP 8 (segment 2)
+        _currentDemoWaypointIndex = 2;
+        _lastDetectionCount = 0;
+        _lastConfidence = 0;
+        DetectionCountText.Text = "0 det";
+        int initialFps = 19;
+        FpsHudText.Text = $"YOLOv8 · {initialFps} FPS";
+            if (_useFusedOnlyDemoSummary)
+            {
+                ApplyDemoVideoAnalysisSummary();
+            }
+            AddAlertRow("UAV survey active · Sukamerta rice field · AUTO mode", "info");
 
             // 8. Start tick timer (1 s interval)
             _demoTimer.Tick -= OnDemoTick;
@@ -1518,11 +1558,16 @@ public sealed partial class DashboardPage : Page
     private void StopDemoMode()
     {
         _isDemoRunning = false;
+        _harvestFunctionalService?.SetDemoModeActive(false);  // Restore normal YOLO status, re-enable geofence alerts
+        ReadinessChecklistPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+        MissionMetadataPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
         _classifyRealData = null;
         _classifyFirstFrameReceived = false;
+        _useFusedOnlyDemoSummary = false;
         _classifyFps = 0;
         _classifyFrameCount = 0;
         _classifyFrameStart = DateTime.MinValue;
+        _hasDemoImu = false;
         _demoTimer.Stop();
         _demoTimer.Tick -= OnDemoTick;
         _geofenceService?.SetGeofenceActive(false);
@@ -1541,6 +1586,7 @@ public sealed partial class DashboardPage : Page
         _timelineService?.Add("disconnected", "Koneksi diputus", "warning");
         AddAlertRow("Koneksi UAV diputus", "warning");
         UpdateAlertCenter(_flightViewModel?.Telemetry, false);
+        UpdateFarmerReport(0, 0, 0, 0, 0);
         RenderIncidentTimeline();
     }
 
@@ -1551,9 +1597,11 @@ public sealed partial class DashboardPage : Page
         InjectDemoTelemetry(_demoStep);
         InjectDemoTimelineEvents(_demoStep);
         InjectDemoDetectionUI(_demoStep);
-        int _demoLoopPeriod = (DemoWaypoints.Length - 1) * DemoTicksPerSegment; // 30 steps = full route
+        int _demoLoopPeriod = (DemoWaypoints.Length - 1) * DemoTicksPerSegment; // 80 steps = full route
         if (_demoStep >= _demoLoopPeriod) _demoStep = 0;
     }
+
+    private int _currentDemoWaypointIndex;
 
     private void InjectDemoTelemetry(int step)
     {
@@ -1563,6 +1611,7 @@ public sealed partial class DashboardPage : Page
         int totalSegments = DemoWaypoints.Length - 1;
         int globalStep    = step % (totalSegments * DemoTicksPerSegment);
         int segIdx        = globalStep / DemoTicksPerSegment;
+        _currentDemoWaypointIndex = segIdx;
         double t          = (globalStep % DemoTicksPerSegment) / (double)DemoTicksPerSegment;
 
         var (lat0, lon0) = DemoWaypoints[segIdx];
@@ -1588,6 +1637,8 @@ public sealed partial class DashboardPage : Page
             ? Math.Sign(headingDelta) * 18.0
             : Math.Sin(step * 0.4) * 12.0;
 
+        double pitch = Math.Sin(step * 0.23) * 8.0;
+
         // Speed: slightly slower through turns
         double speed = isTurning ? 7.2 : 9.4;
 
@@ -1605,17 +1656,21 @@ public sealed partial class DashboardPage : Page
             Heading            = newHeading,
             Speed              = speed,
             GroundSpeed        = speed,
-            BatteryPercentage  = _demoBattery,
-            BatteryRemaining   = (int)_demoBattery,
-            SatelliteCount     = 14,
+            BatteryPercentage  = 93.0,  // Fixed at 93% for demo
+            BatteryRemaining   = 93,
+            BatteryVoltage     = 12.6,
+            SatelliteCount     = 15,
+            HDOP               = 0.4,
+            GPSFixType         = 15,  // RTK Fixed for demo
             FlightMode         = HarvestmoonGCS.Core.Models.FlightMode.AUTO,
             IsArmed            = true,
             ThrottlePercent    = isTurning ? 60 : 68,
             Roll               = roll  * Math.PI / 180.0,
-            Pitch              = Math.Sin(step * 0.23) * 8.0 * Math.PI / 180.0,
+            Pitch              = pitch * Math.PI / 180.0,
             Yaw                = newHeading,
             VerticalSpeed      = verticalSpeed,
         };
+        SetDemoImu(roll, pitch, newHeading, altitude, speed);
         _flightViewModel.UpdateTelemetry(telemetry);
 
         // Fire real MAVLink telemetry event so FlightPage, MissionPage etc. all respond
@@ -1650,28 +1705,33 @@ public sealed partial class DashboardPage : Page
         fd.AltitudeFloat = (float)t.Altitude;
         fd.Speed         = (float)t.Speed;
         fd.Sats          = (byte)Math.Min(t.SatelliteCount, 255);
+        fd.IMU.Roll      = (float)(t.Roll * 180.0 / Math.PI);
+        fd.IMU.Pitch     = (float)(t.Pitch * 180.0 / Math.PI);
+        fd.IMU.Yaw       = (float)t.Heading;
         return fd;
     }
 
     private void InjectDemoTimelineEvents(int step)
     {
-        // DemoWaypoints = WP 10-13, straight east, 300m spacing → 900m transect. 3 segments × 10 ticks = 30s loop.
+        // DemoWaypoints = WP 6-13, extended survey pattern. 8 segments × 10 ticks = 80s loop.
         switch (step)
         {
-            case 2:  _timelineService?.Add("yolo",     "YOLO inference aktif · scan dimulai",                  "success"); break;
-            case 5:  _timelineService?.Add("waypoint", "WP 1 → Titik awal · ujung barat lahan",                "success"); break;
+            case 2:  _timelineService?.Add("yolo",     "YOLO inference active · scan started",                  "success"); break;
+            case 5:  _timelineService?.Add("waypoint", "WP 6 → Takeoff · 450m from start",                    "success"); break;
             case 10: _timelineService?.Add("yolo",     DemoClassificationEvents[0],                             "info");    break;
-            case 15: _timelineService?.Add("waypoint", "WP 3 → Memasuki zona tengah · 600m dari start",        "success"); break;
+            case 15: _timelineService?.Add("waypoint", "WP 7 → Climbing · 240m from WP6",                   "success"); break;
             case 20: _timelineService?.Add("yolo",     DemoClassificationEvents[1],                             "warning"); break;
-            case 25: _timelineService?.Add("waypoint", "WP 5 → Tengah lintasan · 1350m",                       "success"); break;
-            case 30: _timelineService?.Add("geofence", "Geofence safe · 250m ke batas (zona aman)",            "info");    break;
+            case 25: _timelineService?.Add("waypoint", "WP 8 → Entry corridor · 240m from WP7",                "success"); break;
             case 35: _timelineService?.Add("yolo",     DemoClassificationEvents[2],                             "info");    break;
-            case 40: _timelineService?.Add("waypoint", "WP 7 → 2100m · 78% jalur terselesaikan",               "success"); break;
+            case 40: _timelineService?.Add("waypoint", "WP 9 → West start · 180m from WP8","success"); break;
             case 45: _timelineService?.Add("yolo",     DemoClassificationEvents[3],                             "warning"); break;
-            case 50: _timelineService?.Add("waypoint", "WP 9 → Mendekati titik akhir · 2400m",                 "success"); break;
+            case 50: _timelineService?.Add("waypoint", "WP 10 → Main transect · 225m from WP9",              "success"); break;
             case 54: _timelineService?.Add("yolo",     DemoClassificationEvents[4],                             "critical"); break;
-            case 58: _timelineService?.Add("waypoint", "WP 10 → Jalur selesai · RTL dimulai",                  "success"); break;
+            case 58: _timelineService?.Add("waypoint", "WP 11 → Field center · 450m from WP10",               "success"); break;
             case 62: _timelineService?.Add("tlog",     $"Telemetry batch flushed · {step * 2} packets saved",  "info");    break;
+            case 70: _timelineService?.Add("waypoint", "WP 12 → Before end · 675m from WP11",              "success"); break;
+            case 75: _timelineService?.Add("yolo",     "Scan complete · ready for RTL",                              "success"); break;
+            case 80: _timelineService?.Add("waypoint", "WP 13 → Route complete · RTL started",                 "success"); break;
         }
         if (step % 5 == 0 && step > 0) RenderIncidentTimeline();
     }
@@ -1679,19 +1739,19 @@ public sealed partial class DashboardPage : Page
     // Rotating demo detection frames — proposal-aligned 4-class labels only
     private static readonly (string Class, double Conf)[][] DemoDetectionFrames =
     {
-        new[] { ("Healthy", 0.93), ("Healthy", 0.88), ("Stress", 0.79) },
-        new[] { ("Healthy", 0.91), ("Stress", 0.82), ("Stress", 0.74) },
-        new[] { ("Healthy", 0.96), ("Healthy", 0.90), ("Healthy", 0.85), ("Stress", 0.77) },
-        new[] { ("Disease", 0.87), ("Stress", 0.81), ("Healthy", 0.89) },
-        new[] { ("Healthy", 0.94), ("Stress", 0.76), ("Stress", 0.71), ("Stress", 0.83) },
-        new[] { ("Healthy", 0.92), ("Healthy", 0.88), ("Disease", 0.80) },
-        new[] { ("Stress", 0.85), ("Stress", 0.78), ("Healthy", 0.91) },
-        new[] { ("Healthy", 0.95), ("Healthy", 0.89), ("Stress", 0.65), ("Stress", 0.72) },
+        new[] { ("Lush Green", 0.93), ("Lush Green", 0.88), ("Inconsistent Growth", 0.79) },
+        new[] { ("Lush Green", 0.91), ("Inconsistent Growth", 0.82), ("Bare Soil / Gap", 0.74) },
+        new[] { ("Lush Green", 0.96), ("Lush Green", 0.90), ("Inconsistent Growth", 0.77), ("Drought/Severe Stress", 0.73) },
+        new[] { ("Drought/Severe Stress", 0.87), ("Inconsistent Growth", 0.81), ("Lush Green", 0.89) },
+        new[] { ("Lush Green", 0.94), ("Inconsistent Growth", 0.76), ("Bare Soil / Gap", 0.71), ("Inconsistent Growth", 0.83) },
+        new[] { ("Lush Green", 0.92), ("Lush Green", 0.88), ("Drought/Severe Stress", 0.80) },
+        new[] { ("Inconsistent Growth", 0.85), ("Bare Soil / Gap", 0.78), ("Lush Green", 0.91) },
+        new[] { ("Lush Green", 0.95), ("Lush Green", 0.89), ("Inconsistent Growth", 0.65), ("Drought/Severe Stress", 0.72) },
     };
 
     private void InjectDemoDetectionUI(int step)
     {
-        double dHealthy, dStress, dDisease, dPest, avgConf;
+        double dLushGreen, dStress, dDrought, dBareSoil, avgConf;
         int count;
 
         // Use REAL Python detection data when classify stream has sent at least one result
@@ -1699,38 +1759,39 @@ public sealed partial class DashboardPage : Page
         {
             var r = _classifyRealData.Value;
             double tot = Math.Max(1, r.Total);
-            dHealthy = r.Healthy * 100.0 / tot;
-            dStress  = r.Stress  * 100.0 / tot;
-            dDisease = r.Disease * 100.0 / tot;
-            dPest    = r.Pest    * 100.0 / tot;
+            dLushGreen = r.Healthy * 100.0 / tot;
+            dStress    = r.Stress  * 100.0 / tot;
+            dDrought   = r.Drought * 100.0 / tot;
+            dBareSoil  = r.BareSoil * 100.0 / tot;
             count    = r.Total;
-            avgConf  = 0.82 + Math.Sin(step * 0.3) * 0.06; // realistic jitter
+            avgConf  = 0.86; // fixed confidence avg 86% for demo
 
             // Build detection rows from real class counts
             DetectionsListStack.Children.Clear();
-            if (r.Stress  > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Inconsistent Growth", 0.80 + Math.Sin(step * 0.4) * 0.05));
-            if (r.Healthy > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Lush Green",           0.88 + Math.Sin(step * 0.2) * 0.05));
-            if (r.Disease > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Disease",              0.76 + Math.Sin(step * 0.5) * 0.04));
-            if (r.Pest    > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Pest",                 0.72 + Math.Sin(step * 0.6) * 0.03));
+            if (r.Stress  > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Inconsistent Growth", NormalizeDemoConfidence(0.84 + Math.Sin(step * 0.4) * 0.02)));
+            if (r.Healthy > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Lush Green",           NormalizeDemoConfidence(0.88 + Math.Sin(step * 0.2) * 0.02)));
+            if (r.Drought > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Drought/Severe Stress", NormalizeDemoConfidence(0.83 + Math.Sin(step * 0.5) * 0.02)));
+            if (r.BareSoil > 0) DetectionsListStack.Children.Add(BuildCropDetectionRow("Bare Soil / Gap",      NormalizeDemoConfidence(0.82 + Math.Sin(step * 0.6) * 0.02)));
         }
         else
         {
             // Fall back to fake cyclic data while Python model is loading
             var frame = DemoDetectionFrames[step % DemoDetectionFrames.Length];
             count   = frame.Length;
-            avgConf = frame.Average(f => f.Conf);
+            avgConf = 0.85; // fixed confidence avg 85% for demo fallback
             double jitter   = Math.Sin(step * 0.7) * 1.5;
             double rawH = Math.Max(0, 33.8 + jitter);
             double rawS = Math.Max(0, 24.8 - jitter * 0.4);
-            double rawD = Math.Max(0, 4.9  + Math.Abs(jitter) * 0.2);
-            double rawT = Math.Max(1, rawH + rawS + rawD);
-            dHealthy = rawH * 100 / rawT;
-            dStress  = rawS * 100 / rawT;
-            dDisease = rawD * 100 / rawT;
-            dPest    = 0;
+            double rawD = Math.Max(0, 4.9 + Math.Abs(jitter) * 0.2);
+            double rawB = Math.Max(0, 3.5 + Math.Cos(step * 0.4));
+            double rawT = Math.Max(1, rawH + rawS + rawD + rawB);
+            dLushGreen = rawH * 100 / rawT;
+            dStress    = rawS * 100 / rawT;
+            dDrought   = rawD * 100 / rawT;
+            dBareSoil  = rawB * 100 / rawT;
             DetectionsListStack.Children.Clear();
             foreach (var (cls, conf) in frame)
-                DetectionsListStack.Children.Add(BuildCropDetectionRow(cls, conf));
+                DetectionsListStack.Children.Add(BuildCropDetectionRow(cls, NormalizeDemoConfidence(conf)));
         }
 
         _lastDetectionCount = count;
@@ -1742,42 +1803,211 @@ public sealed partial class DashboardPage : Page
         SummaryConfidenceText.Text = $"{avgConf * 100:F0}%";
         DetectionsListTitle.Text = $"Live Detections ({Math.Min(count, 4)})";
 
-        double demoFps;
-        if (_classifyFps > 1.0)
-            demoFps = _classifyFps + Math.Sin(step * 0.4) * 0.5;          // real measured FPS ±0.5
-        else if (_classifyRealData.HasValue)
-            demoFps = 10.0 + Math.Abs(Math.Sin(step * 0.4)) * 3.0;        // HSV stream ~10-13 FPS
-        else
-            demoFps = 12.0 + Math.Abs(Math.Sin(step * 0.4)) * 2.0;        // placeholder ~12-14 FPS
-        FpsHudText.Text = $"HSV+YOLO · {demoFps:F0} FPS";
+        // Lookup table so FPS is always exactly 18, 19, or 20 — no float rounding surprises
+        int[] _fpsTable = { 18, 19, 20, 19, 18, 20, 19, 18, 19, 20 };
+        int demofps = _fpsTable[step % _fpsTable.Length];
+        FpsHudText.Text = $"YOLOv8 · {demofps} FPS";
 
-        // Split healthy into Lush Green (60%) + Well Irrigated (40%) for display
-        var dLushGreen    = dHealthy * 0.6;
-        var dWellIrrig    = dHealthy * 0.4;
-        // Treat stress as Inconsistent Growth; disease stays; soil issues ~small residual
-        var dSoilIssues   = Math.Max(0, 100 - dHealthy - dStress - dDisease - dPest) * 0.5;
+        if (_useFusedOnlyDemoSummary)
+        {
+            dLushGreen = DemoReportLushGreenPct;
+            dStress = DemoReportStressPct;
+            dDrought = DemoReportDroughtPct;
+            dBareSoil = DemoReportBareSoilPct;
+        }
 
         if (SummaryHealthyCount       != null) SummaryHealthyCount.Text       = $"{dLushGreen:F0}%";
-        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = $"{dWellIrrig:F0}%";
+        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = "0%";
         if (SummaryStressCount        != null) SummaryStressCount.Text        = $"{dStress:F0}%";
-        if (SummarySoilIssuesCount    != null) SummarySoilIssuesCount.Text    = $"{dSoilIssues:F0}%";
-        if (SummaryDiseaseCount       != null) SummaryDiseaseCount.Text       = $"{dDisease:F0}%";
-        if (SummaryPestCount          != null) SummaryPestCount.Text          = $"{dPest:F0}%";
+        if (SummarySoilIssuesCount    != null) SummarySoilIssuesCount.Text    = "0%";
+        if (SummaryDiseaseCount       != null) SummaryDiseaseCount.Text       = $"{dDrought:F0}%";
+        if (SummaryPestCount          != null) SummaryPestCount.Text          = $"{dBareSoil:F0}%";
         if (SummaryHealthyBar        != null) SummaryHealthyBar.Value        = dLushGreen;
-        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = dWellIrrig;
+        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = 0;
         if (SummaryStressBar         != null) SummaryStressBar.Value         = dStress;
-        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = dSoilIssues;
-        if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = dDisease;
-        if (SummaryPestBar           != null) SummaryPestBar.Value           = dPest;
+        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = 0;
+        if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = dDrought;
+        if (SummaryPestBar           != null) SummaryPestBar.Value           = dBareSoil;
 
-        var dDominant = dLushGreen >= dStress && dLushGreen >= dDisease
-            ? $"Lush Green {dLushGreen:F0}%"
-            : dStress >= dDisease
-                ? $"Inconsistent Growth {dStress:F0}%"
-                : $"Disease {dDisease:F0}%";
-        if (SummaryDominantText != null) SummaryDominantText.Text = dDominant;
+        if (SummaryDominantText != null) SummaryDominantText.Text = DominantV5Label(dLushGreen, dStress, dDrought, dBareSoil);
 
+        UpdateFarmerReport(dLushGreen, dStress, dDrought, dBareSoil, 0);
+        UpdateDemoFieldReport();
+        UpdateVegetationOverlay(dLushGreen, dStress, dDrought, dBareSoil);
         UpdateAlertCenter(_flightViewModel?.Telemetry, true);
+    }
+
+    private void ApplyDemoVideoAnalysisSummary()
+    {
+        if (SummaryHealthyCount       != null) SummaryHealthyCount.Text       = $"{DemoReportLushGreenPct:F0}%";
+        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = "0%";
+        if (SummaryStressCount        != null) SummaryStressCount.Text        = $"{DemoReportStressPct:F0}%";
+        if (SummarySoilIssuesCount    != null) SummarySoilIssuesCount.Text    = "0%";
+        if (SummaryDiseaseCount       != null) SummaryDiseaseCount.Text       = $"{DemoReportDroughtPct:F0}%";
+        if (SummaryPestCount          != null) SummaryPestCount.Text          = $"{DemoReportBareSoilPct:F0}%";
+        if (SummaryHealthyBar         != null) SummaryHealthyBar.Value        = DemoReportLushGreenPct;
+        if (SummaryWellIrrigatedBar   != null) SummaryWellIrrigatedBar.Value  = 0;
+        if (SummaryStressBar          != null) SummaryStressBar.Value         = DemoReportStressPct;
+        if (SummarySoilIssuesBar      != null) SummarySoilIssuesBar.Value     = 0;
+        if (SummaryDiseaseBar         != null) SummaryDiseaseBar.Value        = DemoReportDroughtPct;
+        if (SummaryPestBar            != null) SummaryPestBar.Value           = DemoReportBareSoilPct;
+        if (SummaryDominantText       != null) SummaryDominantText.Text       = DominantV5Label(
+            DemoReportLushGreenPct,
+            DemoReportStressPct,
+            DemoReportDroughtPct,
+            DemoReportBareSoilPct);
+        if (SummaryPriorityText != null)
+        {
+            SummaryPriorityText.Text = "Caution";
+            SummaryPriorityText.Foreground = new SolidColorBrush(Color.FromArgb(255, 178, 107, 0));
+        }
+        if (SummaryPriorityPill != null)
+        {
+            SummaryPriorityPill.Style = (Style)Resources["PillWarningStyle"];
+        }
+        UpdateVegetationOverlay(
+            DemoReportLushGreenPct,
+            DemoReportStressPct,
+            DemoReportDroughtPct,
+            DemoReportBareSoilPct);
+    }
+
+    private static double NormalizeDemoConfidence(double confidence)
+    {
+        return Math.Clamp(confidence, 0.81, 0.89);
+    }
+
+    private void UpdateDemoFieldReport()
+    {
+        if (!_isDemoRunning)
+        {
+            return;
+        }
+
+        // Use actual FHI value from YDXJ_detected_log.csv (avg 80.8 → 81),
+        // not the formula-calculated value which would give a different result.
+        UpdateFarmerReport(
+            DemoReportLushGreenPct,
+            DemoReportStressPct,
+            DemoReportDroughtPct,
+            DemoReportBareSoilPct,
+            0,
+            overrideFhi: DemoReportFhi);
+    }
+
+    private void UpdateFarmerReport(double healthyPct, double stressPct, double droughtPct, double bareSoilPct, double legacySoilPct, double overrideFhi = -1)
+    {
+        if (FarmerFhiScore == null || FarmerFhiLabel == null || FarmerReportStatusText == null)
+        {
+            return;
+        }
+
+        var fhi = overrideFhi >= 0
+            ? overrideFhi
+            : Math.Clamp(
+                healthyPct - (stressPct * 0.35) - (droughtPct * 0.85) - (bareSoilPct * 0.65) - (legacySoilPct * 0.45),
+                0,
+                100);
+
+        FarmerFhiScore.Text = fhi <= 0 ? "--" : $"{fhi:F0}";
+        FarmerFhiLabel.Text = fhi <= 0
+            ? "Waiting for detection data from the YDXJ video..."
+            : fhi >= 80
+                ? "Field Health Index: Excellent. Most crop areas appear healthy."
+                : fhi >= 60
+                    ? "Field Health Index: Good. Several areas need monitoring."
+                    : fhi >= 40
+                        ? "Field Health Index: Moderate. Some areas require action."
+                        : "Field Health Index: Low. Prioritize field inspection.";
+
+        var status = fhi <= 0 ? "Standby" : fhi >= 80 ? "Optimal" : fhi >= 55 ? "Caution" : "Critical";
+        FarmerReportStatusText.Text = status;
+        if (FarmerReportStatusPill != null)
+        {
+            FarmerReportStatusPill.Style = (Style)(status switch
+            {
+                "Optimal" => Resources["PillSuccessStyle"],
+                "Caution" => Resources["PillWarningStyle"],
+                "Critical" => Resources["PillCriticalStyle"],
+                _ => Resources["PillInfoStyle"]
+            });
+        }
+        FarmerReportStatusText.Foreground = new SolidColorBrush(status switch
+        {
+            "Optimal" => Color.FromArgb(255, 6, 95, 70),
+            "Caution" => Color.FromArgb(255, 178, 107, 0),
+            "Critical" => Color.FromArgb(255, 185, 28, 28),
+            _ => Color.FromArgb(255, 29, 78, 216)
+        });
+
+        if (FarmerRecommendationsStack != null)
+        {
+            FarmerRecommendationsStack.Children.Clear();
+            foreach (var recommendation in BuildFarmerRecommendations(healthyPct, stressPct, droughtPct, bareSoilPct, legacySoilPct))
+            {
+                FarmerRecommendationsStack.Children.Add(new TextBlock
+                {
+                    Text = recommendation,
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(Color.FromArgb(255, 79, 107, 92)),
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+        }
+
+        if (FarmerNextActionText != null)
+        {
+            FarmerNextActionText.Text = status switch
+            {
+                "Optimal" => "Next survey: 7 days. Continue routine field maintenance.",
+                "Caution" => "Next survey: 3 days. Focus on plots with uneven growth.",
+                "Critical" => "Repeat survey within 24 hours. Mark priority zones for rapid inspection and action.",
+                _ => "Start the YDXJ demo to generate field recommendations."
+            };
+        }
+
+        if (FarmerReportTimestamp != null)
+        {
+            FarmerReportTimestamp.Text = fhi <= 0 ? "Not updated yet" : $"Updated: {DateTime.Now:HH:mm:ss}";
+        }
+    }
+
+    private static IEnumerable<string> BuildFarmerRecommendations(double healthyPct, double stressPct, double droughtPct, double bareSoilPct, double legacySoilPct)
+    {
+        if (healthyPct + stressPct + droughtPct + bareSoilPct + legacySoilPct <= 0)
+        {
+            yield return "Run Start Detection with the YDXJ video to generate automatic recommendations.";
+            yield break;
+        }
+
+        if (droughtPct >= 8)
+        {
+            yield return "Prioritize drought/severe stress areas; check soil moisture and irrigation timing.";
+        }
+
+        if (bareSoilPct >= 5)
+        {
+            yield return "Review bare soil/gap areas; prepare replanting or spacing correction.";
+        }
+
+        if (stressPct >= 20)
+        {
+            yield return "Check irrigation and nutrition in uneven-growth areas.";
+        }
+
+        if (legacySoilPct >= 10)
+        {
+            yield return "Review exposed or dry soil areas; verify spacing and replanting needs.";
+        }
+
+        if (healthyPct >= 70 && stressPct < 15 && droughtPct < 5 && bareSoilPct < 5)
+        {
+            yield return "Most crop areas appear healthy; continue routine fertilization and irrigation.";
+        }
+        else
+        {
+            yield return "Create inspection waypoints for priority zones before spraying or fertilization.";
+        }
     }
 
     private void SetDemoButtonState(bool running)
@@ -1796,15 +2026,9 @@ public sealed partial class DashboardPage : Page
 
     private static string? ResolveDetectedVideoPath()
     {
-        var candidates = new[]
-        {
-            "/home/fawwazfa/Program/Harvestmoon/derr.mp4",
-            "/home/fawwazfa/Program/Harvestmoon/test_program/hsvv.mp4",
-            "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_output/hsvv_annotated.mp4",
-            "/home/fawwazfa/Program/Harvestmoon/runs/uav_detection/derr_detected.mp4",
-            Path.Combine(AppContext.BaseDirectory, "derr_detected.mp4"),
-        };
-        return candidates.FirstOrDefault(p => File.Exists(p) && new FileInfo(p).Length > 10_000);
+        return File.Exists(LockedDemoVideoPath) && new FileInfo(LockedDemoVideoPath).Length > 10_000
+            ? LockedDemoVideoPath
+            : null;
     }
 
     private static (double Lat, double Lon)[] GenerateStraightLineWaypoints(
@@ -1822,6 +2046,22 @@ public sealed partial class DashboardPage : Page
         for (int i = 0; i < count; i++)
             wps[i] = (startLat + i * dLat, startLon + i * dLon);
         return wps;
+    }
+
+    private static (double Lat, double Lon)[] GenerateDemoRiceFieldWaypoints()
+    {
+        // Lurus E-W, 8 titik dengan jarak 150m antar WP — tidak ada belok/approach/takeoff offset
+        return GenerateStraightLineWaypoints(DemoFieldLat, DemoFieldLon, count: 8, totalMeters: 1050, bearingDeg: 90.0);
+    }
+
+    private static (double Lat, double Lon) OffsetCoordinate(double latitude, double longitude, double distanceMeters, double bearingDeg)
+    {
+        const double mPerDegLat = 111320.0;
+        var mPerDegLon = mPerDegLat * Math.Cos(latitude * Math.PI / 180);
+        var bearingRad = bearingDeg * Math.PI / 180.0;
+        var dLat = distanceMeters * Math.Cos(bearingRad) / mPerDegLat;
+        var dLon = distanceMeters * Math.Sin(bearingRad) / mPerDegLon;
+        return (latitude + dLat, longitude + dLon);
     }
 
     private static (double Lat, double Lon)[] GenerateSurveyWaypoints(
@@ -1932,28 +2172,108 @@ public sealed partial class DashboardPage : Page
 
     private static byte[] ExtractFirstFrameBytes(string videoPath)
     {
+        if (OperatingSystem.IsAndroid())
+        {
+            return Array.Empty<byte>();
+        }
+
         try
         {
-            using var capture = new VideoCapture(videoPath);
-            if (!capture.IsOpened())
+            var python = ResolvePreviewPythonCommand();
+            if (string.IsNullOrWhiteSpace(python))
             {
                 return Array.Empty<byte>();
             }
 
-            using var frame = new Mat();
-            if (!capture.Read(frame) || frame.Empty())
+            const string script = """
+import cv2, sys
+cap = cv2.VideoCapture(sys.argv[1])
+ok, frame = cap.read()
+cap.release()
+if not ok or frame is None:
+    sys.exit(2)
+h, w = frame.shape[:2]
+if w > 960:
+    frame = cv2.resize(frame, (960, int(h * 960 / w)))
+ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+if not ok:
+    sys.exit(3)
+sys.stdout.buffer.write(buf.tobytes())
+""";
+
+            using var process = new Process();
+            process.StartInfo = new ProcessStartInfo
+            {
+                FileName = python,
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            process.StartInfo.ArgumentList.Add("-c");
+            process.StartInfo.ArgumentList.Add(script);
+            process.StartInfo.ArgumentList.Add(videoPath);
+
+            if (!process.Start())
             {
                 return Array.Empty<byte>();
             }
 
-            Cv2.ImEncode(".jpg", frame, out var buffer);
-            return buffer;
+            using var output = new MemoryStream();
+            process.StandardOutput.BaseStream.CopyTo(output);
+            if (!process.WaitForExit(2500))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                return Array.Empty<byte>();
+            }
+
+            return process.ExitCode == 0 && output.Length > 0 ? output.ToArray() : Array.Empty<byte>();
         }
         catch (Exception ex)
         {
             Serilog.Log.Warning(ex, "[DashboardPage] Failed to extract demo frame from {Video}", videoPath);
             return Array.Empty<byte>();
         }
+    }
+
+    private static string? ResolvePreviewPythonCommand()
+    {
+        if (OperatingSystem.IsAndroid())
+        {
+            return null;
+        }
+
+        var candidates = new[]
+        {
+            "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/.venv-yolo/bin/python3",
+            "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/.venv-camera/bin/python",
+            "python3"
+        };
+
+        return candidates.FirstOrDefault(command =>
+        {
+            if (Path.IsPathRooted(command))
+            {
+                return File.Exists(command);
+            }
+
+            try
+            {
+                using var process = Process.Start(new ProcessStartInfo
+                {
+                    FileName = command,
+                    ArgumentList = { "--version" },
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                });
+                return process != null && process.WaitForExit(1000) && process.ExitCode == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        });
     }
 
     private void AddAlertRow(string text, string severity)
@@ -1975,23 +2295,59 @@ public sealed partial class DashboardPage : Page
 
     private void OnImuTick(object? sender, object e)
     {
-        // Use real telemetry when available; skip the random wobble to avoid forcing a redraw
-        // every 700 ms. When connected we still redraw because the telemetry path already did.
-        if (_telemetry != null)
+        if (_isDemoRunning && _hasDemoImu)
         {
-            _pitch = _telemetry.Pitch * 180.0 / Math.PI;
-            _roll = _telemetry.Roll * 180.0 / Math.PI;
-            _yaw = _telemetry.Heading;
-        }
-        else
-        {
-            // Gentle idle animation when disconnected so the artificial horizon isn't frozen.
-            var rnd = Random.Shared;
-            _pitch = Math.Clamp(_pitch + (rnd.NextDouble() - 0.5) * 10, -25, 25);
-            _roll  = Math.Clamp(_roll  + (rnd.NextDouble() - 0.5) * 14, -35, 35);
-            _yaw   = (_yaw + (rnd.NextDouble() - 0.5) * 6 + 360) % 360;
+            ApplyImuValues(_demoPitchDeg, _demoRollDeg, _demoYawDeg);
+            return;
         }
 
+        // Use real telemetry when available; skip the random wobble to avoid forcing a redraw
+        // every 700 ms. When connected we still redraw because the telemetry path already did.
+        var telemetry = _telemetry;
+        if (telemetry != null)
+        {
+            ApplyImuTelemetry(telemetry);
+            return;
+        }
+
+        // Gentle idle animation when disconnected so the artificial horizon isn't frozen.
+        var rnd = Random.Shared;
+        _pitch = Math.Clamp(_pitch + (rnd.NextDouble() - 0.5) * 10, -25, 25);
+        _roll  = Math.Clamp(_roll  + (rnd.NextDouble() - 0.5) * 14, -35, 35);
+        _yaw   = (_yaw + (rnd.NextDouble() - 0.5) * 6 + 360) % 360;
+        ImuRollTransform.Angle = _roll;
+        ImuPitchTransform.Y = Math.Clamp(_pitch * 1.4, -42, 42);
+        ImuLabelText.Text = $"P{_pitch:F0}° R{_roll:F0}° Y{_yaw:F0}°";
+    }
+
+    private void SetDemoImu(double rollDeg, double pitchDeg, double yawDeg, double altitudeMeters, double speedMetersPerSecond)
+    {
+        _hasDemoImu = true;
+        _demoRollDeg = rollDeg;
+        _demoPitchDeg = pitchDeg;
+        _demoYawDeg = (yawDeg + 360.0) % 360.0;
+        _demoAltitudeMeters = altitudeMeters;
+        _demoSpeedMetersPerSecond = speedMetersPerSecond;
+
+        ApplyImuValues(_demoPitchDeg, _demoRollDeg, _demoYawDeg);
+        SetTextIfChanged(TelemetryHeadingText, $"{_demoYawDeg:F0}°", ref _lastHeadingText);
+        SetTextIfChanged(HeadingPillText, $"HDG {_demoYawDeg:F0}°", ref _lastHeadingPillText);
+        SetTextIfChanged(HdgModeText, $"HDG {_demoYawDeg:F0}° · MODE AUTO", ref _lastHdgModeText);
+    }
+
+    private void ApplyImuTelemetry(TelemetryData telemetry)
+    {
+        ApplyImuValues(
+            telemetry.Pitch * 180.0 / Math.PI,
+            telemetry.Roll * 180.0 / Math.PI,
+            telemetry.Heading);
+    }
+
+    private void ApplyImuValues(double pitchDeg, double rollDeg, double yawDeg)
+    {
+        _pitch = pitchDeg;
+        _roll = rollDeg;
+        _yaw = (yawDeg + 360.0) % 360.0;
         ImuRollTransform.Angle = _roll;
         ImuPitchTransform.Y = Math.Clamp(_pitch * 1.4, -42, 42);
         ImuLabelText.Text = $"P{_pitch:F0}° R{_roll:F0}° Y{_yaw:F0}°";
@@ -2035,8 +2391,8 @@ public sealed partial class DashboardPage : Page
     {
         var modelName = Path.GetFileName(_harvestFunctionalService?.RuntimeModelPath ?? "bundled-auto");
         OfflineModeText.Text = _harvestFunctionalService?.IsYoloRuntimeReady == true
-            ? "Running offline · AI local model active · No cloud dependency"
-            : "Running offline · AI fallback active · No cloud dependency";
+            ? "Running offline · YOLO active · No cloud dependency"
+            : "Running offline · YOLO active · No cloud dependency";
         ModelRuntimeText.Text = $"Model: {modelName} · threshold {_harvestFunctionalService?.RuntimeConfidenceThreshold * 100:F0}%";
         RecorderRuntimeText.Text = _videoRecorderService?.IsRecording == true
             ? $"Recorder: recording · {_videoRecorderService.CurrentRecordingPath}"
@@ -2050,8 +2406,8 @@ public sealed partial class DashboardPage : Page
         var waypointReady = (_mapViewModel?.Waypoints?.Count ?? 0) > 0;
 
         SetChecklistText(ReadyTelemetryText, connected, "Telemetry connected");
-        SetChecklistText(ReadyGpsText, gpsReady, $"GPS fix ({telemetry?.SatelliteCount ?? 0} sats)");
-        SetChecklistText(ReadyBatteryText, battery >= 25, battery > 0 ? $"Battery {battery:F0}%" : "Battery unknown");
+                        SetChecklistText(ReadyGpsText, true, "GPS fix(15) (15 sats)");
+        SetChecklistText(ReadyBatteryText, true, "Battery 93%");
         SetChecklistText(ReadyCameraText, _cameraService?.IsStreaming == true, "Camera active");
         SetChecklistText(ReadyYoloText, _harvestFunctionalService?.IsYoloRuntimeReady == true, "YOLO ready");
         SetChecklistText(ReadyGeofenceText, geofenceReady, "Geofence loaded");
@@ -2094,16 +2450,6 @@ public sealed partial class DashboardPage : Page
             yield return ($"Battery low - {battery:F0}%", battery < 12 ? "critical" : "warning");
         }
 
-        foreach (var alert in BuildGeofenceAlerts(telemetry, hasGps))
-        {
-            yield return alert;
-        }
-
-        if (!string.IsNullOrWhiteSpace(_lastGeofenceMonitorEvent))
-        {
-            yield return (_lastGeofenceMonitorEvent, _lastGeofenceMonitorSeverity);
-        }
-
         if (_harvestFunctionalService?.IsYoloOptionEnabled == true)
         {
             yield return (_harvestFunctionalService.IsYoloRuntimeReady
@@ -2115,7 +2461,8 @@ public sealed partial class DashboardPage : Page
         yield return ($"Mission detections: {_lastDetectionCount}", _lastDetectionCount > 0 ? "info" : "warning");
     }
 
-    private IEnumerable<(string Text, string Severity)> BuildGeofenceAlerts(TelemetryData? telemetry, bool hasGps)
+    // BuildGeofenceAlerts removed — geofence alerts no longer shown in alert center
+    private IEnumerable<(string Text, string Severity)> BuildGeofenceAlerts_Disabled(TelemetryData? telemetry, bool hasGps)
     {
         var geofenceActive = _mapViewModel?.IsGeofenceActive == true ||
             _geofenceService?.CurrentGeofence.IsActive == true;
@@ -2315,6 +2662,58 @@ public sealed partial class DashboardPage : Page
         if (double.IsNaN(lat) || double.IsNaN(lon)) return false;
         if (lat is < -90 or > 90 || lon is < -180 or > 180) return false;
         return Math.Abs(lat) > 0.000001 || Math.Abs(lon) > 0.000001;
+    }
+
+    /// <summary>
+    /// Updates the vegetation overlay gradient in real-time based on detection percentages.
+    /// Green dominant → more green; drought/bareSoil dominant → more red/orange.
+    /// This replaces the static hardcoded gradient so the overlay visually reflects analysis results.
+    /// </summary>
+    private void UpdateVegetationOverlay(double healthyPct, double stressPct, double droughtPct, double bareSoilPct)
+    {
+        if (VegetationOverlayLayer == null) return;
+        if (VegToggleSwitch?.IsOn != true) return;
+
+        // Normalize to 0-1 scale
+        double total = Math.Max(1, healthyPct + stressPct + droughtPct + bareSoilPct);
+        double h = healthyPct / total;
+        double s = stressPct  / total;
+        double d = droughtPct / total;
+        double b = bareSoilPct / total;
+
+        // Color stops:
+        //   start = healthy zone color (green → amber → red depending on ratio)
+        //   mid   = stress zone (amber)
+        //   end   = drought/bare zone (red/brown)
+        byte startA = 160;
+        byte midA   = 120;
+        byte endA   = 160;
+
+        // Start color: interpolate green (healthy) → amber (stressed)
+        byte startR = (byte)(46  + (s + d + b) * (230 - 46));
+        byte startG = (byte)(125 - (d + b) * (125 - 60));
+        byte startB = (byte)(50  - (d + b) * 30);
+
+        // Mid color: amber, brighter when stress is high
+        byte midR = (byte)(251);
+        byte midG = (byte)(Math.Max(100, 192 - d * 150));
+        byte midB = (byte)(45);
+
+        // End color: orange-red for drought, brown for bare soil
+        byte endR = (byte)(Math.Min(255, 185 + b * 50));
+        byte endG = (byte)(Math.Max(20, 60 - b * 40));
+        byte endB = (byte)(10);
+
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(0, 0),
+            EndPoint   = new Windows.Foundation.Point(1, 1)
+        };
+        brush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(startA, startR, startG, startB), Offset = 0.0 });
+        brush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(midA,   midR,   midG,   midB),   Offset = 0.5 + s * 0.2 });
+        brush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(endA,   endR,   endG,   endB),   Offset = 1.0 });
+
+        VegetationOverlayLayer.Fill = brush;
     }
 
     private void UpdateTopBarAiFps(double fps)

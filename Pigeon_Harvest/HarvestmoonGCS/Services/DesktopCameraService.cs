@@ -310,11 +310,18 @@ public class DesktopCameraService : ICameraService
 
     /// <summary>
     /// Streaming loop for reading frames from camera.
+    /// For file sources (video files), the video is looped automatically.
     /// </summary>
     private void StreamLoop(CancellationToken ct)
     {
         System.Diagnostics.Debug.WriteLine("[DesktopCameraService] Stream loop started");
-        
+
+        // Detect if source is a file (video loop) vs a live camera/stream
+        bool isFileSource = !string.IsNullOrEmpty(_currentSource)
+            && !int.TryParse(_currentSource, out _)
+            && _currentSource != "network"
+            && File.Exists(_currentSource);
+
         int frameCount = 0;
         using var frame = new Mat();
         
@@ -324,6 +331,18 @@ public class DesktopCameraService : ICameraService
             {
                 if (!_capture.Read(frame) || frame.Empty())
                 {
+                    if (isFileSource && !ct.IsCancellationRequested)
+                    {
+                        // End of video file — seek back to frame 0 and loop
+                        System.Diagnostics.Debug.WriteLine("[DesktopCameraService] Video ended, looping back to start");
+                        // Try PosMsec first; if the capture ignores it, fall back to PosFrames
+                        bool seeked = _capture.Set(VideoCaptureProperties.PosMsec, 0);
+                        if (!seeked)
+                            _capture.Set(VideoCaptureProperties.PosFrames, 0);
+                        // Brief pause so the codec can rewind before the next Read()
+                        Thread.Sleep(50);
+                        continue;
+                    }
                     System.Diagnostics.Debug.WriteLine("[DesktopCameraService] Failed to read frame");
                     break;
                 }

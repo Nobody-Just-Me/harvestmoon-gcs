@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<title>Klasifikasi Kesehatan Padi — YDXJ.mp4 · MoonHarvest</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:Georgia,'Times New Roman',serif;
+  font-size:11.5pt;
+  line-height:1.75;
+  color:#1a1a1a;
+  background:#f5f3ee;
+  padding:40px 20px 80px;
+}
+.page{
+  background:#fff;
+  max-width:800px;
+  margin:0 auto;
+  padding:72px 80px;
+  box-shadow:0 2px 24px rgba(0,0,0,.12);
+}
+.cover-meta{font-family:'Courier New',monospace;font-size:8.5pt;letter-spacing:.12em;text-transform:uppercase;color:#888;margin-bottom:20px}
+.cover-title{font-size:22pt;font-weight:700;line-height:1.2;margin-bottom:8px}
+.cover-sub{font-size:12pt;color:#444;margin-bottom:32px}
+.cover-rule{border:none;border-top:2px solid #1a1a1a;margin-bottom:28px}
+.cover-abstract{font-size:10.5pt;color:#333;line-height:1.8;padding:16px 18px;border-left:3px solid #1a1a1a;background:#fafaf8;margin-bottom:20px}
+
+.ann-legend{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 0;padding:14px 16px;background:#fafaf8;border:1px solid #ddd;border-radius:3px}
+.ann-legend-lbl{font-family:'Courier New',monospace;font-size:8.5pt;letter-spacing:.1em;text-transform:uppercase;color:#888;width:100%;margin-bottom:4px}
+.ann-item{display:flex;align-items:center;gap:8px;font-size:10.5pt}
+.ann-dot{width:16px;height:16px;border-radius:3px;flex-shrink:0;border:2px solid rgba(0,0,0,.2)}
+
+.ydxj-bar{margin:20px 0;padding:10px 16px;background:#fffdf4;border:1px solid #e0d48a;border-radius:3px;font-family:'Courier New',monospace;font-size:10pt;color:#7a6800}
+.ydxj-bar strong{color:#5a4a00}
+
+h2{font-size:14pt;font-weight:700;margin:40px 0 6px;letter-spacing:.01em}
+h2 .sec-num{font-family:'Courier New',monospace;font-size:10pt;font-weight:400;color:#888;margin-right:6px}
+h3{font-size:11.5pt;font-weight:700;margin:22px 0 4px}
+.subsec-num{font-family:'Courier New',monospace;font-size:9.5pt;font-weight:400;color:#888;margin-right:4px}
+p{margin-bottom:12px}
+ul,ol{margin:8px 0 12px 24px}
+li{margin-bottom:5px}
+
+.class-block{margin:28px 0;border-left:4px solid var(--cc);padding-left:20px}
+.class-header{display:flex;align-items:baseline;gap:10px;margin-bottom:2px;flex-wrap:wrap}
+.class-num{font-family:'Courier New',monospace;font-size:9pt;color:#888}
+.class-title{font-size:13pt;font-weight:700;color:var(--cc)}
+.class-en{font-size:10pt;color:#666;font-style:italic}
+.ann-tag{font-family:'Courier New',monospace;font-size:9pt;padding:2px 8px;border-radius:2px;color:#fff;font-weight:700}
+.class-body{font-size:11pt;line-height:1.8;margin-bottom:8px}
+
+table{width:100%;border-collapse:collapse;font-size:10.5pt;margin:12px 0 16px}
+th{text-align:left;padding:6px 10px;background:#f0ede6;font-weight:700;font-family:'Courier New',monospace;font-size:9pt;letter-spacing:.06em;border-bottom:2px solid #ccc}
+td{padding:6px 10px;border-bottom:1px solid #e8e4dc;vertical-align:top}
+tr:last-child td{border:none}
+.mono{font-family:'Courier New',monospace;font-size:10pt}
+
+.dual-box{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:12px 0 16px;border:1px solid #ddd;border-radius:3px;overflow:hidden}
+.dual-col{padding:12px 14px}
+.dual-col:first-child{border-right:1px solid #ddd;background:#fafaf8}
+.dual-col:last-child{background:#fffdf4;border-left:3px solid #c8a800}
+.dual-lbl{font-family:'Courier New',monospace;font-size:8.5pt;letter-spacing:.1em;text-transform:uppercase;color:#888;margin-bottom:6px}
+.dual-lbl.ydxj-lbl{color:#7a6800}
+.dual-col ul{margin:0 0 0 14px}
+.dual-col li{font-size:10.5pt;margin-bottom:3px}
+
+.thr-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px}
+.thr{font-family:'Courier New',monospace;font-size:9.5pt;padding:3px 8px;border:1px solid var(--cc);color:var(--cc);border-radius:2px;background:#fff}
+
+.irri-row{display:flex;gap:0;margin:8px 0 4px;border:1px solid #ddd;border-radius:3px;overflow:hidden}
+.irri-seg{flex:1;padding:5px 4px;text-align:center;font-family:'Courier New',monospace;font-size:9pt;font-weight:700}
+
+.ref-list{list-style:none;margin-left:0}
+.ref-list li{padding:6px 0;border-bottom:1px solid #e8e4dc;font-size:10pt;line-height:1.6}
+.ref-list li:last-child{border:none}
+.doi{font-family:'Courier New',monospace;font-size:9pt;color:#555}
+
+.divider{border:none;border-top:1px solid #ddd;margin:36px 0}
+.doc-footer{margin-top:48px;padding-top:16px;border-top:2px solid #1a1a1a;font-size:9pt;color:#888;font-family:'Courier New',monospace;line-height:1.9}
+
+@media(max-width:600px){
+  .dual-box{grid-template-columns:1fr}
+  .dual-col:first-child{border-right:none;border-bottom:1px solid #ddd}
+  .dual-col:last-child{border-left:none;border-top:3px solid #c8a800}
+  .page{padding:40px 28px}
+}
+@media print{
+  body{background:#fff;padding:0}
+  .page{box-shadow:none;padding:48px 60px}
+}
+</style>
+
+<div class="page">
+
+  <div class="cover-meta">MoonHarvest Detection System &nbsp;·&nbsp; Referensi Teknis &nbsp;·&nbsp; v2.0</div>
+  <h1 class="cover-title">Dasar Visual Klasifikasi<br>Kesehatan Tanaman Padi</h1>
+  <p class="cover-sub">Mengapa YOLO menggolongkan area sebagai<br><em>Lush Green, Inconsistent Growth, Soil Issues, atau Bare Soil</em></p>
+  <hr class="cover-rule">
+
+  <div class="cover-abstract">
+    <strong>Abstrak.</strong> Dokumen ini menjelaskan landasan biologis di balik setiap kelas deteksi, dinyatakan dalam ciri visual yang terlihat oleh kamera RGB — warna, tekstur, dan pola kanopi. Semua nilai threshold dan catatan empiris diselaraskan dengan rekaman video <strong>YDXJ.mp4</strong>. Tidak ada indikator multispektral (NDVI, SPAD, Fv/Fm). Standar klasifikasi primer: <strong>IRRI Standard Evaluation System for Rice (SES), 5th edition, 2013</strong>.
+  </div>
+
+  <div class="ann-legend">
+    <div class="ann-legend-lbl">Kode warna anotasi pada YDXJ.mp4</div>
+    <div class="ann-item"><div class="ann-dot" style="background:#2e7d32;border-color:#1b5e20"></div> Hijau = Lush Green</div>
+    <div class="ann-item"><div class="ann-dot" style="background:#f9a825;border-color:#f57f17"></div> Kuning = Inconsistent Growth</div>
+    <div class="ann-item"><div class="ann-dot" style="background:#c62828;border-color:#7f0000"></div> Merah = Soil Issues</div>
+    <div class="ann-item"><div class="ann-dot" style="background:#6a1b9a;border-color:#38006b"></div> Ungu = Disease</div>
+  </div>
+
+  <div class="ydxj-bar">
+    <strong>Karakteristik YDXJ.mp4:</strong> &nbsp;S_mean ≈ 38 (saturasi lebih rendah dari normal) &nbsp;·&nbsp;
+    H dominan: 50–90 (hijau-kuning, kanopi sehat) dan 10–30 (oranye-coklat, area bermasalah) &nbsp;·&nbsp;
+    ExG vegetasi ≥ 0.045
+  </div>
+
+  <hr class="divider">
+
+  <h2><span class="sec-num">1.</span> Standar Klasifikasi Utama</h2>
+  <p>IRRI SES mendefinisikan kondisi tanaman padi berdasarkan pengamatan visual lapangan — bukan alat ukur. Pengamat menilai warna daun, persentase area yang mengering, dan kerapatan kanopi; persis seperti yang dilihat kamera UAV dan dideteksi YOLO.</p>
+  <table>
+    <tr><th>Skor IRRI SES</th><th>Deskripsi visual lapangan</th><th>Kelas MoonHarvest</th></tr>
+    <tr><td class="mono">1</td><td>Kanopi hijau merata, tidak ada gejala</td><td>Lush Green</td></tr>
+    <tr><td class="mono">3</td><td>Sebagian kecil daun pucat/kuning (&lt;25%)</td><td>Inconsistent Growth</td></tr>
+    <tr><td class="mono">5–7</td><td>Sebagian besar daun mengering, layu</td><td>Soil Issues</td></tr>
+    <tr><td class="mono">9 / —</td><td>Seluruh rumpun mati atau tidak ada tanaman</td><td>Bare Soil</td></tr>
+  </table>
+
+  <hr class="divider">
+
+  <h2><span class="sec-num">2.</span> Definisi Setiap Kelas</h2>
+
+  <!-- CLASS 1 -->
+  <div class="class-block" style="--cc:#2e7d32">
+    <div class="class-header">
+      <span class="class-num">KELAS 1</span>
+      <span class="class-title">Lush Green</span>
+      <span class="class-en">Healthy Vegetation</span>
+      <span class="ann-tag" style="background:#2e7d32">ANOTASI: HIJAU</span>
+    </div>
+
+    <h3><span class="subsec-num">2.1</span> Mengapa terlihat hijau merata?</h3>
+    <p class="class-body">Nitrogen cukup → biosintesis klorofil aktif → klorofil menyerap cahaya merah dan biru, memantulkan hijau. Karena seluruh kanopi berfungsi penuh, warna hijau konsisten dari tepi ke tepi petak dan nyaris tidak ada celah tanah yang terlihat dari atas.</p>
+
+    <h3><span class="subsec-num">2.2</span> Ciri visual dan threshold YDXJ</h3>
+    <div class="dual-box">
+      <div class="dual-col">
+        <div class="dual-lbl">Apa yang terlihat YOLO (umum)</div>
+        <ul>
+          <li>Hijau terang hingga hijau tua, merata</li>
+          <li>Tekstur halus–sedang, kanopi rapat</li>
+          <li>Tidak ada patch kuning/coklat di dalamnya</li>
+          <li>Baris tanaman teratur terlihat dari atas</li>
+        </ul>
+      </div>
+      <div class="dual-col">
+        <div class="dual-lbl ydxj-lbl">Pada YDXJ.mp4</div>
+        <ul>
+          <li>H dominan 50–90 (kuning-hijau, bukan hijau murni)</li>
+          <li>S ≥ 35, V = 58–200</li>
+          <li>ExG ≥ 0.045 (ada klorofil aktif)</li>
+          <li>Sedikit lebih pucat dari hijau standar karena S_mean video rendah (≈38)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="thr-row" style="--cc:#2e7d32">
+      <span class="thr">H: 25–92</span>
+      <span class="thr">S ≥ 35</span>
+      <span class="thr">V: 58–200</span>
+      <span class="thr">ExG ≥ 0.045</span>
+    </div>
+    <div class="irri-row">
+      <div class="irri-seg" style="background:#2e7d32;color:#fff">1 ✓</div>
+      <div class="irri-seg" style="background:#e8e4dc;color:#aaa">3</div>
+      <div class="irri-seg" style="background:#e8e4dc;color:#aaa">5</div>
+      <div class="irri-seg" style="background:#e8e4dc;color:#aaa">7</div>
+      <div class="irri-seg" style="background:#e8e4dc;color:#aaa">9</div>
+    </div>
+  </div>
+
+  <!-- CLASS 2 -->
+  <div class="class-block" style="--cc:#b8860b">
+    <div class="class-header">
+      <span class="class-num">KELAS 2</span>
+      <span class="class-title">Inconsistent Growth</span>
+      <span class="class-en">Mild Stress / Chlorosis</span>
+      <span class="ann-tag" style="background:#f9a825;color:#000">ANOTASI: KUNING</span>
+    </div>
+
+    <h3><span class="subsec-num">2.3</span> Mengapa ada patch kuning tidak merata?</h3>
+    <p class="class-body">Defisiensi nitrogen memicu katabolisme klorofil — tanaman membongkar klorofil daun-daun tua untuk mengambil kembali N. Hilangnya klorofil menggeser pantulan cahaya dari hijau ke kuning-pucat. Karena proses ini tidak seragam per titik, dari atas tampak sebagai patchwork hijau-kuning yang tidak teratur. Di YDXJ, area ini tampak sebagai kuning pucat dengan saturasi sangat rendah — bukan kuning cerah, melainkan kuning "pudar".</p>
+
+    <h3><span class="subsec-num">2.4</span> Ciri visual dan threshold YDXJ</h3>
+    <div class="dual-box">
+      <div class="dual-col">
+        <div class="dual-lbl">Apa yang terlihat YOLO (umum)</div>
+        <ul>
+          <li>Campuran hijau-kuning, belang-belang</li>
+          <li>Daun masih tegak, belum layu</li>
+          <li>Tidak ada warna coklat</li>
+          <li>Kanopi ada tapi terbuka sebagian</li>
+        </ul>
+      </div>
+      <div class="dual-col">
+        <div class="dual-lbl ydxj-lbl">Pada YDXJ.mp4</div>
+        <ul>
+          <li>H = 10–55 (oranye hingga kuning-hijau)</li>
+          <li>S sangat rendah: 10–48 (kuning pudar, bukan kuning cerah)</li>
+          <li>V = 68–235</li>
+          <li>ExG &gt; 0.01 (sedikit klorofil masih ada)</li>
+          <li><em>stressed_to_healthy: false</em> — tidak dipaksa jadi hijau</li>
+        </ul>
+      </div>
+    </div>
+    <div class="thr-row" style="--cc:#b8860b">
+      <span class="thr">H: 10–55</span>
+      <span class="thr">S: 10–48</span>
+      <span class="thr">V: 68–235</span>
+      <span class="thr">ExG &gt; 0.01</span>
+    </div>
+    <div class="irri-row">
+      <div class="irri-seg" style="background:#e8e4dc;color:#aaa">1</div>
+      <div class="irri-seg" style="background:#b8860b;color:#fff">3 ✓</div>
+      <div class="irri-seg" style="background:#e8e4dc;color:#aaa">5</div>
+      <div class="irri-seg" style="background:#e8e4dc;color:#aaa">7</div>
+      <div class="irri-seg" style="background:#e8e4dc;color:#aaa">9</div>
+    </div>
+  </div>
+
+  <!-- CLASS 3 -->
+  <div class="class-block" style="--cc:#b22222">
+    <div class="class-header">
+      <span class="class-num">KELAS 3</span>
+      <span class="class-title">Soil Issues</span>
+      <span class="class-en">Drought · Severe Stress · Water Deficit</span>
+      <span class="ann-tag" style="background:#c62828">ANOTASI: MERAH</span>
+    </div>
+
+    <h3><span class="subsec-num">2.5</span> Mengapa area ini terlihat cerah dan pucat?</h3>
+    <p class="class-body">Di YDXJ.mp4, area "Soil Issues" adalah area yang sangat cerah dan hampir tidak berwarna. Ini mencerminkan kondisi di mana stres air parah menyebabkan klorofil hancur permanen — jaringan mati menjadi krem/pucat seperti jerami. Dari atas UAV, hamparan daun kering memantulkan banyak cahaya merata di semua saluran: V (kecerahan) tinggi tapi S (saturasi) sangat rendah. Tidak ada klorofil → ExG mendekati nol.</p>
+
+    <h3><span class="subsec-num">2.6</span> Ciri visual dan threshold YDXJ</h3>
+    <div class="dual-box">
+      <div class="dual-col">
+        <div class="dual-lbl">Apa yang terlihat YOLO (umum)</div>
+        <ul>
+          <li>Warna coklat muda, krem, atau jerami kering</li>
+          <li>Daun menggulung (rolled) — tampak garis tipis dari atas</li>
+          <li>Tekstur kasar, ada celah antar daun</li>
+          <li>Masih ada sisa struktur tanaman (batang/daun)</li>
+        </ul>
+      </div>
+      <div class="dual-col">
+        <div class="dual-lbl ydxj-lbl">Pada YDXJ.mp4</div>
+        <ul>
+          <li>H = 0–180 (hue menyebar, warna "netral")</li>
+          <li>S = 12–42 — sangat rendah, pudar</li>
+          <li>V = 122–248 — cerah (refleksi tinggi)</li>
+          <li>ExG &lt; 0.025 — hampir tidak ada klorofil</li>
+          <li>Pembeda dari bare soil: V lebih tinggi, ada sisa tekstur daun</li>
+        </ul>
+      </div>
+    </div>
+    <div class="thr-row" style="--cc:#b22222">
+      <span class="thr">H: 0–180</span>
+      <span class="thr">S: 12–42</span>
+      <span class="thr">V: 122–248</span>
+      <span class="thr">ExG &lt; 0.025</span>
+    </div>
+    <div class="irri-row">
+      <div class="irri-seg" style="background:#e8e4dc;color:#aaa">1</div>
+      <div class="irri-seg" style="background:#e8e4dc;color:#aaa">3</div>
+      <div class="irri-seg" style="background:#c0392b;color:#fff">5 ✓</div>
+      <div class="irri-seg" style="background:#922b21;color:#fff">7 ✓</div>
+      <div class="irri-seg" style="background:#e8e4dc;color:#aaa">9</div>
+    </div>
+  </div>
+
+  <!-- CLASS 4 -->
+  <div class="class-block" style="--cc:#7d6b4a">
+    <div class="class-header">
+      <span class="class-num">KELAS 4</span>
+      <span class="class-title">Bare Soil / Gap</span>
+      <span class="class-en">No Living Canopy</span>
+    </div>
+
+    <h3><span class="subsec-num">2.7</span> Mengapa area ini kelas tersendiri?</h3>
+    <p class="class-body">Tidak ada jaringan hidup — kamera melihat langsung permukaan tanah atau lumpur sawah. Intervensinya berbeda: bukan manajemen stres, melainkan tanam ulang. Di YDXJ, bare soil memiliki saturasi lebih rendah dari Soil Issues dengan tidak ada struktur tanaman sama sekali.</p>
+
+    <h3><span class="subsec-num">2.8</span> Ciri visual dan threshold YDXJ</h3>
+    <div class="dual-box">
+      <div class="dual-col">
+        <div class="dual-lbl">Apa yang terlihat YOLO (umum)</div>
+        <ul>
+          <li>Abu-abu gelap, coklat lumpur, hitam basah</li>
+          <li>Tidak ada hijau, kuning, atau oranye</li>
+          <li>Permukaan rata: halus (lumpur) atau retak (kering)</li>
+          <li>Tidak ada garis baris tanaman, tidak ada batang</li>
+        </ul>
+      </div>
+      <div class="dual-col">
+        <div class="dual-lbl ydxj-lbl">Pada YDXJ.mp4</div>
+        <ul>
+          <li>S ≤ 22 — paling rendah dari semua kelas</li>
+          <li>V = 102–246</li>
+          <li>Lebih gelap dari Soil Issues</li>
+          <li>ExG ≈ 0 — tidak ada klorofil sama sekali</li>
+        </ul>
+      </div>
+    </div>
+    <div class="thr-row" style="--cc:#7d6b4a">
+      <span class="thr">S ≤ 22</span>
+      <span class="thr">V: 102–246</span>
+      <span class="thr">ExG ≈ 0</span>
+    </div>
+  </div>
+
+  <!-- CLASS 5 -->
+  <div class="class-block" style="--cc:#6a1b9a">
+    <div class="class-header">
+      <span class="class-num">KELAS 5</span>
+      <span class="class-title">Disease</span>
+      <span class="class-en">Leaf Blast / Bacterial Blight</span>
+      <span class="ann-tag" style="background:#6a1b9a">ANOTASI: UNGU</span>
+    </div>
+
+    <h3><span class="subsec-num">2.9</span> Mengapa terlihat sebagai bercak dengan tekstur khas?</h3>
+    <p class="class-body">Infeksi jamur atau bakteri menghasilkan lesi nekrotik — jaringan daun mati setempat dengan batas tajam. Warna lesi coklat-merah hingga abu dengan tepi yang tiba-tiba, sehingga tekstur lokal (local_std) di area ini tinggi. Berbeda dari Soil Issues yang coklatnya merata dan gradasi — lesi penyakit tampak sebagai "bercak tajam" di atas latar hijau.</p>
+
+    <h3><span class="subsec-num">2.10</span> Ciri visual dan threshold YDXJ</h3>
+    <div class="dual-box">
+      <div class="dual-col">
+        <div class="dual-lbl">Apa yang terlihat YOLO (umum)</div>
+        <ul>
+          <li>Bercak coklat-merah di atas latar hijau</li>
+          <li>Tepi bercak tajam dan tiba-tiba</li>
+          <li>Tekstur lokal tinggi — transisi warna pendek</li>
+          <li>Pola bundar atau elips (lesi blast)</li>
+        </ul>
+      </div>
+      <div class="dual-col">
+        <div class="dual-lbl ydxj-lbl">Pada YDXJ.mp4</div>
+        <ul>
+          <li>H = 0–22 (merah) ATAU H = 148–179 (merah-ungu)</li>
+          <li>S = 22–200, V = 45–215</li>
+          <li>Tekstur local_std ≥ 4.0</li>
+          <li>s_hi_bypass = 60: S ≥ 60 langsung dianggap disease</li>
+        </ul>
+      </div>
+    </div>
+    <div class="thr-row" style="--cc:#6a1b9a">
+      <span class="thr">H: 0–22 atau 148–179</span>
+      <span class="thr">S: 22–200</span>
+      <span class="thr">V: 45–215</span>
+      <span class="thr">texture ≥ 4.0</span>
+    </div>
+  </div>
+
+  <!-- CLASS 6 -->
+  <div class="class-block" style="--cc:#795548">
+    <div class="class-header">
+      <span class="class-num">KELAS 6</span>
+      <span class="class-title">Pest Damage</span>
+      <span class="class-en">Mechanical Tissue Damage</span>
+    </div>
+
+    <h3><span class="subsec-num">2.11</span> Mengapa berbeda dari disease?</h3>
+    <p class="class-body">Hama merusak jaringan secara mekanis — robek atau gigit. Hasilnya coklat-oranye tersebar tidak beraturan, bukan pola bundar. Warna lebih ke oranye-coklat (H=22–68) dibanding disease yang merah-ungu — ini juga mencegah tumpang tindih threshold di pipeline.</p>
+
+    <h3><span class="subsec-num">2.12</span> Ciri visual dan threshold YDXJ</h3>
+    <div class="dual-box">
+      <div class="dual-col">
+        <div class="dual-lbl">Apa yang terlihat YOLO (umum)</div>
+        <ul>
+          <li>Coklat-oranye tersebar acak, tidak berpola bundar</li>
+          <li>Tekstur kasar dan tidak beraturan</li>
+          <li>Muncul di tengah area hijau sehat</li>
+        </ul>
+      </div>
+      <div class="dual-col">
+        <div class="dual-lbl ydxj-lbl">Pada YDXJ.mp4</div>
+        <ul>
+          <li>H = 22–68 (tidak tumpang tindih dengan disease H 0–22)</li>
+          <li>S = 18–72, V = 62–218</li>
+          <li>Tekstur local_std ≥ 5.0</li>
+          <li>Diproses setelah disease di pipeline HSV</li>
+        </ul>
+      </div>
+    </div>
+    <div class="thr-row" style="--cc:#795548">
+      <span class="thr">H: 22–68</span>
+      <span class="thr">S: 18–72</span>
+      <span class="thr">V: 62–218</span>
+      <span class="thr">texture ≥ 5.0</span>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <h2><span class="sec-num">3.</span> Tabel Pembeda Antar Kelas (YDXJ)</h2>
+  <table>
+    <tr>
+      <th>Ciri</th>
+      <th>Lush Green</th>
+      <th>Inconsistent</th>
+      <th>Soil Issues</th>
+      <th>Bare Soil</th>
+    </tr>
+    <tr>
+      <td>Warna RGB</td>
+      <td>Hijau merata</td>
+      <td>Hijau + kuning belang</td>
+      <td>Krem / pucat cerah</td>
+      <td>Abu / lumpur gelap</td>
+    </tr>
+    <tr>
+      <td>Saturasi (S)</td>
+      <td class="mono">≥ 35</td>
+      <td class="mono">10–48</td>
+      <td class="mono">12–42</td>
+      <td class="mono">≤ 22</td>
+    </tr>
+    <tr>
+      <td>Kecerahan (V)</td>
+      <td class="mono">58–200</td>
+      <td class="mono">68–235</td>
+      <td class="mono">122–248 (tinggi)</td>
+      <td class="mono">102–246</td>
+    </tr>
+    <tr>
+      <td>ExG</td>
+      <td class="mono">≥ 0.045</td>
+      <td class="mono">&gt; 0.01</td>
+      <td class="mono">&lt; 0.025</td>
+      <td class="mono">≈ 0</td>
+    </tr>
+    <tr>
+      <td>Tekstur kanopi</td>
+      <td>Halus</td>
+      <td>Belang-belang</td>
+      <td>Kasar (daun kering)</td>
+      <td>Halus (tanah)</td>
+    </tr>
+    <tr>
+      <td>Struktur tanaman</td>
+      <td>Ada, rapat</td>
+      <td>Ada, terbuka</td>
+      <td>Ada, layu/kering</td>
+      <td>Tidak ada</td>
+    </tr>
+  </table>
+
+  <hr class="divider">
+
+  <h2><span class="sec-num">4.</span> Referensi</h2>
+  <ul class="ref-list">
+    <li>IRRI. (2013). <em>Standard Evaluation System for Rice (SES), 5th edition.</em><br><span class="doi">ISBN: 978-971-22-0272-8</span></li>
+    <li>Ye, W., et al. (2021). Nitrogen deficiency-induced chloroplast changes in rice. <em>J. Genetic Engineering &amp; Biotechnology, 19</em>, 186.<br><span class="doi">DOI: 10.1186/s43141-021-00275-3</span></li>
+    <li>Gupta, A., et al. (2023). Drought-induced leaf rolling and browning in rice. <em>Frontiers in Plant Science, 14</em>, 1215371.<br><span class="doi">DOI: 10.3389/fpls.2023.1215371</span></li>
+    <li>Nasrallah, A., et al. (2021). UAV RGB imagery for bare soil gap detection in paddy. <em>Land, 10</em>(3), 231.<br><span class="doi">DOI: 10.3390/land10030231</span></li>
+    <li>Lu, J., et al. (2022). Deep learning rice disease detection using RGB UAV imagery. <em>Remote Sensing, 14</em>(5), 1251.<br><span class="doi">DOI: 10.3390/rs14051251</span></li>
+    <li>Remote Sensing MDPI 2025 — pest texture discriminator (local_std &gt; 15).<br><span class="doi">PMC12349311</span></li>
+    <li>Hamuda, E., et al. (2016). Survey of RGB image-based plant segmentation. <em>Computers and Electronics in Agriculture, 125</em>, 184–199.<br><span class="doi">DOI: 10.1016/j.compag.2016.04.024</span></li>
+  </ul>
+
+  <div class="doc-footer">
+    MoonHarvest Detection v2 &nbsp;·&nbsp; HSV+YOLO Fusion Pipeline<br>
+    Video referensi: YDXJ.mp4 &nbsp;·&nbsp; Config: YDXJ_config.json &nbsp;·&nbsp; S_mean ≈ 38<br>
+    Semua threshold berbasis kamera RGB — tidak memerlukan sensor multispektral<br>
+    Standar utama: IRRI SES 5th ed. 2013
+  </div>
+
+</div>

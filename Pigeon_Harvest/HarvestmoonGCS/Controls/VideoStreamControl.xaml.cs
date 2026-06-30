@@ -156,7 +156,6 @@ public sealed partial class VideoStreamControl : UserControl
         DispatcherQueue.TryEnqueue(() =>
         {
             VideoCanvas.Invalidate();
-            HideOverlay();
         });
     }
 
@@ -230,13 +229,13 @@ public sealed partial class VideoStreamControl : UserControl
     private void OnPaintSurface(object sender, SKPaintSurfaceEventArgs e)
     {
         var canvas = e.Surface.Canvas;
-        canvas.Clear(SKColors.Black);
+        canvas.Clear(SKColors.Transparent);
 
         lock (_frameLock)
         {
             if (_currentFrame != null)
             {
-                // Calculate scaling to fit the canvas while maintaining aspect ratio
+                // Uniform: pertahankan aspect ratio asli, center di canvas
                 var canvasWidth = e.Info.Width;
                 var canvasHeight = e.Info.Height;
                 var frameWidth = _currentFrame.Width;
@@ -244,7 +243,7 @@ public sealed partial class VideoStreamControl : UserControl
 
                 var scaleX = (float)canvasWidth / frameWidth;
                 var scaleY = (float)canvasHeight / frameHeight;
-                var scale = Math.Min(scaleX, scaleY);
+                var scale = Math.Min(scaleX, scaleY); // Uniform — no distortion
 
                 var scaledWidth = frameWidth * scale;
                 var scaledHeight = frameHeight * scale;
@@ -265,6 +264,46 @@ public sealed partial class VideoStreamControl : UserControl
 
                 DrawDetectionOverlays(canvas, destRect, frameWidth, frameHeight);
             }
+        }
+    }
+
+    /// <summary>
+    /// Draw detection overlays after UniformToFill crop.
+    /// srcRect = area of original frame that was drawn; coordinates remapped accordingly.
+    /// </summary>
+    private void DrawDetectionOverlaysCropped(SKCanvas canvas, SKRect destRect, SKRect srcRect, int frameWidth, int frameHeight)
+    {
+        if (_detectionOverlays.Count == 0 || frameWidth <= 0 || frameHeight <= 0)
+            return;
+
+        // Scale from srcRect pixel space to destRect canvas space
+        var scaleX = destRect.Width / srcRect.Width;
+        var scaleY = destRect.Height / srcRect.Height;
+
+        using var boxPaint = new SKPaint { Color = SKColors.LimeGreen, Style = SKPaintStyle.Stroke, StrokeWidth = 3, IsAntialias = true };
+        using var labelBgPaint = new SKPaint { Color = new SKColor(0, 0, 0, 190), Style = SKPaintStyle.Fill };
+        using var textPaint = new SKPaint { Color = SKColors.White, TextSize = 18, IsAntialias = true };
+
+        foreach (var detection in _detectionOverlays)
+        {
+            // Remap from full-frame coords to cropped canvas coords
+            var left   = (detection.X - srcRect.Left) * scaleX + destRect.Left;
+            var top    = (detection.Y - srcRect.Top)  * scaleY + destRect.Top;
+            var right  = left + detection.Width  * scaleX;
+            var bottom = top  + detection.Height * scaleY;
+
+            // Skip boxes completely outside visible area
+            if (right < destRect.Left || left > destRect.Right || bottom < destRect.Top || top > destRect.Bottom)
+                continue;
+
+            var rect = new SKRect(left, top, right, bottom);
+            canvas.DrawRect(rect, boxPaint);
+
+            var label = $"{detection.Label} {detection.Confidence:P0}";
+            var labelWidth = textPaint.MeasureText(label) + 10;
+            var labelRect = new SKRect(left, Math.Max(destRect.Top, top - 24), left + labelWidth, Math.Max(destRect.Top + 22, top));
+            canvas.DrawRect(labelRect, labelBgPaint);
+            canvas.DrawText(label, left + 5, labelRect.Bottom - 5, textPaint);
         }
     }
 

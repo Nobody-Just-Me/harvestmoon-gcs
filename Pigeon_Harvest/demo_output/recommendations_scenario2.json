@@ -1,0 +1,277 @@
+{
+  "summary": {
+    "field_health_index": 73.525,
+    "field_status": "Good",
+    "dominant_condition": "Good Field Health with Minor Stress",
+    "urgency_level": "moderate",
+    "field_area_ha": 2.5
+  },
+  "crop_distribution": {
+    "healthy_crop": 42.3,
+    "stressed_crop": 38.5,
+    "drought_stress": 12.2,
+    "bare_soil": 7.000000000000001
+  },
+  "primary_diagnosis": {
+    "condition": "Good Field Health with Minor Stress",
+    "urgency": "moderate",
+    "risk_factors": [
+      "Stress may spread to healthy areas",
+      "Yield reduction risk 5-15%",
+      "Window for intervention is narrowing"
+    ],
+    "follow_up": "Monitor field regularly"
+  },
+  "recommended_actions": [
+    {
+      "action": "Investigate Stress Zones",
+      "description": "Identify and address areas showing early stress symptoms",
+      "priority": 1,
+      "timing": "within_3_days",
+      "evidence": "Hassanein2018, Yu2022",
+      "details": [
+        "Use UAV imagery to map stress distribution",
+        "Ground-truth stressed areas to identify cause",
+        "Check for irrigation uniformity issues",
+        "Assess nutrient deficiency symptoms"
+      ],
+      "urgency_score": 0.2857142857142857,
+      "deadline": "Wednesday, July 01 by 12:41 PM",
+      "growth_stage": "vegetative"
+    },
+    {
+      "action": "Enhance Monitoring Frequency",
+      "description": "Increase surveillance to prevent stress escalation",
+      "priority": 2,
+      "timing": "every_3_days",
+      "evidence": "Zhao2025, Logavitool2025",
+      "details": [
+        "Conduct UAV flights every 3 days",
+        "Focus on stressed zones for detailed inspection",
+        "Monitor stress progression rate"
+      ],
+      "urgency_score": 0.14285714285714285,
+      "deadline": "Wednesday, July 01 by 12:41 PM",
+      "growth_stage": "vegetative"
+    }
+  ],
+  "action_timeline": {
+    "immediate": [],
+    "today": [],
+    "this_week": [
+      {
+        "action": "Investigate Stress Zones",
+        "description": "Identify and address areas showing early stress symptoms",
+        "priority": 1,
+        "timing": "within_3_days",
+        "evidence": "Hassanein2018, Yu2022",
+        "details": [
+          "Use UAV imagery to map stress distribution",
+          "Ground-truth stressed areas to identify cause",
+          "Check for irrigation uniformity issues",
+          "Assess nutrient deficiency symptoms"
+        ],
+        "urgency_score": 0.2857142857142857,
+        "deadline": "Wednesday, July 01 by 12:41 PM",
+        "growth_stage": "vegetative"
+      },
+      {
+        "action": "Enhance Monitoring Frequency",
+        "description": "Increase surveillance to prevent stress escalation",
+        "priority": 2,
+        "timing": "every_3_days",
+        "evidence": "Zhao2025, Logavitool2025",
+        "details": [
+          "Conduct UAV flights every 3 days",
+          "Focus on stressed zones for detailed inspection",
+          "Monitor stress progression rate"
+        ],
+        "urgency_score": 0.14285714285714285,
+        "deadline": "Wednesday, July 01 by 12:41 PM",
+        "growth_stage": "vegetative"
+      }
+    ],
+    "this_month": [],
+    "planning": []
+  },
+  "cost_estimate": {
+    "total_usd": 87.5,
+    "per_hectare": 35.0,
+    "breakdown": {
+      "Investigate Stress Zones": 37.5,
+      "Enhance Monitoring Frequency": 50.0
+    },
+    "note": "Estimates only. Actual costs vary by region, suppliers, and market conditions."
+  },
+  "growth_stage_guidance": {
+    "stage": "Transplanting to Panicle Initiation (0-50 DAT)",
+    "key_focus": [
+      "Establish uniform crop stand",
+      "Promote healthy tillering",
+      "Build disease/pest resistance"
+    ],
+    "fertilization": {
+      "timing": "Basal (0 DAT) + Tillering (15-20 DAT)",
+      "rates": "60-80 kg N/ha total, 40% basal + 30% tillering + 30% panicle initiation",
+      "evidence": "Zhang2023, Bouguettaya2022"
+    },
+    "irrigation": {
+      "strategy": "Maintain shallow standing water (2-5cm) for establishment",
+      "notes": "Can implement AWD after 20 DAT to save water while maintaining yield",
+      "evidence": "Bouguettaya2022"
+    },
+    "pest_disease": {
+      "priority": "Stem borers, leaf folder, blast disease",
+      "monitoring": "Weekly UAV flights + ground scouting",
+      "evidence": "Zhao2025, Mahmood2025"
+    }
+  },
+  "ipm_guidelines": {
+    "general_principles": [
+      "Use UAV monitoring as primary surveillance tool (Zhao2025)",
+      "Implement economic threshold-based interventions (Mahmood2025)",
+      "Prioritize cultural and biological control before chemical (Logavitool2025)",
+      "Rotate pesticide modes of action to prevent resistance",
+      "Always follow label rates and pre-harvest intervals"
+    ],
+    "note": "Stress detected. Review common pest and disease symptoms below.",
+    "common_pests": {
+      "stem_borer": {
+        "symptoms": "Dead hearts, white heads, stem tunneling",
+        "threshold": "5-10% infestation at vegetative stage",
+        "management": [
+          "Remove and destroy infested stems",
+          "Apply Trichogramma egg parasitoids (biological)",
+          "Chemical: Cartap hydrochloride or chlorantraniliprole",
+          "Timing: Early infestation, before larvae bore into stem"
+        ],
+        "evidence": "Zhao2025"
+      },
+      "brown_planthopper": {
+        "symptoms": "Hopper burn, yellowing, plant wilting",
+        "threshold": "5-10 insects per hill at tillering",
+        "management": [
+          "Avoid excessive nitrogen fertilization",
+          "Conserve natural enemies (spiders, mirid bugs)",
+          "Chemical: Imidacloprid or dinotefuran",
+          "Apply at base of plant for nymph contact"
+        ],
+        "evidence": "Mahmood2025"
+      },
+      "leaf_folder": {
+        "symptoms": "Folded leaves with webbing, feeding damage",
+        "threshold": "2-3 damaged leaves per hill",
+        "management": [
+          "Remove and destroy affected leaves",
+          "Biological: Bacillus thuringiensis (Bt)",
+          "Chemical: Chlorpyrifos or lambda-cyhalothrin"
+        ],
+        "evidence": "Zhao2025"
+      }
+    },
+    "common_diseases": {
+      "bacterial_leaf_blight": {
+        "symptoms": "Yellow to white lesions with wavy margins, systemic wilting",
+        "favorable_conditions": "High humidity, warm temperatures, wounds from wind/insects",
+        "management": [
+          "Plant resistant varieties if available",
+          "Avoid excessive nitrogen and maintain balanced nutrition",
+          "Copper-based bactericides at early symptom detection",
+          "Remove infected plant debris",
+          "Avoid overhead irrigation"
+        ],
+        "evidence": "Logavitool2025"
+      },
+      "blast": {
+        "symptoms": "Diamond-shaped lesions on leaves, neck rot, panicle blast",
+        "favorable_conditions": "High humidity, moderate temperatures (20-30°C), dense canopy",
+        "management": [
+          "Plant resistant varieties",
+          "Balanced fertilization (avoid excess N)",
+          "Fungicides: Tricyclazole, azoxystrobin (preventive and curative)",
+          "Apply at early symptom appearance and before flowering",
+          "Improve air circulation (proper spacing)"
+        ],
+        "evidence": "Mahmood2025, Zhao2025"
+      },
+      "sheath_blight": {
+        "symptoms": "Oval lesions on leaf sheaths near water line, greenish-gray with brown borders",
+        "favorable_conditions": "High humidity, dense planting, high nitrogen",
+        "management": [
+          "Avoid excessive nitrogen fertilization",
+          "Drain field periodically to reduce humidity",
+          "Fungicides: Validamycin, hexaconazole",
+          "Apply at early tillering and booting stage",
+          "Biological: Trichoderma spp."
+        ],
+        "evidence": "Mahmood2025"
+      }
+    }
+  },
+  "evidence_base": {
+    "note": "All recommendations are based on peer-reviewed international journals",
+    "primary_references": [
+      "Hassanein et al. (2018) - Sensors, MDPI",
+      "Zhao et al. (2025) - Sensors, MDPI",
+      "Mahmood et al. (2025) - Scientific Reports, Nature",
+      "Logavitool et al. (2025) - PLOS ONE",
+      "Zhang et al. (2023) - Plant Phenomics",
+      "Bouguettaya et al. (2022) - Neural Computing and Applications"
+    ],
+    "full_references": {
+      "Hassanein2018": {
+        "title": "A New Vegetation Segmentation Approach for Cropped Fields Based on Threshold Detection from Hue Histograms",
+        "authors": "Hassanein, M., Lari, Z., El-Sheimy, N.",
+        "journal": "Sensors, 18(5), 1474. MDPI",
+        "year": 2018,
+        "doi": "10.3390/s18051474",
+        "focus": "UAV-based vegetation monitoring"
+      },
+      "Zhao2025": {
+        "title": "Rice Canopy Disease and Pest Identification Based on Improved YOLOv5 and UAV Images",
+        "authors": "Zhao et al.",
+        "journal": "Sensors, 25(12). MDPI",
+        "year": 2025,
+        "focus": "Rice disease detection from UAV"
+      },
+      "Mahmood2025": {
+        "title": "Deep Learning Framework Using UAV Imagery for Multi-Disease Detection in Cereal Crops",
+        "authors": "Mahmood, A. et al.",
+        "journal": "Scientific Reports, 15. Nature",
+        "year": 2025,
+        "focus": "Multi-disease detection and management"
+      },
+      "Logavitool2025": {
+        "title": "Field-Scale Detection of Bacterial Leaf Blight in Rice Based on UAV Multispectral Imaging and Deep Learning Frameworks",
+        "authors": "Logavitool, T. et al.",
+        "journal": "PLOS ONE, 20(1)",
+        "year": 2025,
+        "doi": "10.1371/journal.pone.0314535",
+        "focus": "Rice bacterial leaf blight management"
+      },
+      "Yu2022": {
+        "title": "Research on Weed Identification Method in Rice Fields Based on UAV Remote Sensing",
+        "authors": "Yu, F. et al.",
+        "journal": "Frontiers in Plant Science, 13",
+        "year": 2022,
+        "focus": "Weed management in rice fields"
+      },
+      "Zhang2023": {
+        "title": "Lightweight Deep Learning Models for High-Precision Rice Seedling Segmentation from UAV-Based Multispectral Images",
+        "authors": "Zhang, P. et al.",
+        "journal": "Plant Phenomics, 5",
+        "year": 2023,
+        "focus": "Rice growth monitoring and management"
+      },
+      "Bouguettaya2022": {
+        "title": "Deep Learning Techniques to Classify Agricultural Crops Through UAV Imagery: A Review",
+        "authors": "Bouguettaya, A. et al.",
+        "journal": "Neural Computing and Applications, 34. Springer",
+        "year": 2022,
+        "focus": "Precision agriculture best practices"
+      }
+    },
+    "methodology": "Recommendations based on UAV-based crop health monitoring combined with agronomic best practices from 2018-2026 peer-reviewed literature"
+  },
+  "generated_at": "2026-06-28 12:41:12"
+}

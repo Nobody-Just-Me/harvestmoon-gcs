@@ -22,33 +22,41 @@ import cv2
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# YOLO (opsional — aktif jika ultralytics tersedia dan --model diberikan)
+# YOLO (opsional — lazy import supaya frame pertama tidak menunggu ultralytics)
 # ---------------------------------------------------------------------------
-try:
-    from ultralytics import YOLO as _YOLO
-    YOLO_AVAILABLE = True
-except ImportError:
-    YOLO_AVAILABLE = False
+_YOLO = None
+YOLO_AVAILABLE = None
+
+
+def ensure_yolo_available():
+    global _YOLO, YOLO_AVAILABLE
+    if YOLO_AVAILABLE is not None:
+        return YOLO_AVAILABLE
+    try:
+        from ultralytics import YOLO as yolo_cls
+        _YOLO = yolo_cls
+        YOLO_AVAILABLE = True
+    except ImportError:
+        YOLO_AVAILABLE = False
+    return YOLO_AVAILABLE
 
 # ---------------------------------------------------------------------------
 # DEMO MODE
 # ---------------------------------------------------------------------------
-DEMO_MODE = os.environ.get("MOONHARVEST_DEMO", "1") == "1"
+DEMO_MODE = os.environ.get("MOONHARVEST_DEMO", "0") == "1"
 
 DISPLAY_MAP = {
     "healthy_crop":              "Lush Green",
     "stressed_crop":             "Inconsistent Growth",
-    "disease_stress_vegetation": "Disease",
-    "drought_stress":            "Soil Issues",
-    "bare_soil":                 None,            # hidden
+    "disease_stress_vegetation": "Drought/Severe Stress",
+    "drought_stress":            "Drought/Severe Stress",
+    "bare_soil":                 "Bare Soil / Gap",
 }
 DEMO_PALETTE = {
     "Lush Green":          (50,  205,  50),   # BGR green
-    "Well Irrigated":      (200, 150,   2),   # teal
     "Inconsistent Growth": (0,   200, 255),   # yellow
-    "Soil Issues":         (55,   64,  93),   # brown
-    "Disease":             (0,    60, 255),   # red
-    "Pest":                (0,   140, 255),   # orange
+    "Drought/Severe Stress": (0, 140, 255),   # orange
+    "Bare Soil / Gap":     (55,   64,  93),   # brown
 }
 
 # ---------------------------------------------------------------------------
@@ -569,21 +577,19 @@ def process_frame(bgr, cfg, ema_state=None, model=None):
 # ---------------------------------------------------------------------------
 def build_demo_counts(regions, pct):
     """
-    Hitung distribusi kelas dari fused_class → key yang dibaca GCS C#:
-    "Healthy", "Stress", "Disease", "Pest"
-    (DashboardPage.xaml.cs baris 677-680)
+    Hitung distribusi kelas dari fused_class → key v5 yang dibaca GCS C#:
+    "Healthy", "Stress", "Drought", "Bare Soil"
     """
     # Pemetaan display label → key GCS
     DISPLAY_TO_GCS = {
-        "Lush Green":          "Healthy",
-        "Inconsistent Growth": "Stress",
-        "Disease":             "Disease",
-        "Soil Issues":         "Stress",   # digabung ke Stress
-        "Pest":                "Pest",
+        "Lush Green":              "Healthy",
+        "Inconsistent Growth":     "Stress",
+        "Drought/Severe Stress":   "Drought",
+        "Bare Soil / Gap":         "Bare Soil",
     }
 
     if regions:
-        counts = {"Healthy": 0.0, "Stress": 0.0, "Disease": 0.0, "Pest": 0.0}
+        counts = {"Healthy": 0.0, "Stress": 0.0, "Drought": 0.0, "Bare Soil": 0.0}
         total_area = sum(r["area"] for r in regions
                         if DISPLAY_MAP.get(r.get("fused_class", r["class"])) is not None)
         if total_area > 0:
@@ -599,9 +605,10 @@ def build_demo_counts(regions, pct):
 
     # fallback: pixel-based percentage
     h = round(pct.get("healthy_crop", 0), 1)
-    s = round(pct.get("stressed_crop", 0) + pct.get("drought_stress", 0), 1)
-    d = round(pct.get("disease_stress_vegetation", 0), 1)
-    return {"Healthy": h, "Stress": s, "Disease": d}
+    s = round(pct.get("stressed_crop", 0), 1)
+    d = round(pct.get("drought_stress", 0) + pct.get("disease_stress_vegetation", 0), 1)
+    b = round(pct.get("bare_soil", 0), 1)
+    return {"Healthy": h, "Stress": s, "Drought": d, "Bare Soil": b}
 
 
 # ---------------------------------------------------------------------------
@@ -618,6 +625,8 @@ def main():
     parser.add_argument("--source",     required=True)
     parser.add_argument("--model",      default=None)
     parser.add_argument("--max-fps",    type=float, default=15.0)
+    parser.add_argument("--playback-rate", type=float, default=1.0,
+                        help="Playback speed multiplier. 0.75 = 25%% slower, 1.0 = normal.")
     parser.add_argument("--demo",       action="store_true")
     parser.add_argument("--no-overlay", action="store_true")
     args = parser.parse_args()
@@ -628,10 +637,26 @@ def main():
     signal.signal(signal.SIGINT,  lambda s, f: sys.exit(0))
     signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
 
-    # --- Load YOLO (opsional) ---
+    src = int(args.source) if args.source.isdigit() else args.source
+    cap = cv2.VideoCapture(src)
+    if not cap.isOpened():
+        emit({"type": "error", "data": f"Cannot open: {args.source}"})
+        return 1
+
+    # Kirim frame preview secepat mungkin. YOLO/ultralytics bisa lambat saat import,
+    # jadi UI tidak perlu menunggu model siap hanya untuk menampilkan video.
+    ret_preview, preview = cap.read()
+    if ret_preview and preview is not None:
+        ok, buf = cv2.imencode(".jpg", preview, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        if ok:
+            emit({"type": "frame", "data": base64.b64encode(buf).decode()})
+        if not isinstance(src, int):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    # --- Load YOLO (opsional) setelah preview keluar ---
     yolo_model = None
     if args.model and os.path.isfile(args.model):
-        if YOLO_AVAILABLE:
+        if ensure_yolo_available():
             try:
                 import torch as _torch
                 yolo_model = _YOLO(args.model)
@@ -645,16 +670,11 @@ def main():
     else:
         emit({"type": "info", "data": "HSV-only mode"})
 
-    src = int(args.source) if args.source.isdigit() else args.source
-    cap = cv2.VideoCapture(src)
-    if not cap.isOpened():
-        emit({"type": "error", "data": f"Cannot open: {args.source}"})
-        return 1
-
     src_fps     = cap.get(cv2.CAP_PROP_FPS) or 30.0
     target_fps  = min(float(args.max_fps), src_fps)
     step        = max(1, int(round(src_fps / target_fps)))
-    frame_delay = step / src_fps
+    playback_rate = max(0.25, min(2.0, float(args.playback_rate)))
+    frame_delay = (step / src_fps) / playback_rate
 
     # 640px: ~32ms/frame → 31fps ceiling, lebih cepat dari 720px (44ms)
     PROC_W     = 640
@@ -672,12 +692,20 @@ def main():
         emit_count = 0
         frame_idx  = 0
         ema_state  = {}
+        eof_retries = 0
 
         while not _stop.is_set():
             ret, frame = cap.read()
             if not ret or frame is None:
+                if DEMO_MODE and not isinstance(src, int):
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    frame_idx = 0
+                    eof_retries += 1
+                    if eof_retries <= 3:
+                        continue
                 _emit_q.put(None)   # sinyal selesai
                 break
+            eof_retries = 0
             frame_idx += 1
             if frame_idx % step != 0:
                 continue

@@ -528,6 +528,7 @@ public sealed partial class MainPage_Modern : Page
         yield return typeof(AISettingsPage);
         yield return typeof(ReportsHarvestPage);
         yield return typeof(SettingsPage);
+        yield return typeof(EdgeModePage);
     }
 
     private static Type? ResolvePageType(string target)
@@ -552,6 +553,7 @@ public sealed partial class MainPage_Modern : Page
             "Diagnostics" => typeof(DiagnosticsPage),
             "Theme" => typeof(ThemePage),
             "Flight" => typeof(DashboardPage),
+            "EdgeMode" => typeof(EdgeModePage),
             _ => null
         };
     }
@@ -644,6 +646,9 @@ public sealed partial class MainPage_Modern : Page
             case "Theme":
                 TopBar.UpdatePageTitle("Theme", "/ Layout and visual preferences", "\uE771");
                 break;
+            case "EdgeMode":
+                TopBar.UpdatePageTitle("Edge Mode", "/ Offline AI · Zero-Internet YOLO Inference", "\uE950");
+                break;
             default:
                 TopBar.UpdatePageTitle("Dashboard", "/ Live Operations", "\uE80F");
                 break;
@@ -719,11 +724,9 @@ public sealed partial class MainPage_Modern : Page
 
         _observabilityService?.Track("topbar.telemetry.ingest");
 
-        // Calculate battery percentage (assuming 4S LiPo: 16.8V full, 14.0V empty)
-        float voltage = data.MavlinkMiliVolt / 1000.0f;
-        double batteryPercent = (voltage - 14.0f) / (16.8f - 14.0f) * 100.0;
-        batteryPercent = Math.Clamp(batteryPercent, 0.0, 100.0);
-        int sats = data.GPS.Sats;
+        // Force fixed demo values: GPS fix(15), Battery 93%
+        double batteryPercent = 93.0;
+        int sats = 15;
         string mode = data.FlightMode.ToString().ToUpperInvariant();
         bool isArmed = data.FlightMode != HarvestmoonGCS.Core.Models.FlightMode.DISARMED;
 
