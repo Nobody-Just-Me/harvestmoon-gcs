@@ -301,6 +301,11 @@ public sealed partial class MainPage_Modern : Page
             ObservabilityOverlay.Visibility = Visibility.Collapsed;
             _observabilityOverlayTimer?.Stop();
         }
+
+        // --- Android tablet responsive: icon-only sidebar + compact top bar ---
+        bool isAndroid = IsAndroidDevice();
+        Sidebar.ApplyCompactMode(isAndroid);
+        TopBar.ApplyTabletCompactMode(isAndroid);
     }
 
     private static bool IsAndroidPortrait()

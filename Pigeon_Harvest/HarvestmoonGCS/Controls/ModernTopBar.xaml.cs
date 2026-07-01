@@ -199,8 +199,67 @@ public sealed partial class ModernTopBar : UserControl
     public void UpdatePageTitle(string title, string subtitle, string iconGlyph)
     {
         PageTitle.Text = title;
+        // In tablet compact mode the subtitle is hidden, but we store the value
+        // so it can be restored if the mode changes.
         PageSubtitle.Text = subtitle;
         PageIcon.Glyph = iconGlyph;
+    }
+
+    /// <summary>
+    /// Applies a compact layout suited for the Realme Pad Mini (1340×800) and other
+    /// Android tablets where the top bar needs to fit in less vertical/horizontal space.
+    /// Desktop layout is unaffected — this is only called when IsAndroidDevice() is true.
+    /// </summary>
+    public void ApplyTabletCompactMode(bool compact)
+    {
+        // Reduce top bar height and internal padding
+        if (Content is Border rootBorder)
+        {
+            rootBorder.Height  = compact ? 44 : 56;
+            rootBorder.Padding = compact ? new Thickness(10, 0) : new Thickness(16, 0);
+        }
+
+        // Shrink page title font
+        if (PageTitle != null)    PageTitle.FontSize    = compact ? 12 : 14;
+        if (PageSubtitle != null) PageSubtitle.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        if (PageIcon != null)     PageIcon.FontSize     = compact ? 14 : 16;
+
+        // Compact status pills — smaller padding and font
+        var pillPadding  = compact ? new Thickness(6, 4) : new Thickness(10, 6);
+        var pillFontSize = compact ? 10.0 : 11.0;
+        SetPillCompact(WifiPill,    WifiLabel,    pillPadding, pillFontSize);
+        SetPillCompact(BatteryPill, BatteryText,  pillPadding, pillFontSize);
+        SetPillCompact(GpsPill,     GpsText,      pillPadding, pillFontSize);
+
+        // Compact action buttons
+        var btnPadding = compact ? new Thickness(7, 5) : new Thickness(10, 8);
+        if (RTLButton != null)     RTLButton.Padding     = btnPadding;
+        if (MissionButton != null) MissionButton.Padding = btnPadding;
+
+        // Shrink button font sizes
+        SetButtonLabelFontSize(RTLButton,     compact ? 11.0 : 12.0);
+        SetButtonLabelFontSize(MissionButton, compact ? 11.0 : 12.0);
+
+        // Connect button
+        if (ConnectButton != null) ConnectButton.Padding = compact ? new Thickness(8, 5, 10, 5) : new Thickness(12, 8, 16, 8);
+        if (ConnectionLabel != null) ConnectionLabel.FontSize = compact ? 10.0 : 11.0;
+    }
+
+    private static void SetPillCompact(Border? pill, TextBlock? label, Thickness padding, double fontSize)
+    {
+        if (pill  != null) pill.Padding  = padding;
+        if (label != null) label.FontSize = fontSize;
+    }
+
+    private static void SetButtonLabelFontSize(Button? btn, double size)
+    {
+        if (btn?.Content is StackPanel sp)
+        {
+            foreach (var child in sp.Children)
+            {
+                if (child is TextBlock tb) tb.FontSize = size;
+            }
+        }
     }
 
     private void UpdateConnectionVisuals()

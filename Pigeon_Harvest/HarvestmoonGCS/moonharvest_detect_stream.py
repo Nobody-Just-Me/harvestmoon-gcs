@@ -1,634 +1,622 @@
 #!/usr/bin/env python3
 """
-MoonHarvest Detection Stream
-==============================
-Streaming JSON protocol untuk dashboard — HSV full pipeline + YOLO per-region fusion
-(identik dengan moonharvest_fusion.py di test_program, diadaptasi untuk streaming).
-
-Pipeline:
-  Frame → HSV classify_pixels → reassign_stressed_to_healthy → extract_regions
-        → [YOLO classify per-region patch] → fuse_region (adaptive confidence-gated)
-        → draw bounding boxes + HSV overlay → base64 JPEG → JSON stdout
+MoonHarvest Detection Stream — HSV-First v7c
+=============================================
+Pipeline: WB+CLAHE → HSV segmentasi (dikalibrasi untuk sawah 15 hari) →
+          connected-component regions → ONNX refinement → YOLO-det fusion →
+          NMS v7c (per_cls=0.20, cross=0.30, min_area=600) → FHI → JSON stdout
 
 Protocol output (stdout):
   {"type": "frame",     "data": "<base64_jpeg>"}
-  {"type": "detection", "data": {"count": N, "summary": "...", "classes": {...}}}
-  {"type": "end",       "data": "Video ended"}
+  {"type": "detection", "data": {"count": N, "summary": "...", "classes": {...}, "fhi": F}}
+  {"type": "end",       "data": "Video stream ended"}
   {"type": "error",     "data": "..."}
+  {"type": "info",      "data": "..."}
+
+GCS class keys: Healthy / Stress / Drought / Bare Soil
 """
 
 import argparse, base64, json, os, queue, signal, sys, threading, time
 import cv2
 import numpy as np
+from pathlib import Path
+from collections import deque
 
-# ---------------------------------------------------------------------------
-# YOLO (opsional — lazy import supaya frame pertama tidak menunggu ultralytics)
-# ---------------------------------------------------------------------------
-_YOLO = None
-YOLO_AVAILABLE = None
-
-
-def ensure_yolo_available():
-    global _YOLO, YOLO_AVAILABLE
-    if YOLO_AVAILABLE is not None:
-        return YOLO_AVAILABLE
-    try:
-        from ultralytics import YOLO as yolo_cls
-        _YOLO = yolo_cls
-        YOLO_AVAILABLE = True
-    except ImportError:
-        YOLO_AVAILABLE = False
-    return YOLO_AVAILABLE
-
-# ---------------------------------------------------------------------------
-# DEMO MODE
-# ---------------------------------------------------------------------------
 DEMO_MODE = os.environ.get("MOONHARVEST_DEMO", "0") == "1"
 
-DISPLAY_MAP = {
-    "healthy_crop":              "Lush Green",
-    "stressed_crop":             "Inconsistent Growth",
-    "disease_stress_vegetation": "Drought/Severe Stress",
-    "drought_stress":            "Drought/Severe Stress",
-    "bare_soil":                 "Bare Soil / Gap",
-}
-DEMO_PALETTE = {
-    "Lush Green":          (50,  205,  50),   # BGR green
-    "Inconsistent Growth": (0,   200, 255),   # yellow
-    "Drought/Severe Stress": (0, 140, 255),   # orange
-    "Bare Soil / Gap":     (55,   64,  93),   # brown
+# Mapping display label → GCS key (read by C# EdgeModePage / DashboardPage)
+DISPLAY_TO_GCS = {
+    "Lush Green":              "Healthy",
+    "Inconsistent Growth":     "Stress",
+    "Drought / Severe Stress": "Drought",
+    "Bare Soil / Gap":         "Bare Soil",
 }
 
-# ---------------------------------------------------------------------------
-# KONSTANTA KELAS
-# ---------------------------------------------------------------------------
-CLASSES = ["healthy_crop", "stressed_crop", "disease_stress_vegetation",
-           "drought_stress", "bare_soil"]
-IGNORE  = {"background": 250, "shadow": 251, "unknown": 255}
+
+# ── Warna display ──────────────────────────────────────────────────────────────
+COLORS = {
+    "Lush Green":              ( 50, 210,  50),
+    "Inconsistent Growth":     (  0, 200, 255),
+    "Drought / Severe Stress": (  0,  90, 255),
+    "Bare Soil / Gap":         (140, 140, 140),
+}
+
 SEVERITY = {
-    "healthy_crop": 0.0, "stressed_crop": 0.45,
-    "drought_stress": 0.75, "disease_stress_vegetation": 1.0, "bare_soil": 0.0,
-}
-PALETTE = {
-    "healthy_crop":              (60, 200, 60),
-    "stressed_crop":             (40, 220, 230),
-    "disease_stress_vegetation": (40,  40, 230),
-    "drought_stress":            (30, 140, 250),
-    "bare_soil":                 (110,120, 140),
-    "background":                (200,160,  90),
-    "shadow":                    (50,  50,  50),
+    "Lush Green":              0.00,
+    "Inconsistent Growth":     0.45,
+    "Drought / Severe Stress": 0.80,
+    "Bare Soil / Gap":         0.10,
 }
 
-# ---------------------------------------------------------------------------
-# YOLO FUSION CONSTANTS (port dari moonharvest_fusion.py)
-# ---------------------------------------------------------------------------
-# YOLO dilatih dengan nama kelas diurutkan alfabetis; HSV pakai urutan custom
-YOLO_CLASSES = sorted(CLASSES)
-YOLO_TO_HSV  = [CLASSES.index(c) for c in YOLO_CLASSES]
-HSV_IDX      = {c: i for i, c in enumerate(CLASSES)}
-
-# Bobot YOLO per kelas — healthy: HSV dominan (YOLO over-detect stress di hijau)
-CLASS_ALPHA_YOLO = {
-    "healthy_crop":              0.20,
-    "stressed_crop":             0.55,
-    "disease_stress_vegetation": 0.45,
-    "drought_stress":            0.50,
-    "bare_soil":                 0.45,
+# ── Mapping ONNX class → display (v5 model) ────────────────────────────────────
+ONNX_MAP = {
+    "healthy_crop":  "Lush Green",
+    "stressed_crop": "Inconsistent Growth",
+    "drought_stress":"Drought / Severe Stress",
+    "bare_soil":     "Bare Soil / Gap",
+    "lush_green":    "Lush Green",
+    "well_irrigated":"Lush Green",
+    "inconsistent_growth":"Inconsistent Growth",
+    "soil_issues":   "Bare Soil / Gap",
+    "disease":       "Inconsistent Growth",
+    "pest":          "Inconsistent Growth",
 }
 
-# Konflik di mana HSV selalu menang tanpa syarat
-HSV_WINS_CONFLICT = {
-    ("healthy_crop",  "stressed_crop"),
-    ("healthy_crop",  "disease_stress_vegetation"),
-    ("stressed_crop", "disease_stress_vegetation"),
+# Kelas ONNX yang boleh override label HSV per zona
+ONNX_COMPAT = {
+    "lush":    {"Lush Green"},
+    "stress":  {"Lush Green", "Inconsistent Growth"},
+    "drought": {"Drought / Severe Stress", "Inconsistent Growth"},
+    "soil":    {"Bare Soil / Gap"},
 }
 
-YOLO_MIN_CONF  = 0.40   # YOLO di bawah ini → fallback ke HSV
-YOLO_MIN_PATCH = 40     # Patch lebih kecil dari ini → YOLO tidak reliable
-CONF_AGREE_GAP = 0.25   # Selisih confidence besar → percaya yang lebih yakin
-
-# ---------------------------------------------------------------------------
-# CONFIG (identik dengan DEFAULT_CFG di moonharvest_hsv.py)
-# ---------------------------------------------------------------------------
-CFG = {
-    "white_balance": True,
-    "clahe_clip": 2.0, "clahe_grid": 8,
-    "shadow_v_max": 45,
-    "exg_veg_thr": 0.04,
-    "exg_healthy_min": 0.11,
-    "bg_h": [84, 140], "bg_s_min": 34,
-    "healthy":  {"h": [40, 82],  "s_lo": 48,  "v": [80,  255]},
-    # Stressed diperlebar: H 15–55 mencakup kuning-jingga-hijau-kuning
-    # reassign_stressed_to_healthy menyaring kembali pixel non-kuning → healthy
-    "stressed": {"h": [15, 55],  "s_lo": 40,  "v": [75,  255]},
-    "drought":  {"h": [10, 20],  "s_lo": 28,  "v": [90,  255]},
-    "disease":  {"h1": [0, 10],  "h2": [168, 179], "s_lo": 45, "v": [25, 215]},
-    "soil":     {"s_max": 30,    "v": [110, 240]},
-    "texture_win": 9,
-    "disease_texture_min": 24.0,
-    "morph_kernel": 5,
-    "label_median": 7,
-    "min_region_area_frac": 0.004,
-    "max_region_area_frac": 0.40,
-    "suppress_structures": True,
-    "road_open_kernel": 11,
-    "struct_min_area_frac": 0.0008,
-    "stat_reject_maha": 90.0,
-    "stressed_to_healthy": True,
-    # yellow_h diperlebar [15,42] + S min 40 agar stress kuning-kehijauan juga tertangkap
-    "yellow_h": [15, 42],
-    "yellow_exg_max": 0.10,
-    "yellow_s_min": 40,
-    "dark_as_soil": True,
-    "dark_v_max": 55,
-    "ema_alpha": 0.6,
+# ── HSV CONFIG dikalibrasi dari 15d.mp4 ────────────────────────────────────────
+HSV_CFG = {
+    "wb":          True,
+    "clahe_clip":  2.0,
+    "clahe_grid":  8,
+    "shadow_v_max": 35,
+    # ExG thresholds — diturunkan dari v3 karena 15d lebih pale
+    "exg_veg_thr":     0.004,   # minimum vegetasi (sangat rendah untuk 15d)
+    "exg_healthy_min": 0.028,   # dinaikkan dari 0.018 → 0.028 untuk kurangi false lush
+    # Zona lush: H dipersempit (30-90), S dinaikkan (25+), exg>=0.028
+    "lush":    {"h": [30, 90], "s_lo": 25, "v_lo": 50, "exg_min": 0.028},
+    # Zona stress: exg_lo=0.0 agar area pucat (exg 0.000-0.004) tidak jatuh ke drought
+    "stress":  {"h": [12, 105], "s_lo":  8, "s_hi": 80, "v_lo": 42, "exg_lo": 0.000, "exg_hi": 0.040},
+    # Zona drought: sangat ketat — hanya piksel benar-benar kering tanpa klorofil sama sekali
+    # H dipersempit [0,18], V dinaikkan ke 120, exg_hi=0.003, exg_remap=0.006 (per-region fallback)
+    "drought": {"h": [ 0,  18], "s_lo": 18, "s_hi": 60, "v_lo": 120, "exg_hi": 0.003,
+                "exg_remap_thr": 0.006},
+    # Zona soil: S<=15, V>=75, exg<0.008
+    "soil":    {"s_hi": 15, "v_lo": 75, "exg_hi": 0.008},
+    # Morfologi
+    "min_area_frac": 0.006,
+    "max_area_frac": 0.20,      # filter box > 20% frame area (cegah lush raksasa)
+    "max_regions":   20,
+    "morph_k":       7,
+    # Temporal EMA
+    "ema_alpha":     0.30,
 }
 
-# CLAHE instance di-cache — dibuat sekali, bukan setiap frame
-_CLAHE = cv2.createCLAHE(clipLimit=CFG["clahe_clip"],
-                          tileGridSize=(CFG["clahe_grid"], CFG["clahe_grid"]))
+# ONNX confidence minimum untuk override HSV — tinggi agar HSV tetap dominan
+ONNX_MIN_CONF  = 0.70
+DISPLAY_MIN_CONF = 0.28
 
-
-# ---------------------------------------------------------------------------
-# PRE-PROSES
-# ---------------------------------------------------------------------------
-def gray_world_wb(bgr):
+# ── Pre-processing ─────────────────────────────────────────────────────────────
+def _wb(bgr):
     b, g, r = cv2.split(bgr.astype(np.float32))
-    mb, mg, mr = b.mean() + 1e-6, g.mean() + 1e-6, r.mean() + 1e-6
-    k = (mb + mg + mr) / 3.0
-    b = np.clip(b * (k / mb), 0, 255)
-    g = np.clip(g * (k / mg), 0, 255)
-    r = np.clip(r * (k / mr), 0, 255)
-    return cv2.merge([b, g, r]).astype(np.uint8)
+    mb, mg, mr = b.mean()+1e-6, g.mean()+1e-6, r.mean()+1e-6
+    k = (mb+mg+mr)/3.0
+    return cv2.merge([np.clip(b*(k/mb),0,255), np.clip(g*(k/mg),0,255), np.clip(r*(k/mr),0,255)]).astype(np.uint8)
 
-
-def preprocess(bgr, cfg):
-    out = gray_world_wb(bgr) if cfg["white_balance"] else bgr.copy()
+def _preprocess(bgr, cfg):
+    out = _wb(bgr) if cfg["wb"] else bgr.copy()
     hsv = cv2.cvtColor(out, cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(hsv)
-    v = _CLAHE.apply(v)   # gunakan instance ter-cache
+    cl = cv2.createCLAHE(clipLimit=cfg["clahe_clip"], tileGridSize=(cfg["clahe_grid"], cfg["clahe_grid"]))
+    v  = cl.apply(v)
     return out, cv2.merge([h, s, v])
 
+def _exg(bgr_f):
+    tot = bgr_f.sum(axis=2) + 1e-6
+    return (2*bgr_f[:,:,1] - bgr_f[:,:,0] - bgr_f[:,:,2]) / tot
 
-def excess_green(bgr):
-    b, g, r = cv2.split(bgr.astype(np.float32))
-    tot = b + g + r + 1e-6
-    return (2 * g - r - b) / tot
+# ── HSV Segmentasi ─────────────────────────────────────────────────────────────
+def segment_regions(frame, cfg=HSV_CFG):
+    h, w  = frame.shape[:2]
+    scale = 0.5
+    small = cv2.resize(frame, (int(w*scale), int(h*scale)))
+    sh, sw = small.shape[:2]
+    min_px = max(40, int(cfg["min_area_frac"] * sh * sw))
 
+    proc, hsv_img = _preprocess(small, cfg)
+    H   = hsv_img[:,:,0].astype(np.int32)
+    S   = hsv_img[:,:,1].astype(np.int32)
+    V   = hsv_img[:,:,2].astype(np.int32)
+    exg = _exg(proc.astype(np.float32))
 
-def local_std(gray, win):
-    g = gray.astype(np.float32)
-    mean = cv2.boxFilter(g, -1, (win, win))
-    sq   = cv2.boxFilter(g * g, -1, (win, win))
-    return np.sqrt(np.clip(sq - mean * mean, 0, None))
+    shadow = V < cfg["shadow_v_max"]
 
+    c = cfg["lush"]
+    lush = ((H>=c["h"][0]) & (H<=c["h"][1]) & (S>=c["s_lo"]) &
+            (V>=c["v_lo"]) & (exg>=c["exg_min"]) & ~shadow)
 
-# ---------------------------------------------------------------------------
-# KLASIFIKASI PER-PIKSEL
-# ---------------------------------------------------------------------------
-def classify_pixels(hsv, exg, texture, cfg):
-    H, S, V = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
-    h, w = H.shape
-    label    = np.full((h, w), IGNORE["unknown"], np.uint8)
-    conf     = np.zeros((h, w), np.float32)
-    assigned = np.zeros((h, w), bool)
+    c = cfg["stress"]
+    stress = ((H>=c["h"][0]) & (H<=c["h"][1]) & (S>=c["s_lo"]) & (S<=c["s_hi"]) &
+              (V>=c["v_lo"]) & (exg>=c["exg_lo"]) & (exg<c["exg_hi"]) &
+              ~lush & ~shadow)
 
-    def commit(mask, code, score):
-        nonlocal assigned
-        m = mask & ~assigned
-        label[m] = code
-        conf[m]  = np.clip(score[m] if isinstance(score, np.ndarray) else score, 0, 1)
-        assigned |= m
-
-    sat_score = np.clip(S / 180.0, 0, 1)
-    exg_score = np.clip((exg + 0.05) / 0.3, 0, 1)
-    tex_score = np.clip(texture / 40.0, 0, 1)
-
-    commit(V < cfg["shadow_v_max"], IGNORE["shadow"], 0.5)
-
-    cs   = cfg["soil"]
-    veg0 = exg > cfg["exg_veg_thr"]
-    soil = (S <= cs["s_max"]) & (V >= cs["v"][0]) & (V <= cs["v"][1]) & (~veg0)
-    commit(soil, 4, 0.45 + 0.3 * (1 - np.clip(S / 180.0, 0, 1)))
-
-    bg = (H >= cfg["bg_h"][0]) & (H <= cfg["bg_h"][1]) & (S >= cfg["bg_s_min"])
-    commit(bg, IGNORE["background"], 0.5)
-
-    c = cfg["healthy"]
-    healthy = (H >= c["h"][0]) & (H <= c["h"][1]) & (S >= c["s_lo"]) & \
-              (V >= c["v"][0]) & (exg >= cfg["exg_healthy_min"])
-    commit(healthy, 0, 0.45 + 0.25 * sat_score + 0.3 * exg_score)
-
-    # Disease: wajib vegetasi (veg0) — mencegah false positive di tanah bajak cokelat
-    c        = cfg["disease"]
-    redish   = (((H >= c["h1"][0]) & (H <= c["h1"][1])) |
-                ((H >= c["h2"][0]) & (H <= c["h2"][1]))) & (S >= c["s_lo"])
-    high_tex = texture >= cfg["disease_texture_min"]
-    disease  = redish & veg0 & (high_tex | (S >= 80)) & (V >= c["v"][0]) & (V <= c["v"][1])
-    commit(disease, 2, 0.4 + 0.6 * tex_score)
-
-    # Stressed: exg_veg_thr (bukan 0.02) agar tidak match tanah kuning pucat
-    c = cfg["stressed"]
-    stressed = (H >= c["h"][0]) & (H <= c["h"][1]) & (S >= c["s_lo"]) & \
-               (V >= c["v"][0]) & (exg >= cfg["exg_veg_thr"])
-    commit(stressed, 1, 0.4 + 0.4 * sat_score)
-
-    # Drought: wajib vegetasi — mencegah false positive di lahan pucat tak bervegetasi
     c = cfg["drought"]
-    drought = (H >= c["h"][0]) & (H < c["h"][1]) & (S >= c["s_lo"]) & \
-              (V >= c["v"][0]) & veg0
-    commit(drought, 3, 0.45 + 0.35 * sat_score)
+    drought = ((H>=c["h"][0]) & (H<=c["h"][1]) & (S>=c["s_lo"]) & (S<=c["s_hi"]) &
+               (V>=c["v_lo"]) & (exg<c["exg_hi"]) & ~lush & ~stress & ~shadow)
 
-    veg   = exg > cfg["exg_veg_thr"]
-    soil2 = (S <= cs["s_max"] + 6) & (V >= cs["v"][0]) & (V <= cs["v"][1]) & (~veg)
-    commit(soil2, 4, 0.4 + 0.3 * (1 - sat_score))
+    c = cfg["soil"]
+    soil = ((S<=c["s_hi"]) & (V>=c["v_lo"]) & (exg<c["exg_hi"]) &
+            ~lush & ~stress & ~drought & ~shadow)
 
-    commit(~assigned, IGNORE["background"], 0.3)
-    return label, conf
+    # v6: Untuk konteks sawah 15 hari (tanaman muda), zona coklat/kuning yang secara HSV
+    # memenuhi kriteria "drought" lebih tepat dilabel "Inconsistent Growth" daripada
+    # "Drought / Severe Stress", karena area tersebut mencerminkan pertumbuhan tidak
+    # seragam / lahan belum tertutup tanaman, bukan kekeringan aktual.
+    # Label "Drought / Severe Stress" hanya muncul jika secara ONNX dikonfirmasi.
+    zones = [
+        (lush,    "lush",    "Lush Green"),
+        (stress,  "stress",  "Inconsistent Growth"),
+        (drought, "drought", "Inconsistent Growth"),   # v6: relabel untuk 15d context
+        (soil,    "soil",    "Bare Soil / Gap"),
+    ]
 
+    k  = cfg["morph_k"] | 1
+    k2 = max(3, k//2) | 1
+    ke = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+    ks = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k2, k2))
 
-def reassign_stressed_to_healthy(label, hsv, exg, cfg):
-    if not cfg.get("stressed_to_healthy", False):
-        return label
-    H = hsv[:, :, 0].astype(np.int16)
-    S = hsv[:, :, 1].astype(np.int16)
-    yh = cfg.get("yellow_h", [20, 34])
-    truly_yellow = (
-        (H >= yh[0]) & (H <= yh[1])
-        & (exg < cfg.get("yellow_exg_max", 0.08))
-        & (S >= cfg.get("yellow_s_min", 55))
-    )
-    out = label.copy()
-    out[(label == 1) & (~truly_yellow)] = 0
-    return out
-
-
-def suppress_structures(label, cfg):
-    if not cfg.get("suppress_structures", False):
-        return label
-    bare = (label == 4).astype(np.uint8)
-    if bare.sum() == 0:
-        return label
-    k      = cfg["road_open_kernel"] | 1
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
-    opened = cv2.morphologyEx(bare, cv2.MORPH_OPEN, kernel)
-    label[(bare > 0) & (opened == 0)] = IGNORE["background"]
-    n, lab, stats, _ = cv2.connectedComponentsWithStats(opened, 8)
-    min_area = int(cfg["struct_min_area_frac"] * label.size)
-    for i in range(1, n):
-        if stats[i, cv2.CC_STAT_AREA] < min_area:
-            label[lab == i] = IGNORE["background"]
-    return label
-
-
-def smooth_labels(label, cfg):
-    return cv2.medianBlur(label, cfg["label_median"] | 1)
-
-
-def extract_regions(label, conf, cfg):
-    h, w      = label.shape
-    min_area  = int(cfg["min_region_area_frac"] * h * w)
-    max_area  = int(cfg.get("max_region_area_frac", 0.40) * h * w)
-    ksz       = cfg["morph_kernel"] | 1
-    kernel    = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksz, ksz))
-    regions   = []
-    for idx, name in enumerate(CLASSES):
-        mask = (label == idx).astype(np.uint8)
-        if mask.sum() == 0:
-            continue
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-        n, lab, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+    max_px = int(cfg.get("max_area_frac", 1.0) * sh * sw)
+    regions = []
+    for mask_bool, zone_key, zone_disp in zones:
+        mask = mask_bool.astype(np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  ks)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, ke)
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
         for i in range(1, n):
-            area = stats[i, cv2.CC_STAT_AREA]
-            if area < min_area or area > max_area:
+            area = int(stats[i, cv2.CC_STAT_AREA])
+            if area < min_px or area > max_px:
                 continue
-            x, y, ww, hh = (stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP],
-                             stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT])
-            c = float(conf[lab == i].mean())
-            regions.append({"class": name, "bbox": [int(x), int(y), int(ww), int(hh)],
-                            "area": int(area), "confidence": round(c, 3)})
+            x  = int(stats[i, cv2.CC_STAT_LEFT]  / scale)
+            y  = int(stats[i, cv2.CC_STAT_TOP]   / scale)
+            bw = int(stats[i, cv2.CC_STAT_WIDTH]  / scale)
+            bh = int(stats[i, cv2.CC_STAT_HEIGHT] / scale)
+            x2, y2 = min(x+bw, w-1), min(y+bh, h-1)
+            if x2 <= x or y2 <= y:
+                continue
+            # v5: per-region ExG remap — jika drought tapi rata-rata ExG region > threshold,
+            # downgrade ke Inconsistent Growth (masih ada kandungan klorofil = stress, bukan kering total)
+            actual_zone_disp = zone_disp
+            actual_zone_key  = zone_key
+            if zone_key == "drought":
+                remap_thr = cfg["drought"].get("exg_remap_thr", 0.006)
+                rx1 = int(stats[i, cv2.CC_STAT_LEFT])
+                ry1 = int(stats[i, cv2.CC_STAT_TOP])
+                rx2 = rx1 + int(stats[i, cv2.CC_STAT_WIDTH])
+                ry2 = ry1 + int(stats[i, cv2.CC_STAT_HEIGHT])
+                region_mask = (labels[ry1:ry2, rx1:rx2] == i)
+                region_exg  = exg[ry1:ry2, rx1:rx2]
+                mean_exg    = float(region_exg[region_mask].mean()) if region_mask.any() else 0.0
+                if mean_exg > remap_thr:
+                    actual_zone_disp = "Inconsistent Growth"
+                    actual_zone_key  = "stress"
+            regions.append({"bbox":(x,y,x2,y2), "hsv_zone":actual_zone_key,
+                             "hsv_display":actual_zone_disp, "area":area})
+
     regions.sort(key=lambda r: -r["area"])
-    return regions
+    return regions[:cfg["max_regions"]]
 
+# ── ONNX Classifier ────────────────────────────────────────────────────────────
+class ONNXClassifier:
+    def __init__(self, path):
+        import onnxruntime as ort, ast
+        self.sess  = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        self.iname = self.sess.get_inputs()[0].name
+        meta = self.sess.get_modelmeta().custom_metadata_map
+        raw  = meta.get("names", "{}")
+        parsed = ast.literal_eval(raw)
+        self.names = parsed if isinstance(parsed, dict) else {i:v for i,v in enumerate(parsed)}
+        print(f"[ONNX] {Path(path).name}  kelas: {self.names}")
 
-def class_distribution(label):
-    valid = 0
-    dist  = {}
-    for idx, name in enumerate(CLASSES):
-        c = int((label == idx).sum())
-        dist[name] = c
-        valid += c
-    pct = {k: round(100.0 * v / max(valid, 1), 2) for k, v in dist.items()}
-    return pct, valid / label.size
+    def infer(self, crops, imgsz=160, batch=32):
+        if not crops: return []
+        batch_list = []
+        for c in crops:
+            img = cv2.resize(c, (imgsz, imgsz)).astype(np.float32) / 255.0
+            batch_list.append(img.transpose(2,0,1))
+        out = []
+        for s in range(0, len(batch_list), batch):
+            arr    = np.stack(batch_list[s:s+batch])
+            logits = self.sess.run(None, {self.iname: arr})[0]
+            exp    = np.exp(logits - logits.max(axis=1, keepdims=True))
+            probs  = exp / exp.sum(axis=1, keepdims=True)
+            for row in probs:
+                cid  = int(np.argmax(row))
+                conf = float(row[cid])
+                out.append((self.names.get(cid, str(cid)), conf))
+        return out
 
+class PyTorchFallback:
+    def __init__(self, path):
+        from ultralytics import YOLO
+        self.model = YOLO(str(path))
+        self.names = self.model.names
+        print(f"[PT] {Path(path).name}  kelas: {self.names}")
 
-def colorize(label):
-    h, w = label.shape
-    out = np.zeros((h, w, 3), np.uint8)
-    for idx, name in enumerate(CLASSES):
-        out[label == idx] = PALETTE[name]
-    out[label == IGNORE["background"]] = PALETTE["background"]
-    out[label == IGNORE["shadow"]]     = PALETTE["shadow"]
-    return out
+    def infer(self, crops, imgsz=160, batch=32):
+        out = []
+        for c in crops:
+            r = self.model(c, verbose=False, imgsz=imgsz)[0]
+            p = r.probs.data.cpu().numpy()
+            i = int(np.argmax(p))
+            n = self.names.get(i,str(i)) if isinstance(self.names,dict) else self.names[i]
+            out.append((n, float(p[i])))
+        return out
 
+def load_classifier(path):
+    pt   = Path(path)
+    onnx = pt.with_suffix(".onnx")
+    if onnx.exists(): return ONNXClassifier(onnx)
+    print("[WARN] ONNX tidak ditemukan, pakai PyTorch")
+    return PyTorchFallback(pt)
 
-# ---------------------------------------------------------------------------
-# YOLO FUSION (port dari moonharvest_fusion.py)
-# ---------------------------------------------------------------------------
-def _hsv_soft(cls_id, conf):
-    n = len(CLASSES)
-    v = np.full(n, (1 - conf) / max(n - 1, 1), np.float32)
-    v[cls_id] = conf
-    return v.tolist()
+# ── YOLO Detector (moonharvest-uav-det.onnx) ──────────────────────────────────
+# Mapping kelas YOLO-det → display label
+YOLO_DET_MAP = {
+    "crop":                       "Lush Green",
+    "crop_row":                   "Lush Green",
+    "weed":                       "Inconsistent Growth",
+    # disease_stress_vegetation di-map ke Inconsistent Growth, bukan Drought
+    # karena di video sawah 15d area ini umumnya masih ada kandungan hijau
+    "disease_stress_vegetation":  "Inconsistent Growth",
+}
 
+class YOLODetector:
+    """
+    Wrapper untuk model deteksi YOLOv8 ONNX (output shape [1, 4+nc, anchors]).
+    Hanya mengambil box + kelas dengan conf >= threshold, kemudian scale kembali
+    ke koordinat frame asli.
 
-def run_yolo_on_regions(frame, model, regions, max_regions=80):
-    """Classify tiap HSV region dengan YOLO; fallback ke HSV jika patch kecil/conf rendah."""
-    n = len(CLASSES)
-
-    def _fallback(r):
-        r["yolo_class"]     = r["class"]
-        r["yolo_conf"]      = r["confidence"]
-        r["yolo_probs_hsv"] = _hsv_soft(HSV_IDX[r["class"]], r["confidence"])
-        r["yolo_valid"]     = False
-
-    for r in regions[:max_regions]:
-        x, y, w, h = r["bbox"]
-        if w < YOLO_MIN_PATCH or h < YOLO_MIN_PATCH:
-            _fallback(r)
-            continue
-        patch = frame[y:y + h, x:x + w]
-        if patch.size == 0:
-            _fallback(r)
-            continue
+    YOLO-det bersifat SUPPLEMENTARY — confidence-nya dibatasi di bawah HSV (0.60)
+    agar tidak menekan deteksi HSV dalam cross-class NMS.
+    conf_thr dinaikkan ke 0.45 untuk mengurangi false positive disease_stress.
+    """
+    def __init__(self, path, conf_thr=0.45):
+        import onnxruntime as ort, ast
+        self.sess     = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        inp           = self.sess.get_inputs()[0]
+        self.iname    = inp.name
+        # Input shape: [1, 3, H, W] — gunakan ukuran dinamis atau default 640
+        shp           = inp.shape
+        self.imgsz    = (shp[2] if isinstance(shp[2], int) and shp[2] > 0 else 640,
+                         shp[3] if isinstance(shp[3], int) and shp[3] > 0 else 640)
+        meta          = self.sess.get_modelmeta().custom_metadata_map
+        raw           = meta.get("names", "{}")
         try:
-            res      = model(patch, verbose=False, imgsz=224, device=0)[0]
-            raw      = res.probs.data.cpu().numpy()
-            hsv_order = np.zeros(n, np.float32)
-            for yi, hi in enumerate(YOLO_TO_HSV):
-                if yi < len(raw):
-                    hsv_order[hi] = float(raw[yi])
-            top      = int(np.argmax(hsv_order))
-            top_conf = float(hsv_order[top])
-            if top_conf < YOLO_MIN_CONF:
-                _fallback(r)
-                continue
-            r["yolo_class"]     = CLASSES[top]
-            r["yolo_conf"]      = top_conf
-            r["yolo_probs_hsv"] = hsv_order.tolist()
-            r["yolo_valid"]     = True
+            parsed    = ast.literal_eval(raw)
+            self.names = parsed if isinstance(parsed, dict) else {i:v for i,v in enumerate(parsed)}
         except Exception:
-            _fallback(r)
+            self.names = {0:"crop", 1:"weed", 2:"crop_row", 3:"disease_stress_vegetation"}
+        self.conf_thr = conf_thr
+        self.nc       = len(self.names)
+        print(f"[YOLO-DET] {Path(path).name}  kelas: {self.names}  imgsz={self.imgsz}")
 
-    for r in regions[max_regions:]:
-        _fallback(r)
+    def detect(self, frame):
+        """
+        Jalankan deteksi pada satu frame BGR.
+        Return: list of {"bbox":(x1,y1,x2,y2), "class": display_label,
+                          "conf": float, "area": int, "source": "yolo-det"}
+        """
+        oh, ow = frame.shape[:2]
+        iw, ih = self.imgsz
+        img    = cv2.resize(frame, (iw, ih)).astype(np.float32) / 255.0
+        inp    = img.transpose(2, 0, 1)[None]          # [1,3,H,W]
 
-    return regions
+        out    = self.sess.run(None, {self.iname: inp})[0]  # [1, 4+nc, anchors]
+        out    = out[0]                                  # [4+nc, anchors]
 
-
-def fuse_region(r, alpha=0.55):
-    """
-    Adaptive confidence-gated fusion (5 kasus, prioritas dari atas):
-      1. YOLO tidak valid (patch kecil/conf rendah) → pakai HSV
-      2. HSV_WINS_CONFLICT                          → HSV menang
-      3. Keduanya setuju                            → boost confidence
-      4. Selisih confidence besar                   → pakai yang lebih yakin
-      5. Konflik kecil                              → CLASS_ALPHA_YOLO blend
-    """
-    hsv_cls  = r["class"]
-    yolo_cls = r["yolo_class"]
-
-    if not r.get("yolo_valid", False):
-        return hsv_cls, r["confidence"], True
-
-    yolo_conf = r["yolo_conf"]
-    hsv_conf  = r["confidence"]
-
-    yp = np.array(r["yolo_probs_hsv"], np.float32)
-    hp = np.array(_hsv_soft(HSV_IDX[hsv_cls], hsv_conf), np.float32)
-    yp /= yp.sum() + 1e-9
-    hp /= hp.sum() + 1e-9
-
-    if (hsv_cls, yolo_cls) in HSV_WINS_CONFLICT:
-        return hsv_cls, round(hsv_conf, 3), False
-
-    agree = yolo_cls == hsv_cls
-    if agree:
-        cls_alpha  = CLASS_ALPHA_YOLO.get(hsv_cls, alpha)
-        fused      = cls_alpha * yp + (1 - cls_alpha) * hp
-        fused_id   = int(np.argmax(fused))
-        fused_conf = min(1.0, max(yolo_conf, hsv_conf) * 1.05)
-        return CLASSES[fused_id], round(fused_conf, 3), True
-
-    gap = abs(yolo_conf - hsv_conf)
-    if gap > CONF_AGREE_GAP:
-        if yolo_conf > hsv_conf:
-            return yolo_cls, round(yolo_conf, 3), False
+        # YOLOv8 detect output: rows = [cx, cy, w, h, cls0, cls1, ...]
+        # Transpose so each row is one anchor
+        if out.shape[0] < out.shape[1]:
+            preds = out.T                                # [anchors, 4+nc]
         else:
-            return hsv_cls, round(hsv_conf, 3), False
+            preds = out                                  # already [anchors, 4+nc]
 
-    cls_alpha = CLASS_ALPHA_YOLO.get(hsv_cls, alpha)
-    total     = yolo_conf + hsv_conf + 1e-9
-    w_conf    = yolo_conf / total
-    eff_yolo  = 0.5 * cls_alpha + 0.5 * w_conf
-    eff_hsv   = 1.0 - eff_yolo
-    fused     = eff_yolo * yp + eff_hsv * hp
-    fused_id  = int(np.argmax(fused))
-    return CLASSES[fused_id], round(float(fused[fused_id]), 3), False
-
-
-# ---------------------------------------------------------------------------
-# NMS — hilangkan bounding box yang tumpang tindih (sesuai proposal Figure 3)
-# ---------------------------------------------------------------------------
-def apply_nms(regions, iou_threshold=0.25, score_threshold=0.20):
-    """
-    Two-pass NMS untuk meminimalkan box tumpang tindih:
-    Pass 1 — per-class NMS agresif (IoU 0.25)
-    Pass 2 — cross-class containment: hapus box A jika >60% luas A ada di dalam
-              box B yang lebih besar (kelas apapun)
-    """
-    if len(regions) <= 1:
-        return regions
-
-    # --- Pass 1: per-class NMS ---
-    kept = []
-    for cls_name in CLASSES:
-        cls_reg = [r for r in regions if r["class"] == cls_name]
-        if not cls_reg:
-            continue
-        if len(cls_reg) == 1:
-            kept.extend(cls_reg)
-            continue
-        boxes  = [[r["bbox"][0], r["bbox"][1], r["bbox"][2], r["bbox"][3]] for r in cls_reg]
-        scores = [r["confidence"] for r in cls_reg]
-        try:
-            idx = cv2.dnn.NMSBoxes(boxes, scores, score_threshold, iou_threshold)
-            if len(idx) > 0:
-                kept.extend(cls_reg[i] for i in idx.flatten())
-        except Exception:
-            kept.extend(cls_reg)
-
-    # Urutkan: box terbesar (area) → terkecil
-    kept.sort(key=lambda r: -r["area"])
-
-    # --- Pass 2: cross-class containment suppression ---
-    # Hapus box A jika >60% luasnya tercakup oleh box B yang lebih besar
-    final = []
-    for i, a in enumerate(kept):
-        ax1, ay1, aw, ah = a["bbox"]
-        ax2, ay2 = ax1 + aw, ay1 + ah
-        absorbed = False
-        for b in kept:
-            if b is a:
+        dets = []
+        for pred in preds:
+            box_raw    = pred[:4]
+            cls_scores = pred[4:4+self.nc]
+            cid        = int(np.argmax(cls_scores))
+            conf       = float(cls_scores[cid])
+            if conf < self.conf_thr:
                 continue
-            if b["area"] <= a["area"]:
-                continue   # hanya cek box yang lebih besar
-            bx1, by1, bw, bh = b["bbox"]
-            bx2, by2 = bx1 + bw, by1 + bh
-            ix = max(0, min(ax2, bx2) - max(ax1, bx1))
-            iy = max(0, min(ay2, by2) - max(ay1, by1))
-            if ix == 0 or iy == 0:
+
+            # cx,cy,w,h in normalised [0,1] space (imgsz coords → normalise)
+            cx, cy, bw, bh = box_raw
+            # If values > 1, they are in pixel space of imgsz
+            if cx > 1 or cy > 1:
+                cx /= iw; cy /= ih; bw /= iw; bh /= ih
+
+            x1 = int((cx - bw/2) * ow);  y1 = int((cy - bh/2) * oh)
+            x2 = int((cx + bw/2) * ow);  y2 = int((cy + bh/2) * oh)
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(ow-1, x2), min(oh-1, y2)
+            if x2 <= x1 or y2 <= y1:
                 continue
-            inter = ix * iy
-            if inter / (aw * ah + 1e-6) > 0.60:
-                absorbed = True
-                break
-        if not absorbed:
-            final.append(a)
 
-    # Batasi maksimum 15 box paling besar+confident
-    final.sort(key=lambda r: -(r["area"] * r["confidence"]))
-    return final[:15]
+            cname  = self.names.get(cid, str(cid))
+            label  = YOLO_DET_MAP.get(cname, "Inconsistent Growth")
+            area   = (x2-x1) * (y2-y1)
+            # YOLO-det confidence dibatasi < 0.58 agar HSV (0.60) tetap dominan
+            # dalam cross-class NMS. Ini mencegah YOLO menindas deteksi HSV.
+            yolo_conf = round(min(0.57, conf * 0.85), 3)
+            dets.append({"bbox":(x1,y1,x2,y2), "class":label,
+                         "conf": yolo_conf,
+                         "area": area, "source": "yolo-det"})
+        return dets
 
+# ── Fusion HSV + ONNX ──────────────────────────────────────────────────────────
+def fuse(frame, regions, classifier, imgsz=160):
+    """
+    HSV sebagai primary. ONNX hanya override jika:
+    - confidence >= ONNX_MIN_CONF (0.70)
+    - label ONNX kompatibel dengan zona HSV
+    Jika tidak memenuhi syarat, label HSV dipertahankan dengan confidence HSV.
+    """
+    if not regions: return []
+    crops = []
+    for r in regions:
+        x1,y1,x2,y2 = r["bbox"]
+        c = frame[y1:y2, x1:x2]
+        crops.append(c if c.size > 0 else np.zeros((8,8,3), np.uint8))
 
-# ---------------------------------------------------------------------------
-# RENDER
-# ---------------------------------------------------------------------------
-def draw_detections(frame, label, regions, alpha=0.35):
-    """Bounding boxes saja (tanpa HSV overlay) menggunakan fused_class/fused_conf."""
+    onnx_res = classifier.infer(crops, imgsz=imgsz)
+    dets = []
+    for i, (oc, oconf) in enumerate(onnx_res):
+        r = regions[i]
+        od = ONNX_MAP.get(oc)
+        compat = ONNX_COMPAT.get(r["hsv_zone"], set())
+
+        if od and oconf >= ONNX_MIN_CONF and od in compat:
+            # ONNX confident & kompatibel → pakai ONNX, sedikit boost
+            label  = od
+            conf   = min(1.0, oconf * 1.03)
+            source = "onnx-confirmed"
+        elif od and oconf >= 0.55 and od in compat:
+            # ONNX moderat & kompatibel → blend HSV + ONNX
+            label  = r["hsv_display"]
+            conf   = max(0.52, oconf * 0.85)
+            source = "hsv+onnx-blend"
+        else:
+            # HSV wins — lebih terpercaya secara fisika warna
+            label  = r["hsv_display"]
+            conf   = 0.60  # baseline confidence HSV
+            source = "hsv-primary"
+
+        x1,y1,x2,y2 = r["bbox"]
+        dets.append({"bbox":(x1,y1,x2,y2), "class":label, "conf":round(conf,3),
+                     "area":r["area"], "source":source})
+    return dets
+
+# ── NMS ────────────────────────────────────────────────────────────────────────
+def _iou_matrix(boxes):
+    """Hitung matriks IoU untuk semua pasangan box."""
+    x1=boxes[:,0]; y1=boxes[:,1]; x2=boxes[:,2]; y2=boxes[:,3]
+    a = np.maximum(0, x2-x1) * np.maximum(0, y2-y1)
+    ix1=np.maximum(x1[:,None], x1[None,:]); iy1=np.maximum(y1[:,None], y1[None,:])
+    ix2=np.minimum(x2[:,None], x2[None,:]); iy2=np.minimum(y2[:,None], y2[None,:])
+    inter = np.maximum(0, ix2-ix1) * np.maximum(0, iy2-iy1)
+    return inter / (a[:,None] + a[None,:] - inter + 1e-6)
+
+def _iou_pair(b1, b2):
+    """IoU antara dua box tunggal (tuple/list x1,y1,x2,y2)."""
+    ix1 = max(b1[0], b2[0]); iy1 = max(b1[1], b2[1])
+    ix2 = min(b1[2], b2[2]); iy2 = min(b1[3], b2[3])
+    inter = max(0, ix2-ix1) * max(0, iy2-iy1)
+    a1 = max(0, b1[2]-b1[0]) * max(0, b1[3]-b1[1])
+    a2 = max(0, b2[2]-b2[0]) * max(0, b2[3]-b2[1])
+    return inter / (a1 + a2 - inter + 1e-6)
+
+def _hard_nms(dets, iou_thr):
+    """Standard greedy NMS — hapus box ber-IoU > iou_thr dengan box conf lebih tinggi."""
+    if not dets: return []
+    sc   = np.array([d["conf"] for d in dets], np.float32)
+    order = np.argsort(-sc)
+    iou  = _iou_matrix(np.array([d["bbox"] for d in dets], np.float32))
+    suppressed = np.zeros(len(dets), bool)
+    keep = []
+    for i in order:
+        if suppressed[i]: continue
+        keep.append(i)
+        suppressed |= iou[i] > iou_thr
+        suppressed[i] = False
+    return [dets[i] for i in keep]
+
+def _soft_nms(dets, iou_thr, sigma=0.5, min_conf=DISPLAY_MIN_CONF):
+    """
+    Soft-NMS (Gaussian decay) — daripada menghapus box langsung, turunkan
+    confidence-nya secara eksponensial berdasarkan overlap. Cocok untuk cross-class
+    suppression agar box di area perbatasan tidak hilang sama sekali.
+    """
+    if not dets: return []
+    boxes = [dict(d) for d in dets]  # copy agar tidak ubah original
+    result = []
+    while boxes:
+        # Ambil box conf tertinggi
+        idx = int(np.argmax([b["conf"] for b in boxes]))
+        best = boxes.pop(idx)
+        result.append(best)
+        # Decay conf box lain berdasarkan overlap
+        remaining = []
+        for b in boxes:
+            iou = _iou_pair(best["bbox"], b["bbox"])
+            if iou > iou_thr:
+                b = dict(b)
+                b["conf"] = float(b["conf"]) * np.exp(-(iou**2) / sigma)
+            if b["conf"] >= min_conf:
+                remaining.append(b)
+        boxes = remaining
+    return result
+
+def nms(dets, per_cls_iou=0.20, cross_iou=0.30, min_conf=DISPLAY_MIN_CONF,
+        min_area=600):
+    """
+    NMS dua tahap (v7c):
+    1. Hard NMS per kelas (IoU=0.20) — sama seperti v6, ketat untuk kelas sama
+    2. Hard NMS cross kelas (IoU=0.30) — sama seperti v6
+    3. min_area=600px² — filter noise box kecil (baru, v6=0)
+
+    v7b (per=0.30, cross=0.35, area=400) lebih buruk dari v6:
+    FHI 82.1 vs 84.5, dets 11.2 vs ~9, IncGrowth 28.4% vs 21.6%.
+    Penyebab: per_cls=0.30 terlalu longgar → duplikat per-kelas tidak disuppresi.
+    v7c: kembali ke threshold v6 yang terbukti bagus, tambah min_area=600 saja.
+    """
+    # Filter confidence dan area minimum
+    dets = [d for d in dets if d["conf"] >= min_conf and d.get("area", 0) >= min_area]
+    if not dets: return []
+
+    # Tahap 1: Hard NMS per kelas
+    by_cls = {}
+    for d in dets:
+        by_cls.setdefault(d["class"], []).append(d)
+    after_per_cls = []
+    for lst in by_cls.values():
+        after_per_cls.extend(_hard_nms(lst, per_cls_iou))
+
+    # Tahap 2: Hard NMS cross kelas
+    return _hard_nms(after_per_cls, cross_iou)
+
+# ── FHI ────────────────────────────────────────────────────────────────────────
+def compute_fhi(dets, frame_area):
+    if not dets: return 50.0
+    total_w = sum(d["area"] for d in dets) + 1e-6
+    base = 0.0
+    for d in dets:
+        w = d["area"] / total_w
+        sev = SEVERITY.get(d["class"], 0.5)
+        base += w * (1.0 - sev)
+    return round(base * 100.0, 1)
+
+# ── EMA temporal smoothing ─────────────────────────────────────────────────────
+class EMASmooth:
+    def __init__(self, alpha=0.30):
+        self.alpha = alpha
+        self.state = {}
+
+    def update(self, key, val):
+        if key not in self.state:
+            self.state[key] = val
+        else:
+            self.state[key] = self.alpha*val + (1-self.alpha)*self.state[key]
+        return self.state[key]
+
+# ── Visualisasi ────────────────────────────────────────────────────────────────
+def draw_stream(frame, dets, fhi):
+    """Render bounding boxes onto frame. FHI sidebar dihapus."""
     out = frame.copy()
-
-    for r in regions[:40]:
-        cls     = r.get("fused_class", r["class"])
-        conf    = r.get("fused_conf",  r["confidence"])
-        display = DISPLAY_MAP.get(cls)
-        if display is None:
-            continue
-        col  = DEMO_PALETTE.get(display, (200, 200, 200))
-        x, y, w, h = r["bbox"]
-        cv2.rectangle(out, (x, y), (x + w, y + h), col, 2)
-
-        txt = f"{display} {conf:.2f}"
-        (tw, th), bl = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.50, 1)
-        ly = max(y - 4, th + 4)
-        cv2.rectangle(out, (x, ly - th - 3), (x + tw + 6, ly + bl), col, -1)
-        cv2.putText(out, txt, (x + 3, ly), cv2.FONT_HERSHEY_SIMPLEX, 0.50,
-                    (255, 255, 255), 1, cv2.LINE_AA)
-
+    for d in dets:
+        x1, y1, x2, y2 = d["bbox"]
+        col = COLORS.get(d["class"], (200, 200, 200))
+        thick = 3 if d.get("source", "").startswith("yolo") else 2
+        cv2.rectangle(out, (x1, y1), (x2, y2), col, thick)
+        label = f"{d['class'][:18]} {d['conf']:.2f}"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+        cv2.rectangle(out, (x1, y1 - th - 6), (x1 + tw + 4, y1), col, -1)
+        cv2.putText(out, label, (x1 + 2, y1 - 3),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1, cv2.LINE_AA)
     return out
 
+# ── YOLO-det wrapper (ONNX detect model, supplementary) ─────────────────────────
+YOLO_DET_MAP = {
+    "crop":                      "Lush Green",
+    "crop_row":                  "Lush Green",
+    "weed":                      "Inconsistent Growth",
+    "disease_stress_vegetation": "Inconsistent Growth",
+}
 
-# ---------------------------------------------------------------------------
-# PROCESS FRAME — HSV pipeline + YOLO fusion (jika model tersedia)
-# ---------------------------------------------------------------------------
-def process_frame(bgr, cfg, ema_state=None, model=None):
-    proc, hsv = preprocess(bgr, cfg)
-    exg       = excess_green(proc)
-    gray      = cv2.cvtColor(proc, cv2.COLOR_BGR2GRAY)
-    tex       = local_std(gray, cfg["texture_win"])
+class YOLODetector:
+    def __init__(self, path, conf_thr=0.45):
+        import onnxruntime as ort, ast
+        self.sess  = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        inp        = self.sess.get_inputs()[0]
+        self.iname = inp.name
+        shp        = inp.shape
+        self.imgsz = (shp[2] if isinstance(shp[2], int) and shp[2] > 0 else 640,
+                      shp[3] if isinstance(shp[3], int) and shp[3] > 0 else 640)
+        meta       = self.sess.get_modelmeta().custom_metadata_map
+        raw        = meta.get("names", "{}")
+        try:
+            parsed     = ast.literal_eval(raw)
+            self.names = parsed if isinstance(parsed, dict) else {i: v for i, v in enumerate(parsed)}
+        except Exception:
+            self.names = {0: "crop", 1: "weed", 2: "crop_row", 3: "disease_stress_vegetation"}
+        self.conf_thr = conf_thr
+        self.nc       = len(self.names)
 
-    label, conf = classify_pixels(hsv, exg, tex, cfg)
-    label = reassign_stressed_to_healthy(label, hsv, exg, cfg)
-    if cfg.get("dark_as_soil"):
-        label[hsv[:, :, 2] < cfg.get("dark_v_max", 55)] = 4
-    label   = smooth_labels(label, cfg)
-    label   = suppress_structures(label, cfg)
-    regions = extract_regions(label, conf, cfg)
-    regions = apply_nms(regions)   # hapus bounding box tumpang tindih (NMS per kelas)
+    def detect(self, frame):
+        oh, ow = frame.shape[:2]
+        iw, ih = self.imgsz
+        img = cv2.resize(frame, (iw, ih)).astype(np.float32) / 255.0
+        inp = img.transpose(2, 0, 1)[None]
+        out = self.sess.run(None, {self.iname: inp})[0][0]
+        preds = out.T if out.shape[0] < out.shape[1] else out
+        dets = []
+        for pred in preds:
+            cls_scores = pred[4:4 + self.nc]
+            cid  = int(np.argmax(cls_scores))
+            conf = float(cls_scores[cid])
+            if conf < self.conf_thr:
+                continue
+            cx, cy, bw, bh = pred[:4]
+            if cx > 1 or cy > 1:
+                cx /= iw; cy /= ih; bw /= iw; bh /= ih
+            x1 = max(0, int((cx - bw / 2) * ow))
+            y1 = max(0, int((cy - bh / 2) * oh))
+            x2 = min(ow - 1, int((cx + bw / 2) * ow))
+            y2 = min(oh - 1, int((cy + bh / 2) * oh))
+            if x2 <= x1 or y2 <= y1:
+                continue
+            cname = self.names.get(cid, str(cid))
+            label = YOLO_DET_MAP.get(cname, "Inconsistent Growth")
+            area  = (x2 - x1) * (y2 - y1)
+            dets.append({"bbox": (x1, y1, x2, y2), "class": label,
+                         "conf": round(min(0.57, conf * 0.85), 3),
+                         "area": area, "source": "yolo-det"})
+        return dets
 
-    # YOLO per-region fusion (jika model tersedia)
-    if model is not None:
-        regions = run_yolo_on_regions(proc, model, regions)
-        for r in regions:
-            fc, fconf, _ = fuse_region(r)
-            r["fused_class"] = fc
-            r["fused_conf"]  = fconf
-    else:
-        for r in regions:
-            r["fused_class"] = r["class"]
-            r["fused_conf"]  = r["confidence"]
+# ── Build GCS detection summary ────────────────────────────────────────────────
+def build_gcs_counts(dets, fhi):
+    counts = {"Healthy": 0.0, "Stress": 0.0, "Drought": 0.0, "Bare Soil": 0.0}
+    total_area = sum(d["area"] for d in dets) or 1
+    for d in dets:
+        gcs_key = DISPLAY_TO_GCS.get(d["class"])
+        if gcs_key:
+            counts[gcs_key] += d["area"] / total_area * 100.0
+    visible = {k: round(v, 1) for k, v in counts.items() if v > 0.5}
+    parts   = sorted(visible.items(), key=lambda x: -x[1])
+    summary = " | ".join(f"{k}: {v:.0f}%" for k, v in parts)
+    return visible, summary
 
-    pct, _ = class_distribution(label)
-
-    if ema_state is not None:
-        a = cfg["ema_alpha"]
-        for k in pct:
-            ema_state[k] = a * pct[k] + (1 - a) * ema_state.get(k, pct[k])
-        smooth_pct = ema_state
-    else:
-        smooth_pct = pct
-
-    return regions, label, smooth_pct, proc
-
-
-# ---------------------------------------------------------------------------
-# STREAMING SUMMARY
-# ---------------------------------------------------------------------------
-def build_demo_counts(regions, pct):
-    """
-    Hitung distribusi kelas dari fused_class → key v5 yang dibaca GCS C#:
-    "Healthy", "Stress", "Drought", "Bare Soil"
-    """
-    # Pemetaan display label → key GCS
-    DISPLAY_TO_GCS = {
-        "Lush Green":              "Healthy",
-        "Inconsistent Growth":     "Stress",
-        "Drought/Severe Stress":   "Drought",
-        "Bare Soil / Gap":         "Bare Soil",
-    }
-
-    if regions:
-        counts = {"Healthy": 0.0, "Stress": 0.0, "Drought": 0.0, "Bare Soil": 0.0}
-        total_area = sum(r["area"] for r in regions
-                        if DISPLAY_MAP.get(r.get("fused_class", r["class"])) is not None)
-        if total_area > 0:
-            for r in regions:
-                cls     = r.get("fused_class", r["class"])
-                display = DISPLAY_MAP.get(cls)
-                if display is None:
-                    continue
-                gcs_key = DISPLAY_TO_GCS.get(display)
-                if gcs_key:
-                    counts[gcs_key] += r["area"] / total_area * 100.0
-            return {k: round(v, 1) for k, v in counts.items() if v > 0}
-
-    # fallback: pixel-based percentage
-    h = round(pct.get("healthy_crop", 0), 1)
-    s = round(pct.get("stressed_crop", 0), 1)
-    d = round(pct.get("drought_stress", 0) + pct.get("disease_stress_vegetation", 0), 1)
-    b = round(pct.get("bare_soil", 0), 1)
-    return {"Healthy": h, "Stress": s, "Drought": d, "Bare Soil": b}
-
-
-# ---------------------------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------------------------
+# ── Emit helper ────────────────────────────────────────────────────────────────
 def emit(payload):
     print(json.dumps(payload), flush=True)
 
-
+# ── Main streaming loop ────────────────────────────────────────────────────────
 def main():
     global DEMO_MODE
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--source",     required=True)
-    parser.add_argument("--model",      default=None)
-    parser.add_argument("--max-fps",    type=float, default=15.0)
-    parser.add_argument("--playback-rate", type=float, default=1.0,
-                        help="Playback speed multiplier. 0.75 = 25%% slower, 1.0 = normal.")
-    parser.add_argument("--demo",       action="store_true")
-    parser.add_argument("--no-overlay", action="store_true")
+    parser = argparse.ArgumentParser(description="MoonHarvest HSV-First stream v7c")
+    parser.add_argument("--source",       required=True, help="Video path or camera index")
+    parser.add_argument("--model",        default="",    help="ONNX/PT classifier (opsional)")
+    parser.add_argument("--det-model",    default="",    help="YOLO-det ONNX (opsional)")
+    parser.add_argument("--max-fps",      type=float, default=15.0)
+    parser.add_argument("--playback-rate",type=float, default=1.0)
+    parser.add_argument("--demo",         action="store_true")
     args = parser.parse_args()
 
     if args.demo:
@@ -643,8 +631,7 @@ def main():
         emit({"type": "error", "data": f"Cannot open: {args.source}"})
         return 1
 
-    # Kirim frame preview secepat mungkin. YOLO/ultralytics bisa lambat saat import,
-    # jadi UI tidak perlu menunggu model siap hanya untuk menampilkan video.
+    # Send preview frame immediately before loading any heavy models
     ret_preview, preview = cap.read()
     if ret_preview and preview is not None:
         ok, buf = cv2.imencode(".jpg", preview, [cv2.IMWRITE_JPEG_QUALITY, 75])
@@ -653,22 +640,26 @@ def main():
         if not isinstance(src, int):
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-    # --- Load YOLO (opsional) setelah preview keluar ---
-    yolo_model = None
+    # Load ONNX classifier
+    classifier = None
     if args.model and os.path.isfile(args.model):
-        if ensure_yolo_available():
-            try:
-                import torch as _torch
-                yolo_model = _YOLO(args.model)
-                yolo_model.to("cuda" if _torch.cuda.is_available() else "cpu")
-                _dev = "GPU" if _torch.cuda.is_available() else "CPU"
-                emit({"type": "info", "data": f"YOLO fusion aktif: {os.path.basename(args.model)} [{_dev}]"})
-            except Exception as e:
-                emit({"type": "info", "data": f"YOLO load gagal ({e}), HSV-only mode"})
-        else:
-            emit({"type": "info", "data": "ultralytics tidak tersedia, HSV-only mode"})
+        try:
+            classifier = load_classifier(args.model)
+            emit({"type": "info", "data": f"Classifier: {Path(args.model).name}"})
+        except Exception as e:
+            emit({"type": "info", "data": f"Classifier load error ({e}), HSV-only"})
     else:
-        emit({"type": "info", "data": "HSV-only mode"})
+        emit({"type": "info", "data": "HSV-only mode (no classifier)"})
+
+    # Load YOLO-det
+    detector = None
+    det_path = getattr(args, "det_model", "")
+    if det_path and os.path.isfile(det_path):
+        try:
+            detector = YOLODetector(det_path)
+            emit({"type": "info", "data": f"YOLO-det: {Path(det_path).name}"})
+        except Exception as e:
+            emit({"type": "info", "data": f"YOLO-det load error ({e})"})
 
     src_fps     = cap.get(cv2.CAP_PROP_FPS) or 30.0
     target_fps  = min(float(args.max_fps), src_fps)
@@ -676,22 +667,13 @@ def main():
     playback_rate = max(0.25, min(2.0, float(args.playback_rate)))
     frame_delay = (step / src_fps) / playback_rate
 
-    # 640px: ~32ms/frame → 31fps ceiling, lebih cepat dari 720px (44ms)
-    PROC_W     = 640
-    YOLO_EVERY = 30
-
-    # Antrian antar compute thread dan emit thread — max 1 item (frame drop alami)
+    PROC_W = 640
     _emit_q: queue.Queue = queue.Queue(maxsize=1)
     _stop   = threading.Event()
 
-    # -----------------------------------------------------------------------
-    # COMPUTE THREAD — baca frame, proses HSV, taruh hasil ke queue
-    # -----------------------------------------------------------------------
     def compute_loop():
-        yolo_cache = {}
-        emit_count = 0
-        frame_idx  = 0
-        ema_state  = {}
+        ema    = EMASmooth(HSV_CFG["ema_alpha"])
+        fidx   = 0
         eof_retries = 0
 
         while not _stop.is_set():
@@ -699,73 +681,56 @@ def main():
             if not ret or frame is None:
                 if DEMO_MODE and not isinstance(src, int):
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    frame_idx = 0
+                    fidx = 0
                     eof_retries += 1
                     if eof_retries <= 3:
                         continue
-                _emit_q.put(None)   # sinyal selesai
+                _emit_q.put(None)
                 break
             eof_retries = 0
-            frame_idx += 1
-            if frame_idx % step != 0:
+            fidx += 1
+            if fidx % step != 0:
                 continue
 
             fh, fw = frame.shape[:2]
             if fw > PROC_W:
                 frame = cv2.resize(frame, (PROC_W, int(fh * PROC_W / fw)))
 
-            emit_count += 1
-            use_yolo = (yolo_model is not None) and (emit_count % YOLO_EVERY == 1)
-
             try:
-                regions, label, smooth_pct, _ = process_frame(
-                    frame, CFG, ema_state,
-                    model=yolo_model if use_yolo else None)
+                regions = segment_regions(frame, HSV_CFG)
+                if classifier and regions:
+                    dets = fuse(frame, regions, classifier)
+                else:
+                    dets = [{"bbox": r["bbox"], "class": r["hsv_display"],
+                             "conf": 0.60, "area": r["area"], "source": "hsv-only"}
+                            for r in regions]
+                if detector:
+                    dets = dets + detector.detect(frame)
+                dets = nms(dets)
+                fhi_raw = compute_fhi(dets, frame.shape[0] * frame.shape[1])
+                fhi     = ema.update("fhi", fhi_raw)
+                vis     = draw_stream(frame, dets, fhi)
             except Exception as exc:
                 emit({"type": "error", "data": str(exc)})
                 continue
 
-            if use_yolo:
-                for r in regions:
-                    yolo_cache[r["class"]] = {
-                        "fused_class": r.get("fused_class", r["class"]),
-                        "fused_conf":  r.get("fused_conf",  r["confidence"]),
-                    }
-            else:
-                for r in regions:
-                    c = yolo_cache.get(r["class"])
-                    if c:
-                        r["fused_class"] = c["fused_class"]
-                        r["fused_conf"]  = c["fused_conf"]
-
-            annotated = draw_detections(frame, label, regions)
-
-            counts  = build_demo_counts(regions, smooth_pct)
-            visible = {k: v for k, v in counts.items() if v > 0}
-            parts   = sorted(visible.items(), key=lambda x: -x[1])
-            summary = " | ".join(f"{lbl}: {cnt:.0f}%" for lbl, cnt in parts)
-            n_boxes = sum(1 for r in regions
-                         if DISPLAY_MAP.get(r.get("fused_class", r["class"])) is not None)
-
-            ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 75])
+            ok, buf = cv2.imencode(".jpg", vis, [cv2.IMWRITE_JPEG_QUALITY, 75])
             if not ok:
                 continue
 
+            visible, summary = build_gcs_counts(dets, fhi)
             payload = {
                 "jpg":     base64.b64encode(buf).decode(),
-                "count":   n_boxes,
+                "count":   len(dets),
                 "summary": summary,
                 "classes": visible,
+                "fhi":     round(fhi, 1),
             }
-            # put_nowait: jika antrian penuh (emit thread lambat), drop frame ini
             try:
                 _emit_q.put_nowait(payload)
             except queue.Full:
-                pass   # frame drop — emit thread masih sibuk, tidak apa-apa
+                pass
 
-    # -----------------------------------------------------------------------
-    # EMIT THREAD (main thread) — baca dari queue, kirim ke stdout
-    # -----------------------------------------------------------------------
     t_compute = threading.Thread(target=compute_loop, daemon=True)
     t_compute.start()
 
@@ -788,9 +753,9 @@ def main():
                 "count":   item["count"],
                 "summary": item["summary"],
                 "classes": item["classes"],
+                "fhi":     item["fhi"],
             }})
 
-            # Sleep agar video berjalan di kecepatan sumber
             elapsed = time.time() - t_last
             sleep_t = frame_delay - elapsed
             if sleep_t > 0.004:

@@ -25,7 +25,7 @@ namespace HarvestmoonGCS.Views;
 
 public sealed partial class DashboardPage : Page
 {
-    private const string LockedDemoVideoPath = "/home/fawwazfa/Program/Harvestmoon/out/YDXJ_fused_only.mp4";
+    private const string LockedDemoVideoPath = "/home/fawwazfa/Program/Harvestmoon/out/stream_v7c_final.mp4";
     private readonly FlightViewModel? _flightViewModel;
     private readonly MapViewModel? _mapViewModel;
     private readonly ICameraService? _cameraService;
@@ -94,6 +94,10 @@ public sealed partial class DashboardPage : Page
     private DateTime _classifyFrameStart = DateTime.MinValue;
     private double _classifyFps;
 
+#if __ANDROID__
+    private HarvestmoonGCS.Platforms.Android.Services.AndroidDemoVideoDecoder? _androidDemoDecoder;
+#endif
+
     // Demo mode state
     private bool _isDemoRunning;
     private bool _useFusedOnlyDemoSummary;
@@ -106,21 +110,28 @@ public sealed partial class DashboardPage : Page
     private double _demoYawDeg = 45.0;
     private double _demoAltitudeMeters = 82.0;
     private double _demoSpeedMetersPerSecond = 9.4;
+    // Per-run random seed so telemetry values vary slightly each demo session
+    private Random _demoRng = new Random();
+    private double _demoAltitudeBase = 82.0;   // randomized at demo start
+    private double _demoSpeedBase    = 9.4;    // randomized at demo start
+    private double _demoBatteryStart = 82.0;   // randomized at demo start
+    private int    _demoSatCount     = 15;     // randomized at demo start
+    private double _demoBatteryVoltage = 12.6; // randomized at demo start
     private const int DemoTicksPerSegment = 10; // ~4 m/s cruise × 10 ticks per segment
     private readonly DispatcherTimer _demoTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     // Demo rice-field transect: Sukamerta, Rawamerta, Karawang (West Java rice belt).
     private const double DemoFieldLat = -6.24361;
     private const double DemoFieldLon = 107.36556;
     private const double DemoGeofenceRadiusMeters = 260;
-    // Summary percentages from YDXJ_fused_only detection log (1003 detections)
-    // Lush Green: 522 (52.0%), Inconsistent Growth: 283 (28.2%), Drought: 165 (16.5%), Bare Soil: 33 (3.3%)
-    // FHI avg from log: 80.8 (min 63.0, max 99.4)
-    private const double DemoReportLushGreenPct  = 52.0;
-    private const double DemoReportStressPct     = 28.2;
-    private const double DemoReportDroughtPct    = 16.5;
-    private const double DemoReportBareSoilPct   =  3.3;
-    private const double DemoReportFhi           = 81.0; // avg FHI from YDXJ_detected_log.csv
-    private const int    DemoReportTotalDetections = 1003;
+    // Summary percentages from stream_v7c_final.mp4 detection run (15d.mp4, 1638 detections)
+    // Lush Green: 31.4%, Inconsistent Growth: 59.0%, Drought: 0.0%, Bare Soil: 9.6%
+    // FHI avg from pipeline: 73.2 (min 60.2, max 85.8)
+    private const double DemoReportLushGreenPct  = 31.4;
+    private const double DemoReportStressPct     = 59.0;
+    private const double DemoReportDroughtPct    =  0.0;
+    private const double DemoReportBareSoilPct   =  9.6;
+    private const double DemoReportFhi           = 73.0; // avg FHI from 15d pipeline run
+    private const int    DemoReportTotalDetections = 1638;
     private static readonly (double Lat, double Lon)[] DemoWaypoints = GenerateDemoRiceFieldWaypoints();
     private const int DemoWaypointStartSequence = 6;
     private static readonly string[] DemoClassificationEvents =
@@ -391,14 +402,18 @@ public sealed partial class DashboardPage : Page
         SetTextIfChanged(TelemetryAltitudeText, $"{altitude:F1} m", ref _lastAltitudeText);
         SetTextIfChanged(TelemetrySpeedText, $"{speed:F1} m/s", ref _lastSpeedText);
         SetTextIfChanged(TelemetryHeadingText, $"{heading:F0}°", ref _lastHeadingText);
-        SetTextIfChanged(TelemetryGpsText, "fix(15) · HDOP 0.4", ref _lastGpsText);
-        SetTextIfChanged(TelemetryBatteryText, "93% · 12.6V", ref _lastBatteryText);
+        SetTextIfChanged(TelemetryGpsText, $"RTK fix · {satCount} sats · HDOP {(hdop > 0 ? hdop : 0.4):F1}", ref _lastGpsText);
+        SetTextIfChanged(TelemetryBatteryText,
+            _isDemoRunning
+                ? $"{(int)_demoBattery}% · {_demoBatteryVoltage:F1}V"
+                : $"{(int)battery}% · {(voltage > 0 ? voltage : 12.6):F1}V",
+            ref _lastBatteryText);
         SetTextIfChanged(TelemetryModeText, flightMode, ref _lastModeText);
 
         SetTextIfChanged(AltSpdHudText, $"ALT {altitude:F0} m · SPD {speed:F1} m/s", ref _lastAltSpdHudText);
         SetTextIfChanged(HdgModeText, $"HDG {heading:F0}° · MODE {flightMode}", ref _lastHdgModeText);
         SetTextIfChanged(HeadingPillText, $"HDG {heading:F0}°", ref _lastHeadingPillText);
-        // During demo, FpsHudText is owned by InjectDemoDetectionUI (shows fluctuating 18-20 FPS)
+        // During demo, FpsHudText is owned by InjectDemoDetectionUI.
         // Skip the override here so it doesn't revert to "active/standby" on each telemetry tick.
         if (!_isDemoRunning)
             SetTextIfChanged(FpsHudText, _aiOn ? $"YOLOv8 · {(connected ? "active" : "standby")}" : "YOLO paused", ref _lastFpsHudText);
@@ -873,28 +888,32 @@ public sealed partial class DashboardPage : Page
                 var avgConf = boxes.Count > 0 ? boxes.Average(b => (double)b.Confidence) : 0;
                 _lastConfidence = avgConf;
 
-                DetectionCountText.Text = $"{boxes.Count} det";
-                DetectionsListTitle.Text = $"Live Detections ({boxes.Count})";
-                ConfAvgText.Text = $"Conf avg {avgConf * 100:F0}%";
-                SummaryConfidenceText.Text = $"{avgConf * 100:F0}%";
-                MissionDetectionsText.Text = boxes.Count.ToString();
-
-                // Calculate real inference FPS
-                _inferenceCount++;
-                var now = DateTime.UtcNow;
-                var elapsed = (now - _lastFpsCalcTime).TotalSeconds;
-                if (elapsed >= 1.0)
+                // During demo, InjectDemoDetectionUI owns confidence/FPS display — skip override.
+                if (!_isDemoRunning)
                 {
-                    _currentInferenceFps = _inferenceCount / elapsed;
-                    _inferenceCount = 0;
-                    _lastFpsCalcTime = now;
-                }
-                FpsHudText.Text = _aiOn
-                    ? $"YOLOv8 · {_currentInferenceFps:F0} FPS"
-                    : "YOLO paused";
+                    DetectionCountText.Text = $"{boxes.Count} det";
+                    DetectionsListTitle.Text = $"Live Detections ({boxes.Count})";
+                    ConfAvgText.Text = $"Conf avg {avgConf * 100:F0}%";
+                    SummaryConfidenceText.Text = $"{avgConf * 100:F0}%";
+                    MissionDetectionsText.Text = boxes.Count.ToString();
 
-                // Update top bar AI FPS indicator
-                UpdateTopBarAiFps(_currentInferenceFps);
+                    // Calculate real inference FPS
+                    _inferenceCount++;
+                    var now = DateTime.UtcNow;
+                    var elapsed = (now - _lastFpsCalcTime).TotalSeconds;
+                    if (elapsed >= 1.0)
+                    {
+                        _currentInferenceFps = _inferenceCount / elapsed;
+                        _inferenceCount = 0;
+                        _lastFpsCalcTime = now;
+                    }
+                    FpsHudText.Text = _aiOn
+                        ? $"YOLOv8 · {_currentInferenceFps:F0} FPS"
+                        : "YOLO paused";
+
+                    // Update top bar AI FPS indicator
+                    UpdateTopBarAiFps(_currentInferenceFps);
+                }
 
                 DashboardVideoStream?.SetDetectionOverlays(boxes
                     .Where(b => b.Confidence * 100 >= _confThreshold)
@@ -1442,7 +1461,14 @@ public sealed partial class DashboardPage : Page
         _demoStep = 0;
         ReadinessChecklistPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
         MissionMetadataPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
-        _demoBattery = 93.0;  // Fixed at 93% for demo
+        // Randomize per-run demo values so each session shows slightly different numbers
+        _demoRng = new Random();
+        _demoAltitudeBase   = 72.6 + _demoRng.NextDouble() * 1.0;   // 72.6–73.6 m
+        _demoSpeedBase      =  8.6 + _demoRng.NextDouble() * 2.0;   // 8.6–10.6 m/s
+        _demoBatteryStart   = 82.0;
+        _demoSatCount       = 13   + _demoRng.Next(0, 5);           // 13–17 sats
+        _demoBatteryVoltage = 12.3 + _demoRng.NextDouble() * 0.6;   // 12.3–12.9 V
+        _demoBattery = _demoBatteryStart;
         _demoHeading = 45.0;  // Start demo with 45° heading (northeast)
         SetDemoButtonState(running: true);
         _harvestFunctionalService.SetDemoModeActive(true);  // Show YOLO as Active, suppress geofence alerts
@@ -1450,6 +1476,20 @@ public sealed partial class DashboardPage : Page
         try
         {
             // 1. Video — use YOLO classify stream (Python annotates frames, C# skips double ONNX)
+            //    On Android there is no local video file, so skip gracefully and run telemetry-only demo.
+#if __ANDROID__
+            // Wire the bundled YDXJ_fused_only_detected.mp4 through AndroidDemoVideoDecoder → VideoStreamControl
+            _useFusedOnlyDemoSummary = true;
+            var androidContext = Android.App.Application.Context;
+            _androidDemoDecoder = new HarvestmoonGCS.Platforms.Android.Services.AndroidDemoVideoDecoder(androidContext);
+            _androidDemoDecoder.FrameDecoded += (_, jpeg) => OnDashboardFrameReceived(this, jpeg);
+            await _androidDemoDecoder.StartAsync();
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                try { DashboardVideoStream?.HideOverlay(); } catch { }
+            });
+            _timelineService?.Add("camera", "Video: YDXJ_fused_only_detected.mp4 (Android)", "success");
+#else
             var videoPath = ResolveDetectedVideoPath();
             _useFusedOnlyDemoSummary = !string.IsNullOrWhiteSpace(videoPath) &&
                 Path.GetFileName(videoPath).Contains("fused_only", StringComparison.OrdinalIgnoreCase);
@@ -1472,6 +1512,7 @@ public sealed partial class DashboardPage : Page
             {
                 throw new FileNotFoundException($"Locked demo video not found: {LockedDemoVideoPath}");
             }
+#endif
 
             // 2. AI on (C# ONNX skipped when classify stream is active — Python already annotates frames)
             _aiOn = true;
@@ -1498,7 +1539,7 @@ public sealed partial class DashboardPage : Page
                         Sequence    = DemoWaypointStartSequence + i,
                         Latitude    = wpLat,
                         Longitude   = wpLon,
-                        Altitude    = 82,
+                        Altitude    = 73,
                         Command     = WaypointCommand.Waypoint,
                     });
                 }
@@ -1518,9 +1559,9 @@ public sealed partial class DashboardPage : Page
             InjectDemoTelemetry(0);
 
             // 6. Seed timeline
-            _timelineService?.Add("connected", "MAVLink connected · Karawang rice-field block",     "success");
+            _timelineService?.Add("connected", "MAVLink connected · ",     "success");
             _timelineService?.Add("tlog",      "Auto TLOG recorder armed",                         "success");
-            _timelineService?.Add("armed",     "Armed · AUTO mode · altitude 82m · survey active", "success");
+            _timelineService?.Add("armed",     "Armed · AUTO mode · altitude 73m · survey active", "success");
             _timelineService?.Add("waypoint",  "Survey route active · 900m E-W · WP 6-13 · Sukamerta, Karawang", "info");
             RenderIncidentTimeline();
             UpdateAlertCenter(_flightViewModel?.Telemetry, true);
@@ -1534,7 +1575,7 @@ public sealed partial class DashboardPage : Page
         _lastDetectionCount = 0;
         _lastConfidence = 0;
         DetectionCountText.Text = "0 det";
-        int initialFps = 19;
+        int initialFps = 15;
         FpsHudText.Text = $"YOLOv8 · {initialFps} FPS";
             if (_useFusedOnlyDemoSummary)
             {
@@ -1558,6 +1599,13 @@ public sealed partial class DashboardPage : Page
     private void StopDemoMode()
     {
         _isDemoRunning = false;
+#if __ANDROID__
+        if (_androidDemoDecoder != null)
+        {
+            _ = _androidDemoDecoder.StopAsync().ContinueWith(_ => { try { _androidDemoDecoder?.Dispose(); } catch { } });
+            _androidDemoDecoder = null;
+        }
+#endif
         _harvestFunctionalService?.SetDemoModeActive(false);  // Restore normal YOLO status, re-enable geofence alerts
         ReadinessChecklistPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
         MissionMetadataPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
@@ -1629,23 +1677,25 @@ public sealed partial class DashboardPage : Page
         bool isTurning      = Math.Abs(headingDelta) > 45;
         _demoHeading        = newHeading;
 
-        // Altitude: gentle oscillation ±1.5 m around 82 m (air turbulence)
-        double altitude     = 82.0 + Math.Sin(step * 0.31) * 1.5;
+        // Altitude: gentle oscillation around ~73 m to keep the demo stable and believable.
+        double altitude     = _demoAltitudeBase + Math.Sin(step * 0.31) * 0.6;
 
-        // Roll: banking during turns, visible waggle on straights for IMU animation
+        // Roll: gentle banking during turns, subtle waggle on straights
         double roll = isTurning
-            ? Math.Sign(headingDelta) * 18.0
-            : Math.Sin(step * 0.4) * 12.0;
+            ? Math.Sign(headingDelta) * 10.0
+            : Math.Sin(step * 0.4) * 5.0;
 
-        double pitch = Math.Sin(step * 0.23) * 8.0;
+        // Pitch: very subtle nose-down oscillation for level cruise flight feel
+        double pitch = -2.5 + Math.Sin(step * 0.23) * 2.5;
 
-        // Speed: slightly slower through turns
-        double speed = isTurning ? 7.2 : 9.4;
+        // Speed: slightly slower through turns, using randomized base
+        double speedTurn = Math.Max(6.5, _demoSpeedBase - 1.8);
+        double speed = isTurning ? speedTurn : _demoSpeedBase;
 
         // Vertical speed: tiny oscillation
         double verticalSpeed = Math.Sin(step * 0.5) * 0.15;
 
-        _demoBattery = Math.Max(20, _demoBattery - 0.09); // ~42 min endurance at 95→20%
+        _demoBattery = Math.Max(82, _demoBatteryStart - (step * 0.015));
 
         var telemetry = new TelemetryData
         {
@@ -1656,10 +1706,10 @@ public sealed partial class DashboardPage : Page
             Heading            = newHeading,
             Speed              = speed,
             GroundSpeed        = speed,
-            BatteryPercentage  = 93.0,  // Fixed at 93% for demo
-            BatteryRemaining   = 93,
-            BatteryVoltage     = 12.6,
-            SatelliteCount     = 15,
+            BatteryPercentage  = _demoBattery,
+            BatteryRemaining   = (int)_demoBattery,
+            BatteryVoltage     = _demoBatteryVoltage,
+            SatelliteCount     = _demoSatCount,
             HDOP               = 0.4,
             GPSFixType         = 15,  // RTK Fixed for demo
             FlightMode         = HarvestmoonGCS.Core.Models.FlightMode.AUTO,
@@ -1779,11 +1829,12 @@ public sealed partial class DashboardPage : Page
             var frame = DemoDetectionFrames[step % DemoDetectionFrames.Length];
             count   = frame.Length;
             avgConf = 0.85; // fixed confidence avg 85% for demo fallback
+            // Fallback cyclic data calibrated to 15d.mp4 distribution
             double jitter   = Math.Sin(step * 0.7) * 1.5;
-            double rawH = Math.Max(0, 33.8 + jitter);
-            double rawS = Math.Max(0, 24.8 - jitter * 0.4);
-            double rawD = Math.Max(0, 4.9 + Math.Abs(jitter) * 0.2);
-            double rawB = Math.Max(0, 3.5 + Math.Cos(step * 0.4));
+            double rawH = Math.Max(0, 31.4 + jitter);
+            double rawS = Math.Max(0, 59.0 - jitter * 0.4);
+            double rawD = 0.0; // drought tidak terdeteksi di 15d
+            double rawB = Math.Max(0, 9.6 + Math.Cos(step * 0.4));
             double rawT = Math.Max(1, rawH + rawS + rawD + rawB);
             dLushGreen = rawH * 100 / rawT;
             dStress    = rawS * 100 / rawT;
@@ -1803,8 +1854,8 @@ public sealed partial class DashboardPage : Page
         SummaryConfidenceText.Text = $"{avgConf * 100:F0}%";
         DetectionsListTitle.Text = $"Live Detections ({Math.Min(count, 4)})";
 
-        // Lookup table so FPS is always exactly 18, 19, or 20 — no float rounding surprises
-        int[] _fpsTable = { 18, 19, 20, 19, 18, 20, 19, 18, 19, 20 };
+        // Keep HUD steady at 15–16 FPS and make the Android playback follow the same tempo.
+        int[] _fpsTable = { 15, 16, 15, 16, 15, 16, 15, 16, 15, 16 };
         int demofps = _fpsTable[step % _fpsTable.Length];
         FpsHudText.Text = $"YOLOv8 · {demofps} FPS";
 
@@ -2407,7 +2458,7 @@ sys.stdout.buffer.write(buf.tobytes())
 
         SetChecklistText(ReadyTelemetryText, connected, "Telemetry connected");
                         SetChecklistText(ReadyGpsText, true, "GPS fix(15) (15 sats)");
-        SetChecklistText(ReadyBatteryText, true, "Battery 93%");
+        SetChecklistText(ReadyBatteryText, true, "Battery 82%");
         SetChecklistText(ReadyCameraText, _cameraService?.IsStreaming == true, "Camera active");
         SetChecklistText(ReadyYoloText, _harvestFunctionalService?.IsYoloRuntimeReady == true, "YOLO ready");
         SetChecklistText(ReadyGeofenceText, geofenceReady, "Geofence loaded");

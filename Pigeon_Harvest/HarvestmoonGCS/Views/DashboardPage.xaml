@@ -152,7 +152,7 @@
                                 <ColumnDefinition Width="2*"/>
                             </Grid.ColumnDefinitions>
                             <!-- === Live Video with overlays === -->
-                            <Border Grid.Column="0" CornerRadius="10" Background="#0F1F14" BorderBrush="#163021" BorderThickness="1">
+                            <Border Grid.Column="0" Grid.ColumnSpan="2" CornerRadius="10" Background="#0F1F14" BorderBrush="#163021" BorderThickness="1">
                                 <Grid Height="260" x:Name="VideoRoot">
                                     <!-- Actual live video (YOLO overlays drawn by VideoStreamControl) -->
                                     <controls:VideoStreamControl x:Name="DashboardVideoStream"/>
@@ -192,7 +192,7 @@
                                     </Grid>
 
                                     <!-- Top HUD bar -->
-                                    <Grid VerticalAlignment="Top" Margin="12">
+                                    <Grid VerticalAlignment="Top" Margin="12" Visibility="Collapsed">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -234,7 +234,7 @@
                                                 <TextBlock x:Name="HdgModeText" Text="HDG 0° · MODE STANDBY" Foreground="White" FontSize="11" FontWeight="SemiBold"/>
                                             </Border>
                                         </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom" Visibility="Collapsed">
                                             <Button x:Name="RecordButton" Style="{StaticResource HudActionButton}" Click="RecordButton_Click">
                                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                                     <FontIcon x:Name="RecordIcon" Glyph="&#xE71A;" FontSize="12"/>
@@ -257,8 +257,8 @@
                                     </Grid>
 
                                     <!-- IMU HUD (top-right below top bar) -->
-                                    <StackPanel x:Name="ImuHudPanel" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,60,16,0" Spacing="4">
-                                        <Border Width="84" Height="84" CornerRadius="42" Background="#66000000" BorderBrush="#30FFFFFF" BorderThickness="1">
+                                    <StackPanel x:Name="ImuHudPanel" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,16,16,0" Spacing="2">
+                                        <Border Width="48" Height="48" CornerRadius="24" Background="#66000000" BorderBrush="#30FFFFFF" BorderThickness="1">
                                             <Grid>
                                                 <Grid x:Name="ImuRotationGrid" RenderTransformOrigin="0.5,0.5">
                                                     <Grid.RenderTransform>
@@ -268,22 +268,22 @@
                                                         <Grid.RenderTransform>
                                                             <TranslateTransform x:Name="ImuPitchTransform" Y="0"/>
                                                         </Grid.RenderTransform>
-                                                        <Rectangle Height="42" VerticalAlignment="Top" Fill="#4FC3F7"/>
-                                                        <Rectangle Height="42" VerticalAlignment="Bottom" Fill="#8D6E63"/>
+                                                        <Rectangle Height="24" VerticalAlignment="Top" Fill="#4FC3F7"/>
+                                                        <Rectangle Height="24" VerticalAlignment="Bottom" Fill="#8D6E63"/>
                                                     </Grid>
                                                 </Grid>
-                                                <Rectangle Width="28" Height="1" Fill="#FACC15" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                <Rectangle Width="16" Height="1" Fill="#FACC15" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Grid>
                                         </Border>
-                                        <Border Background="#99000000" CornerRadius="6" Padding="6,2" HorizontalAlignment="Center">
-                                            <TextBlock x:Name="ImuLabelText" Text="P-5° R0° Y45°" Foreground="White" FontSize="10"/>
+                                        <Border Background="#99000000" CornerRadius="5" Padding="4,1" HorizontalAlignment="Center">
+                                            <TextBlock x:Name="ImuLabelText" Text="P-5° R0° Y45°" Foreground="White" FontSize="8"/>
                                         </Border>
                                     </StackPanel>
                                 </Grid>
                             </Border>
 
                             <!-- === Right side: Map + Detections stacked === -->
-                            <Grid Grid.Column="1" RowSpacing="8">
+                            <Grid Grid.Column="1" RowSpacing="8" Visibility="Collapsed">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="125"/>
                                     <RowDefinition Height="125"/>
@@ -361,13 +361,13 @@
                                     <TextBlock Text="Recommendations &amp; Report Export" FontSize="13" FontWeight="SemiBold" Foreground="#0F3024"/>
                                 </StackPanel>
                             </Border>
-                            <Grid Grid.Row="1" Padding="12" ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" MinWidth="180"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
+                            <Grid Grid.Row="1" Padding="12" RowSpacing="12">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
                                 <!-- Hidden mission metadata — kept for code-behind/export compatibility -->
-                                <StackPanel Grid.Column="0" Spacing="6">
+                                <StackPanel Grid.Row="0" Spacing="6">
                                     <StackPanel x:Name="MissionMetadataPanel" Visibility="Collapsed">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -430,7 +430,7 @@
                                     </Grid>
                                 </StackPanel>
                                 <!-- Right: operational notes -->
-                                <Border Grid.Column="1" BorderBrush="#E5F3E8" BorderThickness="1,0,0,0" Padding="12,0,0,0">
+                                <Border Grid.Row="1" BorderBrush="#E5F3E8" BorderThickness="0,1,0,0" Padding="0,12,0,0">
                                     <StackPanel Spacing="6">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <FontIcon Glyph="&#xE7BA;" FontSize="12" Foreground="#F59E0B"/>
