@@ -63,9 +63,50 @@ public sealed partial class ReportsHarvestPage : Page
             ActionFeedbackBorder.Visibility = Visibility.Collapsed;
         };
 
+        Loaded += OnPageLoaded;
+
         RenderMissionList();
         RenderDetail();
         _ = LoadPersistedReportsAsync();
+    }
+
+    private void OnPageLoaded(object sender, RoutedEventArgs e)
+    {
+#if __ANDROID__
+        // Compact layout for Android tablet: smaller padding, font sizes, and button spacing
+        // so the export section fits comfortably on a 8" tablet screen.
+
+        // Export card: tighter padding
+        ExportCard.Padding = new Thickness(8);
+        ExportCard.CornerRadius = new CornerRadius(8);
+
+        // Export title: smaller font
+        ExportTitleText.FontSize = 13;
+        ExportTitleText.Margin = new Thickness(0, 0, 0, 6);
+
+        // Export buttons panel: less spacing, wrap if needed
+        ExportButtonsPanel.Spacing = 4;
+        ExportButtonsPanel.Orientation = Orientation.Horizontal;
+
+        // All export buttons: compact padding and font
+        var compactPadding = new Thickness(8, 5, 8, 5);
+        foreach (var btn in new[] { ExportPdfButton, ExportCsvButton, ExportJsonButton, ExportShareButton, ExportCoopButton })
+        {
+            btn.Padding = compactPadding;
+            btn.FontSize = 12;
+        }
+
+        // "Send to Cooperative" label is long — shorten it on Android
+        ExportCoopButton.Content = "Cooperative";
+
+        // DetailCard: tighter padding
+        DetailCard.Padding = new Thickness(8);
+        DetailCard.CornerRadius = new CornerRadius(8);
+        DetailTitleText.FontSize = 13;
+
+        // Operator notes: reduce height slightly
+        OperatorNoteTextBox.Height = 70;
+#endif
     }
 
     private static IEnumerable<ReportEntry> EnrichSeedReports(IReadOnlyList<ReportEntry> seeds)

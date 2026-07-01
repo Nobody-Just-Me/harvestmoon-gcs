@@ -38,7 +38,8 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <Grid Width="180" Background="{ThemeResource SidebarBrush}" BorderBrush="{ThemeResource SidebarBorderBrush}" BorderThickness="0,0,1,0">
+    <!-- SidebarRoot width is controlled from code-behind via ApplyCompactMode() -->
+    <Grid x:Name="SidebarRoot" Width="180" Background="{ThemeResource SidebarBrush}" BorderBrush="{ThemeResource SidebarBorderBrush}" BorderThickness="0,0,1,0">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -46,41 +47,50 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Logo Area -->
-        <StackPanel Grid.Row="0" Padding="14" BorderBrush="{ThemeResource SidebarBorderBrush}" BorderThickness="0,0,0,1">
+        <!-- Logo Area — full mode -->
+        <StackPanel x:Name="LogoFull" Grid.Row="0" Padding="14" BorderBrush="{ThemeResource SidebarBorderBrush}" BorderThickness="0,0,0,1">
             <StackPanel HorizontalAlignment="Center">
-                <TextBlock Text="EFRISA" 
-                           FontSize="17" 
-                           FontWeight="Bold" 
+                <TextBlock Text="EFRISA"
+                           FontSize="17"
+                           FontWeight="Bold"
                            CharacterSpacing="200"
                            HorizontalAlignment="Center"
-                            Foreground="{ThemeResource ForegroundBrush}"/>
-                <TextBlock Text="Politeknik Elektronika Negeri Surabaya" 
-                           FontSize="8" 
-                            Foreground="{ThemeResource MutedForegroundBrush}"
+                           Foreground="{ThemeResource ForegroundBrush}"/>
+                <TextBlock Text="Politeknik Elektronika Negeri Surabaya"
+                           FontSize="8"
+                           Foreground="{ThemeResource MutedForegroundBrush}"
                            HorizontalAlignment="Center"/>
             </StackPanel>
 
             <StackPanel Margin="0,16,0,0" HorizontalAlignment="Center">
                 <Image Source="ms-appx:///Assets/logo/pigeonlogo.png" Height="38" Stretch="Uniform" HorizontalAlignment="Center"/>
                 <TextBlock Text="MOONHARVEST"
-                           FontWeight="Bold" 
-                           FontSize="11" 
+                           FontWeight="Bold"
+                           FontSize="11"
                            CharacterSpacing="100"
-                            Foreground="{ThemeResource NavFlightBrush}"
+                           Foreground="{ThemeResource NavFlightBrush}"
                            HorizontalAlignment="Center"
                            Margin="0,8,0,0"/>
-                <TextBlock Text="Unified GCS" 
-                           FontSize="9" 
+                <TextBlock Text="Unified GCS"
+                           FontSize="9"
                            Foreground="{ThemeResource MutedForegroundBrush}"
                            HorizontalAlignment="Center"/>
             </StackPanel>
         </StackPanel>
 
+        <!-- Logo Area — compact/icon-only mode (shown on Android tablet) -->
+        <StackPanel x:Name="LogoCompact" Grid.Row="0" Padding="6,10"
+                    BorderBrush="{ThemeResource SidebarBorderBrush}" BorderThickness="0,0,0,1"
+                    Visibility="Collapsed" HorizontalAlignment="Center">
+            <Image Source="ms-appx:///Assets/logo/pigeonlogo.png" Height="28" Stretch="Uniform" HorizontalAlignment="Center"/>
+        </StackPanel>
+
         <!-- Navigation Items -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel Padding="0,8">
-                <Button x:Name="FlightNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Dashboard">
+
+                <Button x:Name="FlightNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Dashboard"
+                        ToolTipService.ToolTip="Dashboard · Live">
                     <Grid HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -88,12 +98,13 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <FontIcon Grid.Column="0" Glyph="&#xE709;" FontSize="16" Foreground="{ThemeResource NavFlightBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="Dashboard · Live" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
+                        <TextBlock x:Name="FlightNavLabel" Grid.Column="1" Text="Dashboard · Live" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
                         <Ellipse x:Name="FlightActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
 
-                <Button x:Name="CameraNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Camera">
+                <Button x:Name="CameraNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Camera"
+                        ToolTipService.ToolTip="Camera">
                     <Grid HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -101,12 +112,13 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <FontIcon Grid.Column="0" Glyph="&#xE714;" FontSize="16" Foreground="{ThemeResource NavCameraBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="Camera" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
+                        <TextBlock x:Name="CameraNavLabel" Grid.Column="1" Text="Camera" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
                         <Ellipse x:Name="CameraActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
 
-                <Button x:Name="MapNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="MissionPlanner">
+                <Button x:Name="MapNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="MissionPlanner"
+                        ToolTipService.ToolTip="Peta &amp; Misi">
                     <Grid HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -114,12 +126,13 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <FontIcon Grid.Column="0" Glyph="&#xE81D;" FontSize="16" Foreground="{ThemeResource NavMapBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="Peta &amp; Misi" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
+                        <TextBlock x:Name="MapNavLabel" Grid.Column="1" Text="Peta &amp; Misi" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
                         <Ellipse x:Name="MapActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
 
-                <Button x:Name="StatsNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Stats">
+                <Button x:Name="StatsNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Stats"
+                        ToolTipService.ToolTip="Crop Analysis">
                     <Grid HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -127,13 +140,13 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <FontIcon Grid.Column="0" Glyph="&#xE9D9;" FontSize="16" Foreground="{ThemeResource NavStatsBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="Crop Analysis" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
+                        <TextBlock x:Name="StatsNavLabel" Grid.Column="1" Text="Crop Analysis" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
                         <Ellipse x:Name="StatsActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
 
-
-                <Button x:Name="EdgeModeNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="EdgeMode">
+                <Button x:Name="EdgeModeNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="EdgeMode"
+                        ToolTipService.ToolTip="Edge Mode">
                     <Grid HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -141,12 +154,13 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <FontIcon Grid.Column="0" Glyph="&#xE950;" FontSize="16" Foreground="{ThemeResource PrimaryBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="Edge Mode" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
+                        <TextBlock x:Name="EdgeModeNavLabel" Grid.Column="1" Text="Edge Mode" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
                         <Ellipse x:Name="EdgeModeActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
 
-                <Button x:Name="AISettingsNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="AISettings">
+                <Button x:Name="AISettingsNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="AISettings"
+                        ToolTipService.ToolTip="AI Settings">
                     <Grid HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -154,12 +168,13 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <FontIcon Grid.Column="0" Glyph="&#xE7C1;" FontSize="16" Foreground="{ThemeResource PrimaryBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="AI Settings" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
+                        <TextBlock x:Name="AISettingsNavLabel" Grid.Column="1" Text="AI Settings" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
                         <Ellipse x:Name="AISettingsActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
 
-                <Button x:Name="TlogNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Tlog">
+                <Button x:Name="TlogNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Tlog"
+                        ToolTipService.ToolTip="Reports">
                     <Grid HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -167,15 +182,15 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <FontIcon Grid.Column="0" Glyph="&#xE8A5;" FontSize="16" Foreground="{ThemeResource NavTlogBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="Reports" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
+                        <TextBlock x:Name="TlogNavLabel" Grid.Column="1" Text="Reports" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
                         <Ellipse x:Name="TlogActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
 
-
 #if !__WASM__
                 <!-- PIA AI Assistant Button -->
-                <Button x:Name="PIANavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="PIAButton_Click" Visibility="Collapsed">
+                <Button x:Name="PIANavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="PIAButton_Click" Visibility="Collapsed"
+                        ToolTipService.ToolTip="PIA AI">
                     <Grid HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -183,7 +198,7 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <FontIcon Grid.Column="0" Glyph="&#xE7C1;" FontSize="16" Foreground="{ThemeResource PrimaryBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <TextBlock Grid.Column="1" Text="PIA AI" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
+                        <TextBlock x:Name="PIANavLabel" Grid.Column="1" Text="PIA AI" FontSize="10" FontWeight="Medium" VerticalAlignment="Center" Foreground="{ThemeResource SidebarForegroundBrush}"/>
                         <Ellipse x:Name="PIAActiveDot" Grid.Column="2" Width="6" Height="6" Fill="{ThemeResource PrimaryBrush}" Opacity="0" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>

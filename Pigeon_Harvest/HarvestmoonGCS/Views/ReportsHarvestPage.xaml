@@ -23,6 +23,14 @@
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Foreground" Value="{ThemeResource MutedForegroundBrush}"/>
         </Style>
+        <!-- Compact styles for Android tablet -->
+        <Style x:Key="CardStyleCompact" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBrush}"/>
+            <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="8"/>
+        </Style>
     </Page.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
@@ -152,15 +160,15 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource CardStyle}">
+                <Border x:Name="ExportCard" Style="{StaticResource CardStyle}">
                     <StackPanel>
-                        <TextBlock Text="Export Report" Style="{StaticResource TitleStyle}" Margin="0,0,0,8"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="PDF" Padding="14,8" Background="{ThemeResource SecondaryBrush}" Click="ExportAction_Click"/>
-                            <Button Content="CSV" Padding="14,8" Background="{ThemeResource SecondaryBrush}" Click="ExportAction_Click"/>
-                            <Button Content="JSON" Padding="14,8" Background="{ThemeResource SecondaryBrush}" Click="ExportAction_Click"/>
-                            <Button Content="Share" Padding="14,8" Click="ExportAction_Click"/>
-                            <Button Content="Send to Cooperative" Padding="14,8" Background="{ThemeResource PrimaryBrush}" Foreground="White" Click="ExportAction_Click"/>
+                        <TextBlock x:Name="ExportTitleText" Text="Export Report" Style="{StaticResource TitleStyle}" Margin="0,0,0,8"/>
+                        <StackPanel x:Name="ExportButtonsPanel" Orientation="Horizontal" Spacing="6">
+                            <Button x:Name="ExportPdfButton" Content="PDF" Padding="14,8" Background="{ThemeResource SecondaryBrush}" Click="ExportAction_Click"/>
+                            <Button x:Name="ExportCsvButton" Content="CSV" Padding="14,8" Background="{ThemeResource SecondaryBrush}" Click="ExportAction_Click"/>
+                            <Button x:Name="ExportJsonButton" Content="JSON" Padding="14,8" Background="{ThemeResource SecondaryBrush}" Click="ExportAction_Click"/>
+                            <Button x:Name="ExportShareButton" Content="Share" Padding="14,8" Click="ExportAction_Click"/>
+                            <Button x:Name="ExportCoopButton" Content="Send to Cooperative" Padding="14,8" Background="{ThemeResource PrimaryBrush}" Foreground="White" Click="ExportAction_Click"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>

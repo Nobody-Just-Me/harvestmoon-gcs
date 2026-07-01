@@ -52,8 +52,8 @@
     <PackageReference Include="Microsoft.ML.OnnxRuntime" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="OpenCvSharp4" />
-    <PackageReference Include="OpenCvSharp4.runtime.ubuntu.22.04-x64" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
-    <PackageReference Include="OpenCvSharp4.runtime.win" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+    <PackageReference Include="OpenCvSharp4.runtime.ubuntu.22.04-x64" Condition="$([MSBuild]::IsOSPlatform('Linux')) and !$(TargetFramework.Contains('android'))" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Condition="$([MSBuild]::IsOSPlatform('Windows')) and !$(TargetFramework.Contains('android'))" />
     <PackageReference Include="System.IO.Ports" />
     <PackageReference Include="Uno.Extensions.Navigation.Toolkit.WinUI" />
     <PackageReference Include="Uno.Toolkit.WinUI" />
@@ -80,6 +80,13 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>Assets\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </Content>
+  </ItemGroup>
+
+  <!-- Bundle the pre-annotated demo video as an Android asset so DemoVideoDecoder can play it -->
+  <ItemGroup Condition="$(TargetFramework.Contains('android'))">
+    <AndroidAsset Include="Assets\demo_videos\YDXJ_fused_only_detected.mp4">
+      <Link>demo_videos/YDXJ_fused_only_detected.mp4</Link>
+    </AndroidAsset>
   </ItemGroup>
 
   <ItemGroup>

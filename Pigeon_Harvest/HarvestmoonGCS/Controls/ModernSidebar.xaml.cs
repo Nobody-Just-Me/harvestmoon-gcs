@@ -34,11 +34,83 @@ public sealed partial class ModernSidebar : UserControl
         this.ActualThemeChanged += OnActualThemeChanged;
     }
 
+    /// <summary>
+    /// Switches the sidebar between full-width (with labels) and icon-only compact mode.
+    /// Called from MainPage_Modern.ApplyResponsiveLayout() on Android.
+    /// </summary>
+    public void ApplyCompactMode(bool compact)
+    {
+        const double IconOnlyWidth = 52.0;
+        const double FullWidth = 180.0;
+
+        if (SidebarRoot == null) return;
+
+        SidebarRoot.Width = compact ? IconOnlyWidth : FullWidth;
+
+        // Toggle logo panels
+        if (LogoFull != null)   LogoFull.Visibility   = compact ? Visibility.Collapsed : Visibility.Visible;
+        if (LogoCompact != null) LogoCompact.Visibility = compact ? Visibility.Visible  : Visibility.Collapsed;
+
+        // Hide/show nav labels — all TextBlock children named *NavLabel
+        SetNavLabelsVisible(!compact);
+
+        // Hide active dots and yolo label text in compact mode (dots take space)
+        if (YoloOptionLabel != null)
+            YoloOptionLabel.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+
+        // Center icon when compact, left-align when full
+        var iconMargin = compact ? new Thickness(0) : new Thickness(0, 0, 7, 0);
+        SetNavIconMargins(iconMargin);
+    }
+
+    private void SetNavLabelsVisible(bool visible)
+    {
+        var vis = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (FlightNavLabel != null)      FlightNavLabel.Visibility      = vis;
+        if (CameraNavLabel != null)      CameraNavLabel.Visibility      = vis;
+        if (MapNavLabel != null)         MapNavLabel.Visibility         = vis;
+        if (StatsNavLabel != null)       StatsNavLabel.Visibility       = vis;
+        if (EdgeModeNavLabel != null)    EdgeModeNavLabel.Visibility    = vis;
+        if (AISettingsNavLabel != null)  AISettingsNavLabel.Visibility  = vis;
+        if (TlogNavLabel != null)        TlogNavLabel.Visibility        = vis;
+#if !__WASM__
+        if (PIANavLabel != null)         PIANavLabel.Visibility         = vis;
+#endif
+        // Also hide active dots in compact mode to avoid layout overflow
+        if (FlightActiveDot != null)     FlightActiveDot.Visibility     = vis;
+        if (CameraActiveDot != null)     CameraActiveDot.Visibility     = vis;
+        if (MapActiveDot != null)        MapActiveDot.Visibility        = vis;
+        if (StatsActiveDot != null)      StatsActiveDot.Visibility      = vis;
+        if (EdgeModeActiveDot != null)   EdgeModeActiveDot.Visibility   = vis;
+        if (AISettingsActiveDot != null) AISettingsActiveDot.Visibility = vis;
+        if (TlogActiveDot != null)       TlogActiveDot.Visibility       = vis;
+    }
+
+    private void SetNavIconMargins(Thickness margin)
+    {
+        // Find FontIcons in each nav button and adjust margin
+        SetIconMarginInButton(FlightNavButton, margin);
+        SetIconMarginInButton(CameraNavButton, margin);
+        SetIconMarginInButton(MapNavButton, margin);
+        SetIconMarginInButton(StatsNavButton, margin);
+        SetIconMarginInButton(EdgeModeNavButton, margin);
+        SetIconMarginInButton(AISettingsNavButton, margin);
+        SetIconMarginInButton(TlogNavButton, margin);
+    }
+
+    private static void SetIconMarginInButton(Button? btn, Thickness margin)
+    {
+        if (btn?.Content is Grid grid && grid.Children.Count > 0 && grid.Children[0] is FontIcon icon)
+        {
+            icon.Margin = margin;
+        }
+    }
+
     private void ModernSidebar_Loaded(object sender, RoutedEventArgs e)
     {
         // PulseAnimation dinonaktifkan untuk meningkatkan performance
         // PulseAnimation.Begin();
-        
+
         SetActiveButton(FlightNavButton);
 
         ApplyThemeToggleVisualState();

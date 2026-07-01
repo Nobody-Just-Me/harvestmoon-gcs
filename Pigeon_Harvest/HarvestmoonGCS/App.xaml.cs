@@ -188,6 +188,9 @@ public partial class App : Application
 
         // Ensure the current window is active
         MainWindow.Activate();
+
+        // Set tablet resolution 1280x800
+        MainWindow.AppWindow?.Resize(new Windows.Graphics.SizeInt32 { Width = 1280, Height = 800 });
     }
 
     /// <summary>
