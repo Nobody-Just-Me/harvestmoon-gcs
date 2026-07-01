@@ -25,7 +25,14 @@ namespace HarvestmoonGCS.Views;
 
 public sealed partial class DashboardPage : Page
 {
-    private const string LockedDemoVideoPath = "/home/fawwazfa/Program/Harvestmoon/out/stream_v7c_final.mp4";
+    private static readonly string[] DemoVideoPathCandidates =
+    {
+        "/home/fawwazfa/Program/Harvestmoon/out/stream_v7c_final.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/HarvestmoonGCS/Assets/demo_videos/stream_v7c_final.mp4",
+        Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "stream_v7c_final.mp4"),
+        Path.Combine(Directory.GetCurrentDirectory(), "Assets", "demo_videos", "stream_v7c_final.mp4"),
+        Path.Combine(Directory.GetCurrentDirectory(), "out", "stream_v7c_final.mp4"),
+    };
     private readonly FlightViewModel? _flightViewModel;
     private readonly MapViewModel? _mapViewModel;
     private readonly ICameraService? _cameraService;
@@ -1478,7 +1485,7 @@ public sealed partial class DashboardPage : Page
             // 1. Video — use YOLO classify stream (Python annotates frames, C# skips double ONNX)
             //    On Android there is no local video file, so skip gracefully and run telemetry-only demo.
 #if __ANDROID__
-            // Wire the bundled YDXJ_fused_only_detected.mp4 through AndroidDemoVideoDecoder → VideoStreamControl
+            // Wire the bundled stream_v7c_final.mp4 through AndroidDemoVideoDecoder → VideoStreamControl
             _useFusedOnlyDemoSummary = true;
             var androidContext = Android.App.Application.Context;
             _androidDemoDecoder = new HarvestmoonGCS.Platforms.Android.Services.AndroidDemoVideoDecoder(androidContext);
@@ -1488,7 +1495,7 @@ public sealed partial class DashboardPage : Page
             {
                 try { DashboardVideoStream?.HideOverlay(); } catch { }
             });
-            _timelineService?.Add("camera", "Video: YDXJ_fused_only_detected.mp4 (Android)", "success");
+            _timelineService?.Add("camera", "Video: stream_v7c_final.mp4 (Android)", "success");
 #else
             var videoPath = ResolveDetectedVideoPath();
             _useFusedOnlyDemoSummary = !string.IsNullOrWhiteSpace(videoPath) &&
@@ -1510,7 +1517,7 @@ public sealed partial class DashboardPage : Page
             }
             else
             {
-                throw new FileNotFoundException($"Locked demo video not found: {LockedDemoVideoPath}");
+                throw new FileNotFoundException($"Demo video not found: {string.Join(", ", DemoVideoPathCandidates)}");
             }
 #endif
 
@@ -2077,9 +2084,15 @@ public sealed partial class DashboardPage : Page
 
     private static string? ResolveDetectedVideoPath()
     {
-        return File.Exists(LockedDemoVideoPath) && new FileInfo(LockedDemoVideoPath).Length > 10_000
-            ? LockedDemoVideoPath
-            : null;
+        foreach (var candidate in DemoVideoPathCandidates)
+        {
+            if (File.Exists(candidate) && new FileInfo(candidate).Length > 10_000)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private static (double Lat, double Lon)[] GenerateStraightLineWaypoints(

@@ -12,19 +12,19 @@ using System.Threading.Tasks;
 namespace HarvestmoonGCS.Platforms.Android.Services;
 
 /// <summary>
-/// Decodes the bundled YDXJ_fused_only_detected.mp4 asset frame-by-frame using
+/// Decodes the bundled stream_v7c_final.mp4 asset frame-by-frame using
 /// MediaMetadataRetriever, converts each frame to JPEG, and fires the
 /// FrameDecoded event so DashboardPage can feed it into VideoStreamControl.
 /// Loops the video continuously until StopAsync() is called.
 /// </summary>
 public sealed class AndroidDemoVideoDecoder : IDisposable
 {
-    private const string AssetPath = "demo_videos/YDXJ_fused_only_detected.mp4";
-    // Push the dashboard demo a bit faster so playback feels smoother on the tablet.
-    private const int TargetFps = 18;
+    private const string AssetPath = "demo_videos/stream_v7c_final.mp4";
+    // 
+    private const int TargetFps = 10;
     private const int FrameIntervalMs = 1000 / TargetFps;
-    private const int JpegQuality = 58;
-    private const int MaxWidth = 480;
+    private const int JpegQuality = 72;
+    private const int MaxWidth = 640;
 
     private readonly Context _context;
     private CancellationTokenSource? _cts;
@@ -50,7 +50,7 @@ public sealed class AndroidDemoVideoDecoder : IDisposable
         try
         {
             var dir = _context.CacheDir?.AbsolutePath ?? System.IO.Path.GetTempPath();
-            var dest = System.IO.Path.Combine(dir, "ydxj_demo.mp4");
+            var dest = System.IO.Path.Combine(dir, "stream_v7c_final.mp4");
 
             // Only re-extract if the cached copy is missing or zero-length
             if (!File.Exists(dest) || new FileInfo(dest).Length < 1000)

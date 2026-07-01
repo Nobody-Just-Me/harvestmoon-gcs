@@ -86,7 +86,7 @@
         </StackPanel>
 
         <!-- Navigation Items -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Padding="0,8">
 
                 <Button x:Name="FlightNavButton" Style="{StaticResource SidebarNavButtonStyle}" Click="NavButton_Click" Tag="Dashboard"

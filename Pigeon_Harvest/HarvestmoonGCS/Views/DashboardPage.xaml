@@ -152,7 +152,7 @@
                                 <ColumnDefinition Width="2*"/>
                             </Grid.ColumnDefinitions>
                             <!-- === Live Video with overlays === -->
-                            <Border Grid.Column="0" Grid.ColumnSpan="2" CornerRadius="10" Background="#0F1F14" BorderBrush="#163021" BorderThickness="1">
+                            <Border Grid.Column="0" CornerRadius="10" Background="#0F1F14" BorderBrush="#163021" BorderThickness="1">
                                 <Grid Height="260" x:Name="VideoRoot">
                                     <!-- Actual live video (YOLO overlays drawn by VideoStreamControl) -->
                                     <controls:VideoStreamControl x:Name="DashboardVideoStream"/>
@@ -283,7 +283,7 @@
                             </Border>
 
                             <!-- === Right side: Map + Detections stacked === -->
-                            <Grid Grid.Column="1" RowSpacing="8" Visibility="Collapsed">
+                            <Grid Grid.Column="1" RowSpacing="8" Visibility="Visible">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="125"/>
                                     <RowDefinition Height="125"/>

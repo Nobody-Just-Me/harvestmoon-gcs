@@ -277,7 +277,7 @@ public sealed partial class MainPage_Modern : Page
         }
 
         bool useCompactLayout = IsAndroidPortrait() || pageWidth < 960;
-        bool useVeryCompactLayout = IsAndroidDevice() || pageWidth < 760;
+        bool useVeryCompactLayout = IsAndroidPhone() || pageWidth < 760;
 
         double sidebarWidth = useVeryCompactLayout
             ? VeryCompactSidebarWidth
@@ -313,6 +313,18 @@ public sealed partial class MainPage_Modern : Page
 #if ANDROID
         var orientation = AndroidApp.Context?.Resources?.Configuration?.Orientation;
         return orientation == AndroidOrientation.Portrait;
+#else
+        return false;
+#endif
+    }
+
+    // Treat only small Android handsets as "very compact" by smallest width.
+    // Tablets (>= 600dp) should use compact/default sidebar sizing.
+    private static bool IsAndroidPhone()
+    {
+#if ANDROID
+        var smallestWidthDp = AndroidApp.Context?.Resources?.Configuration?.SmallestScreenWidthDp ?? 0;
+        return smallestWidthDp > 0 && smallestWidthDp < 600;
 #else
         return false;
 #endif
