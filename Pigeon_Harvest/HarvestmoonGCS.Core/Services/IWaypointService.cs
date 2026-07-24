@@ -68,4 +68,24 @@ public interface IWaypointService
     /// Saves waypoints to a file
     /// </summary>
     Task SaveWaypointsToFileAsync(string filePath);
+
+    /// <summary>
+    /// Undo the last waypoint change (add/remove/update/replace/clear)
+    /// </summary>
+    Task UndoAsync();
+
+    /// <summary>
+    /// Redo the last undone waypoint change
+    /// </summary>
+    Task RedoAsync();
+
+    /// <summary>
+    /// Whether an undo operation is available
+    /// </summary>
+    bool CanUndo { get; }
+
+    /// <summary>
+    /// Whether a redo operation is available
+    /// </summary>
+    bool CanRedo { get; }
 }
