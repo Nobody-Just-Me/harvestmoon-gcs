@@ -141,9 +141,54 @@ internal class MissionProtocol
     }
 
     /// <summary>
-    /// Called when vehicle requests a mission item (upload flow)
+    /// Called when vehicle requests a mission item (upload flow) - non-int request
     /// </summary>
     public void HandleMissionRequest(UasMissionRequest request)
+    {
+        try
+        {
+            if (_missionToUpload == null)
+                return;
+
+            var seq = request.Seq;
+            if (seq < 0 || seq >= _missionToUpload.Count)
+                return;
+
+            var wp = _missionToUpload[seq];
+
+            // Build non-int mission item (float lat/lon)
+            var item = new UasMissionItem
+            {
+                TargetSystem = _service.GetTargetSystemId(),
+                TargetComponent = _service.GetTargetComponentId(),
+                Seq = (ushort)seq,
+                Frame = MavFrame.GlobalRelativeAlt,
+                Command = (MavCmd)wp.Command,
+                Current = (byte)(wp.IsCurrent ? 1 : 0),
+                Autocontinue = wp.IsAutoContinue ? (byte)1 : (byte)0,
+                Param1 = (float)wp.Param1,
+                Param2 = (float)wp.Param2,
+                Param3 = (float)wp.Param3,
+                Param4 = (float)wp.Param4,
+                X = wp.Latitude,
+                Y = wp.Longitude,
+                Z = (float)wp.Altitude
+            };
+
+            var transport = _service.GetTransport();
+            transport?.SendMessage(item);
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Sent MISSION_ITEM seq={seq} (non-int)");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionRequest error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Called when vehicle requests a mission item (upload flow) - INT request
+    /// </summary>
+    public void HandleMissionRequest(UasMissionRequestInt request)
     {
         try
         {
@@ -180,7 +225,7 @@ internal class MissionProtocol
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionRequest error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionRequestInt error: {ex.Message}");
         }
     }
 
@@ -301,6 +346,65 @@ internal class MissionProtocol
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionItemInt error: {ex.Message}");
+        }
+    }
+
+    public void HandleMissionItem(UasMissionItem item)
+    {
+        try
+        {
+            if (_downloadedMission == null || _downloadTcs == null)
+                return;
+
+            var wp = new WaypointData
+            {
+                Sequence = item.Seq,
+                Latitude = item.X,
+                Longitude = item.Y,
+                Altitude = item.Z,
+                Command = (WaypointCommand)item.Command,
+                Param1 = item.Param1,
+                Param2 = item.Param2,
+                Param3 = item.Param3,
+                Param4 = item.Param4,
+                IsCurrent = item.Current == 1
+            };
+
+            _downloadedMission.Add(wp);
+            _missionItemsReceived++;
+
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Received MISSION_ITEM {_missionItemsReceived}/{_missionItemsExpected}");
+
+            if (_missionItemsReceived >= _missionItemsExpected)
+            {
+                var ack = new UasMissionAck
+                {
+                    TargetSystem = _service.GetTargetSystemId(),
+                    TargetComponent = _service.GetTargetComponentId(),
+                    Type = MavMissionResult.MavMissionAccepted
+                };
+
+                _service.GetTransport()?.SendMessage(ack);
+                _downloadTcs.TrySetResult(_downloadedMission.ToList());
+                System.Diagnostics.Debug.WriteLine("[MissionProtocol] Download complete (non-int), sent MISSION_ACK");
+                return;
+            }
+
+            // Request next item (non-int)
+            var nextSeq = (ushort)_missionItemsReceived;
+            var reqNext = new UasMissionRequest
+            {
+                TargetSystem = _service.GetTargetSystemId(),
+                TargetComponent = _service.GetTargetComponentId(),
+                Seq = nextSeq
+            };
+
+            _service.GetTransport()?.SendMessage(reqNext);
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Sent MISSION_REQUEST {nextSeq}");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionItem error: {ex.Message}");
         }
     }
 }
