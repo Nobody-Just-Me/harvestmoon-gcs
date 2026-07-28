@@ -119,7 +119,7 @@ public sealed partial class MissionPlannerPage : Page
     private void WaypointService_WaypointsChanged(object? sender, EventArgs e)
     {
         // Refresh local cache and UI
-        _ = DispatcherQueue.EnqueueAsync(async () =>
+        DispatcherQueue.TryEnqueue(async () =>
         {
             await SyncFromWaypointServiceAsync();
         });
