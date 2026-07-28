@@ -407,19 +407,8 @@ namespace HarvestmoonGCS.Core.ViewModels
                 // Initialize progress bars to 0
                 CalibrationProgressChanged?.Invoke(this, (0, 0));
                 
-                // Send MAVLink command to start compass calibration
-                // MAV_CMD_PREFLIGHT_CALIBRATION (241)
-                // param2 = 1 for magnetometer calibration
-                await _mavlinkService.SendCommandLongAsync(
-                    command: 241, // MAV_CMD_PREFLIGHT_CALIBRATION
-                    param1: 0,
-                    param2: 1, // Magnetometer calibration
-                    param3: 0,
-                    param4: 0,
-                    param5: 0,
-                    param6: 0,
-                    param7: 0
-                );
+                // Send MAVLink command to start compass calibration (MAV_CMD_DO_START_MAG_CAL = 42424)
+                await _mavlinkService.StartCompassCalibration42424Async();
 
                 StatusMessageChanged?.Invoke(this, "Compass calibration started. Rotate vehicle in all directions...");
 
@@ -464,19 +453,8 @@ namespace HarvestmoonGCS.Core.ViewModels
                 _compassCalibrationCts?.Cancel();
                 StatusMessageChanged?.Invoke(this, "Accepting compass calibration...");
                 
-                // Send MAVLink command to accept compass calibration
-                // MAV_CMD_PREFLIGHT_CALIBRATION (241)
-                // param2 = 2 to accept
-                await _mavlinkService.SendCommandLongAsync(
-                    command: 241,
-                    param1: 0,
-                    param2: 2, // Accept calibration
-                    param3: 0,
-                    param4: 0,
-                    param5: 0,
-                    param6: 0,
-                    param7: 0
-                );
+                // Send MAVLink command to accept compass calibration (MAV_CMD_DO_ACCEPT_MAG_CAL = 42425)
+                await _mavlinkService.AcceptCompassCalibration42425Async();
                 
                 StatusMessageChanged?.Invoke(this, "Compass calibration accepted and saved successfully");
             }
@@ -494,19 +472,8 @@ namespace HarvestmoonGCS.Core.ViewModels
                 _compassCalibrationCts?.Cancel();
                 StatusMessageChanged?.Invoke(this, "Cancelling compass calibration...");
                 
-                // Send MAVLink command to cancel compass calibration
-                // MAV_CMD_PREFLIGHT_CALIBRATION (241)
-                // param2 = 0 to cancel
-                await _mavlinkService.SendCommandLongAsync(
-                    command: 241,
-                    param1: 0,
-                    param2: 0, // Cancel calibration
-                    param3: 0,
-                    param4: 0,
-                    param5: 0,
-                    param6: 0,
-                    param7: 0
-                );
+                // Send MAVLink command to cancel compass calibration (MAV_CMD_DO_CANCEL_MAG_CAL = 42426)
+                await _mavlinkService.CancelCompassCalibration42426Async();
 
                 // Reset progress bars to 0
                 CalibrationProgressChanged?.Invoke(this, (0, 0));
@@ -870,17 +837,7 @@ namespace HarvestmoonGCS.Core.ViewModels
             {
                 StatusMessageChanged?.Invoke(this, $"Testing motor {motor} at {throttle}% for {duration}s...");
                 
-                // MAV_CMD_DO_MOTOR_TEST (209)
-                await _mavlinkService.SendCommandLongAsync(
-                    command: 209, // MAV_CMD_DO_MOTOR_TEST
-                    param1: motor,
-                    param2: 0, // Throttle type: 0 = percent
-                    param3: throttle,
-                    param4: duration,
-                    param5: 1, // Motor count
-                    param6: 0,
-                    param7: 0
-                );
+                await _mavlinkService.SendMotorTestAsync(motor, throttle, duration, 1, 1); // 1 = % throttle type
                 
                 await Task.Delay(duration * 1000);
                 StatusMessageChanged?.Invoke(this, $"Motor {motor} test complete");
@@ -888,6 +845,21 @@ namespace HarvestmoonGCS.Core.ViewModels
             catch (Exception ex)
             {
                 StatusMessageChanged?.Invoke(this, $"Error testing motor: {ex.Message}");
+            }
+        }
+
+        public async Task TestPusherMotorAsync(int pwm = 1200, int duration = 5)
+        {
+            try
+            {
+                StatusMessageChanged?.Invoke(this, $"Testing Pusher Motor at PWM {pwm} for {duration}s...");
+                await _mavlinkService.SendPusherMotorTestAsync(pwm, duration);
+                await Task.Delay(duration * 1000);
+                StatusMessageChanged?.Invoke(this, "Pusher Motor test complete");
+            }
+            catch (Exception ex)
+            {
+                StatusMessageChanged?.Invoke(this, $"Error testing pusher motor: {ex.Message}");
             }
         }
 
@@ -919,16 +891,7 @@ namespace HarvestmoonGCS.Core.ViewModels
                 // Send 0% throttle to all motors
                 for (int motor = 1; motor <= 16; motor++)
                 {
-                    await _mavlinkService.SendCommandLongAsync(
-                        command: 209, // MAV_CMD_DO_MOTOR_TEST
-                        param1: motor,
-                        param2: 0,
-                        param3: 0, // 0% throttle
-                        param4: 0,
-                        param5: 1,
-                        param6: 0,
-                        param7: 0
-                    );
+                    await _mavlinkService.SendMotorTestAsync(motor, 0, 0, 1, 1);
                 }
                 
                 StatusMessageChanged?.Invoke(this, "All motors stopped");

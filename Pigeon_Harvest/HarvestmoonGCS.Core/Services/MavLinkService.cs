@@ -899,6 +899,84 @@ public class MavLinkService : IMavLinkService
         }
     }
 
+    public async Task<bool> SendMotorTestAsync(int motorInstance, float throttle, float timeoutSeconds, int motorCount = 1, int throttleType = 0)
+    {
+        try
+        {
+            await SendCommandLongAsync(209, motorInstance, throttleType, throttle, timeoutSeconds, motorCount, 0, 0);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _diagnosticLogger.LogTelemetryEvent(DateTime.Now, $"Motor test failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    public async Task<bool> SendPusherMotorTestAsync(float pwm = 1200, float timeoutSeconds = 5)
+    {
+        return await SendMotorTestAsync(5, pwm, timeoutSeconds, 1, 0);
+    }
+
+    public async Task<bool> SendEmergencyStopAsync()
+    {
+        try
+        {
+            // Force Disarm magic key = 21196
+            await SendCommandLongAsync((int)MavCmd.ComponentArmDisarm, 0.0f, 21196.0f, 0, 0, 0, 0, 0);
+            // Flight termination
+            await SendCommandLongAsync(185, 1.0f, 0, 0, 0, 0, 0, 0);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _diagnosticLogger.LogTelemetryEvent(DateTime.Now, $"Emergency stop failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    public async Task<bool> StartCompassCalibration42424Async(byte magMask = 0)
+    {
+        try
+        {
+            await SendCommandLongAsync(42424, magMask, 1, 1, 0, 0, 0, 0);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _diagnosticLogger.LogTelemetryEvent(DateTime.Now, $"Start mag cal 42424 failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    public async Task<bool> AcceptCompassCalibration42425Async(byte magMask = 0)
+    {
+        try
+        {
+            await SendCommandLongAsync(42425, magMask, 0, 0, 0, 0, 0, 0);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _diagnosticLogger.LogTelemetryEvent(DateTime.Now, $"Accept mag cal 42425 failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    public async Task<bool> CancelCompassCalibration42426Async(byte magMask = 0)
+    {
+        try
+        {
+            await SendCommandLongAsync(42426, magMask, 0, 0, 0, 0, 0, 0);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _diagnosticLogger.LogTelemetryEvent(DateTime.Now, $"Cancel mag cal 42426 failed: {ex.Message}");
+            return false;
+        }
+    }
+
     /// <summary>
     /// Send a command and wait for acknowledgment
     /// </summary>

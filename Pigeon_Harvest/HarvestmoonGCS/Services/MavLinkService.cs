@@ -367,6 +367,24 @@ public class MavLinkService : IMavLinkService, IDisposable
     public Task<bool> ArmDisarmAsync(bool arm) => _commandSender.SendArmDisarmAsync(arm);
     
     public Task<bool> SetFlightModeAsync(string mode) => _commandSender.SendSetModeAsync(mode);
+
+    public Task<bool> SendMotorTestAsync(int motorInstance, float throttle, float timeoutSeconds, int motorCount = 1, int throttleType = 0)
+        => _commandSender.SendMotorTestAsync(motorInstance, throttle, timeoutSeconds, motorCount, throttleType);
+
+    public Task<bool> SendPusherMotorTestAsync(float pwm = 1200, float timeoutSeconds = 5)
+        => _commandSender.SendPusherMotorTestAsync(pwm, timeoutSeconds);
+
+    public Task<bool> SendEmergencyStopAsync()
+        => _commandSender.SendEmergencyStopAsync();
+
+    public Task<bool> StartCompassCalibration42424Async(byte magMask = 0)
+        => _commandSender.StartCompassCalibration42424Async(magMask);
+
+    public Task<bool> AcceptCompassCalibration42425Async(byte magMask = 0)
+        => _commandSender.AcceptCompassCalibration42425Async(magMask);
+
+    public Task<bool> CancelCompassCalibration42426Async(byte magMask = 0)
+        => _commandSender.CancelCompassCalibration42426Async(magMask);
     
     // VTOL specific operations
     public Task<bool> VtolTransitionAsync(MavLinkNet.MavVtolState targetState) => 

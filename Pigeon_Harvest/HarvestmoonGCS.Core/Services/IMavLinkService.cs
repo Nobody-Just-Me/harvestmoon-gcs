@@ -86,9 +86,15 @@ public interface IMavLinkService
     Task RequestParameters();
     Task RequestParametersAsync();
     
-    // Calibration operations
+    // Calibration & Real-Flight Pre-Flight Operations
     Task SendCommandLongAsync(int command, float param1, float param2, float param3, 
                               float param4, float param5, float param6, float param7);
+    Task<bool> SendMotorTestAsync(int motorInstance, float throttle, float timeoutSeconds, int motorCount = 1, int throttleType = 0);
+    Task<bool> SendPusherMotorTestAsync(float pwm = 1200, float timeoutSeconds = 5);
+    Task<bool> SendEmergencyStopAsync();
+    Task<bool> StartCompassCalibration42424Async(byte magMask = 0);
+    Task<bool> AcceptCompassCalibration42425Async(byte magMask = 0);
+    Task<bool> CancelCompassCalibration42426Async(byte magMask = 0);
     
     // Low-level message operations
     void SendMessage(UasMessage message);
