@@ -7,6 +7,7 @@ namespace HarvestmoonGCS.Core.Services.Calibration
 {
     public class CompassCalibrator
     {
+        private readonly IMavLinkService? _mavlinkService;
         private List<Vector3> _dataPoints = new();
         private HashSet<string> _gridFilter = new();
         private const int GridDiv = 20; // Same as MagCalib.cs
@@ -19,6 +20,11 @@ namespace HarvestmoonGCS.Core.Services.Calibration
         public event EventHandler<int>? OnProgress; // 0-100%
         public event EventHandler<Vector3>? OnResult;
         
+        public CompassCalibrator(IMavLinkService? mavlinkService = null)
+        {
+            _mavlinkService = mavlinkService;
+        }
+
         /// <summary>
         /// Process incoming magnetometer data from MAVLink RAW_IMU message
         /// </summary>
@@ -42,16 +48,18 @@ namespace HarvestmoonGCS.Core.Services.Calibration
         /// <summary>
         /// Start calibration - reset data and compass offsets
         /// </summary>
-        public void StartCalibration()
+        public async Task StartCalibrationAsync()
         {
             _dataPoints.Clear();
             _gridFilter.Clear();
             IsCalibrating = true;
             
-            // TODO: Reset compass offsets to 0
-            // MavLinkService.SetParam("COMPASS_OFS_X", 0);
-            // MavLinkService.SetParam("COMPASS_OFS_Y", 0);
-            // MavLinkService.SetParam("COMPASS_OFS_Z", 0);
+            if (_mavlinkService != null && _mavlinkService.IsConnected)
+            {
+                await _mavlinkService.SetParameterAsync("COMPASS_OFS_X", 0);
+                await _mavlinkService.SetParameterAsync("COMPASS_OFS_Y", 0);
+                await _mavlinkService.SetParameterAsync("COMPASS_OFS_Z", 0);
+            }
         }
         
         /// <summary>
@@ -64,8 +72,7 @@ namespace HarvestmoonGCS.Core.Services.Calibration
             if (_dataPoints.Count < 30)
                 return new CalibrationResult { Success = false, Error = "Too few samples (min 30)" };
             
-            // Calculate offsets using simple averaging (good enough for MVP)
-            // Full implementation would use Least Squares
+            // Calculate offsets using simple averaging
             float sumX = 0, sumY = 0, sumZ = 0;
             foreach (var p in _dataPoints)
             {
@@ -76,10 +83,12 @@ namespace HarvestmoonGCS.Core.Services.Calibration
             int n = _dataPoints.Count;
             var center = new Vector3(sumX / n, sumY / n, sumZ / n);
             
-            // TODO: Save to autopilot (offset = -center)
-            // await MavLinkService.SetParamAsync("COMPASS_OFS_X", -center.X);
-            // await MavLinkService.SetParamAsync("COMPASS_OFS_Y", -center.Y);
-            // await MavLinkService.SetParamAsync("COMPASS_OFS_Z", -center.Z);
+            if (_mavlinkService != null && _mavlinkService.IsConnected)
+            {
+                await _mavlinkService.SetParameterAsync("COMPASS_OFS_X", -center.X);
+                await _mavlinkService.SetParameterAsync("COMPASS_OFS_Y", -center.Y);
+                await _mavlinkService.SetParameterAsync("COMPASS_OFS_Z", -center.Z);
+            }
             
             OnResult?.Invoke(this, center);
             
