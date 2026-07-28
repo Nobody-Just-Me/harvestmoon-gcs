@@ -10,6 +10,7 @@ using HarvestmoonGCS.Controls;
 using HarvestmoonGCS.Core.Models;
 using HarvestmoonGCS.Core.Services;
 using HarvestmoonGCS.ViewModels;
+using HarvestmoonGCS.Core.Helpers;
 
 namespace HarvestmoonGCS.Views;
 
@@ -27,6 +28,7 @@ public sealed partial class MissionPlannerPage : Page
 
     private readonly IMissionService _missionService;
     private readonly IMavLinkService _mavLinkService;
+    private readonly IWaypointService _waypointService;
     private readonly MapViewModel? _mapViewModel;
     private readonly List<MissionWaypointItem> _waypoints = new();
     private bool _initialized;
@@ -39,6 +41,7 @@ public sealed partial class MissionPlannerPage : Page
 
         _missionService = App.GetService<IMissionService>();
         _mavLinkService = App.GetService<IMavLinkService>();
+        _waypointService = App.GetService<IWaypointService>();
         _mapViewModel   = App.GetService<MapViewModel>();
 
         Loaded += MissionPlannerPage_Loaded;
@@ -49,17 +52,16 @@ public sealed partial class MissionPlannerPage : Page
     {
         MissionMapControl?.SetActive(true);
         MissionMapControl?.InvalidateArrange();
-        SyncFromMapViewModel();
+        _ = SyncFromWaypointServiceAsync();
     }
 
-    private void SyncFromMapViewModel()
+    private async Task SyncFromWaypointServiceAsync()
     {
-        if (_mapViewModel == null || _mapViewModel.Waypoints.Count == 0)
-            return;
+        var wps = await _waypointService.GetWaypointsAsync();
+        if (wps == null || wps.Count == 0) return;
 
-        // Sinkron waypoints dari MapViewModel (diisi oleh Dashboard saat demo aktif)
         _waypoints.Clear();
-        foreach (var wp in _mapViewModel.Waypoints.OrderBy(w => w.Sequence))
+        foreach (var wp in wps.OrderBy(w => w.Sequence))
         {
             _waypoints.Add(new MissionWaypointItem
             {
@@ -69,10 +71,10 @@ public sealed partial class MissionPlannerPage : Page
                 Altitude  = wp.Altitude,
             });
         }
+
         RefreshWaypointList();
         RenderMap();
 
-        // Center peta pada centroid waypoints
         double cLat = _waypoints.Average(w => w.Latitude);
         double cLon = _waypoints.Average(w => w.Longitude);
         MissionMapControl?.SetCenter(cLat, cLon, 14);
@@ -97,14 +99,11 @@ public sealed partial class MissionPlannerPage : Page
             _initialized = true;
         }
 
-        RenderMap();
+        // subscribe to waypoint changes
+        _waypointService.WaypointsChanged -= WaypointService_WaypointsChanged;
+        _waypointService.WaypointsChanged += WaypointService_WaypointsChanged;
 
-        // Tampilkan posisi UAV jika sudah tersedia dari demo/telemetri
-        if (_mapViewModel?.VehiclePosition != null)
-        {
-            var vp = _mapViewModel.VehiclePosition;
-            MissionMapControl.UpdateVehiclePosition(vp.Latitude, vp.Longitude);
-        }
+        _ = SyncFromWaypointServiceAsync();
     }
 
     private void MissionPlannerPage_Unloaded(object sender, RoutedEventArgs e)
@@ -113,6 +112,17 @@ public sealed partial class MissionPlannerPage : Page
         MissionMapControl.WaypointMoved -= MissionMapControl_WaypointMoved;
         if (_mapViewModel != null)
             _mapViewModel.PropertyChanged -= OnMapViewModelPropertyChanged;
+
+        _waypointService.WaypointsChanged -= WaypointService_WaypointsChanged;
+    }
+
+    private void WaypointService_WaypointsChanged(object? sender, EventArgs e)
+    {
+        // Refresh local cache and UI
+        DispatcherQueue.TryEnqueue(async () =>
+        {
+            await SyncFromWaypointServiceAsync();
+        });
     }
 
     private void OnMapViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -136,7 +146,6 @@ public sealed partial class MissionPlannerPage : Page
             return;
         }
 
-        // WP 10-13: jalur lurus arah timur, spacing ~300m, area Lembang
         _waypoints.Add(new MissionWaypointItem { Sequence = 10, Latitude = -6.8148, Longitude = 107.6128, Altitude = 82 });
         _waypoints.Add(new MissionWaypointItem { Sequence = 11, Latitude = -6.8148, Longitude = 107.6155, Altitude = 82 });
         _waypoints.Add(new MissionWaypointItem { Sequence = 12, Latitude = -6.8148, Longitude = 107.6182, Altitude = 82 });
@@ -171,33 +180,30 @@ public sealed partial class MissionPlannerPage : Page
         var tapPoint = e.GetPosition(MissionMapControl);
         var geo = MissionMapControl.GetLatLonFromClick(tapPoint);
 
-        AddWaypoint(geo.Lat, geo.Lon, 150);
-        RenderMap();
+        _ = _waypointService.AddWaypointAsync(new WaypointData { Latitude = geo.Lat, Longitude = geo.Lon, Altitude = 150 });
     }
 
-    private void AddWaypointButton_Click(object sender, RoutedEventArgs e)
+    private async void AddWaypointButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_waypoints.Count == 0)
+        if ((await _waypointService.GetWaypointsAsync()).Count == 0)
         {
-            AddWaypoint(_defaultLat, _defaultLon, 150);
-            RenderMap();
+            await _waypointService.AddWaypointAsync(new WaypointData { Latitude = _defaultLat, Longitude = _defaultLon, Altitude = 150 });
             return;
         }
 
-        var last = _waypoints[^1];
-        AddWaypoint(last.Latitude + 0.0008, last.Longitude + 0.0008, last.Altitude);
-        RenderMap();
+        var last = (await _waypointService.GetWaypointsAsync()).OrderBy(w => w.Sequence).Last();
+        await _waypointService.AddWaypointAsync(new WaypointData { Latitude = last.Latitude + 0.0008, Longitude = last.Longitude + 0.0008, Altitude = last.Altitude });
     }
 
-    private void ClearWaypointButton_Click(object sender, RoutedEventArgs e)
+    private async void ClearWaypointButton_Click(object sender, RoutedEventArgs e)
     {
-        _waypoints.Clear();
-        RenderMap();
+        await _waypointService.ClearWaypointsAsync();
     }
 
     private async void UploadMissionButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_waypoints.Count == 0)
+        var wps = await _waypointService.GetWaypointsAsync();
+        if (wps.Count == 0)
         {
             WaypointSummaryText.Text = "No waypoints to upload";
             return;
@@ -214,20 +220,7 @@ public sealed partial class MissionPlannerPage : Page
 
         try
         {
-            var missionWaypoints = _waypoints
-                .OrderBy(w => w.Sequence)
-                .Select((wp, index) => new MissionWaypoint
-                {
-                    Sequence = index,
-                    Command = MavCommand.NavWaypoint,
-                    Latitude = wp.Latitude,
-                    Longitude = wp.Longitude,
-                    Altitude = wp.Altitude,
-                    Frame = MavFrame.GlobalRelativeAlt,
-                    IsAutoContinue = true
-                })
-                .ToList();
-
+            var missionWaypoints = WaypointMapper.ToMissionWaypoints(wps);
             var success = await _missionService.UploadMissionAsync(missionWaypoints);
             WaypointSummaryText.Text = success
                 ? $"Uploaded {missionWaypoints.Count} waypoints"
@@ -243,12 +236,9 @@ public sealed partial class MissionPlannerPage : Page
         }
     }
 
-    private void RemoveWaypointButton_Click(object sender, RoutedEventArgs e)
+    private async void RemoveWaypointButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button button)
-        {
-            return;
-        }
+        if (sender is not Button button) return;
 
         var sequence = button.Tag switch
         {
@@ -257,20 +247,9 @@ public sealed partial class MissionPlannerPage : Page
             _ => -1
         };
 
-        if (sequence < 0)
-        {
-            return;
-        }
+        if (sequence < 0) return;
 
-        var target = _waypoints.FirstOrDefault(x => x.Sequence == sequence);
-        if (target == null)
-        {
-            return;
-        }
-
-        _waypoints.Remove(target);
-        ResequenceWaypoints();
-        RenderMap();
+        await _waypointService.RemoveWaypointAsync(sequence);
     }
 
     private void GeofenceRadiusSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -281,40 +260,12 @@ public sealed partial class MissionPlannerPage : Page
 
     private void MissionMapControl_WaypointMoved(object? sender, SkiaMapControl.WaypointMovedEventArgs e)
     {
-        var waypoint = _waypoints.FirstOrDefault(w => w.Sequence == e.Sequence);
-        if (waypoint == null)
-        {
-            return;
-        }
-
-        waypoint.Latitude = e.NewLat;
-        waypoint.Longitude = e.NewLon;
-        RefreshWaypointList();
-    }
-
-    private void AddWaypoint(double lat, double lon, double altitude)
-    {
-        _waypoints.Add(new MissionWaypointItem
-        {
-            Sequence = _waypoints.Count + 1,
-            Latitude = lat,
-            Longitude = lon,
-            Altitude = altitude
-        });
-
-        if (IsValidCoordinate(lat, lon))
-        {
-            _defaultLat = lat;
-            _defaultLon = lon;
-        }
+        _ = _waypointService.UpdateWaypointAsync(new WaypointData { Sequence = e.Sequence, Latitude = e.NewLat, Longitude = e.NewLon });
     }
 
     private void ResequenceWaypoints()
     {
-        for (int i = 0; i < _waypoints.Count; i++)
-        {
-            _waypoints[i].Sequence = i + 1;
-        }
+        // WaypointService handles sequencing
     }
 
     private void RenderMap()

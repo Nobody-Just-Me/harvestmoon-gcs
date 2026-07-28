@@ -284,6 +284,31 @@ public class MavLinkService : IMavLinkService, IDisposable
             if (packet.Message != null)
             {
                 _telemetryParser.ParsePacket(packet.Message);
+
+                if (packet.Message is UasMissionRequest request)
+                {
+                    _missionProtocol.HandleMissionRequest(request);
+                }
+                else if (packet.Message is UasMissionRequestInt requestInt)
+                {
+                    _missionProtocol.HandleMissionRequest(requestInt);
+                }
+                else if (packet.Message is UasMissionAck ack)
+                {
+                    _missionProtocol.HandleMissionAck(ack);
+                }
+                else if (packet.Message is UasMissionCount count)
+                {
+                    _missionProtocol.HandleMissionCount(count);
+                }
+                else if (packet.Message is UasMissionItemInt itemInt)
+                {
+                    _missionProtocol.HandleMissionItemInt(itemInt);
+                }
+                else if (packet.Message is UasMissionItem item)
+                {
+                    _missionProtocol.HandleMissionItem(item);
+                }
             }
             else
             {
