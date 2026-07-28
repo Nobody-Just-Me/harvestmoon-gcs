@@ -618,18 +618,27 @@ namespace HarvestmoonGCS.Core.ViewModels
         {
             try
             {
-                StatusMessageChanged?.Invoke(this, "Loading servo configurations...");
+                StatusMessageChanged?.Invoke(this, "Loading servo configurations from autopilot...");
                 
-                // Request servo parameters for all 16 channels
-                for (int i = 1; i <= 16; i++)
+                if (_mavlinkService.IsConnected)
                 {
-                    // In real implementation, this would request:
-                    // SERVO{i}_FUNCTION, SERVO{i}_MIN, SERVO{i}_TRIM, SERVO{i}_MAX, SERVO{i}_REVERSED
-                    // For now, configs are already initialized
+                    var paramsDict = await _mavlinkService.GetParametersAsync();
+                    for (int i = 1; i <= 16; i++)
+                    {
+                        var config = ServoConfigs.ContainsKey(i) ? ServoConfigs[i] : new ServoConfig { Channel = i };
+                        if (paramsDict.TryGetValue($"SERVO{i}_FUNCTION", out var func)) config.Function = (int)func;
+                        if (paramsDict.TryGetValue($"SERVO{i}_MIN", out var min)) config.Min = (int)min;
+                        if (paramsDict.TryGetValue($"SERVO{i}_TRIM", out var trim)) config.Trim = (int)trim;
+                        if (paramsDict.TryGetValue($"SERVO{i}_MAX", out var max)) config.Max = (int)max;
+                        if (paramsDict.TryGetValue($"SERVO{i}_REVERSED", out var rev)) config.Reverse = rev > 0;
+                        ServoConfigs[i] = config;
+                    }
+                    StatusMessageChanged?.Invoke(this, "Servo configurations loaded from autopilot");
                 }
-                
-                StatusMessageChanged?.Invoke(this, "Servo configurations loaded");
-                await Task.CompletedTask;
+                else
+                {
+                    StatusMessageChanged?.Invoke(this, "Not connected: using default servo configurations");
+                }
             }
             catch (Exception ex)
             {
@@ -681,19 +690,27 @@ namespace HarvestmoonGCS.Core.ViewModels
         {
             try
             {
-                StatusMessageChanged?.Invoke(this, "Loading waypoint parameters...");
+                StatusMessageChanged?.Invoke(this, "Loading waypoint parameters from autopilot...");
                 
-                // In real implementation, request these parameters:
-                // WP_SPEED, WP_RADIUS, WPNAV_SPEED_UP, WPNAV_SPEED_DN, WPNAV_LOIT_SPEED
-                // For now, initialize with defaults
-                WaypointSpeed = 5.0f;
-                WaypointRadius = 2.0f;
-                WaypointSpeedUp = 2.5f;
-                WaypointSpeedDown = 1.5f;
-                LoiterSpeed = 5.0f;
-                
-                StatusMessageChanged?.Invoke(this, "Waypoint parameters loaded");
-                await Task.CompletedTask;
+                if (_mavlinkService.IsConnected)
+                {
+                    var paramsDict = await _mavlinkService.GetParametersAsync();
+                    if (paramsDict.TryGetValue("WP_SPEED", out var spd)) WaypointSpeed = spd;
+                    if (paramsDict.TryGetValue("WP_RADIUS", out var rad)) WaypointRadius = rad;
+                    if (paramsDict.TryGetValue("WPNAV_SPEED_UP", out var spdUp)) WaypointSpeedUp = spdUp;
+                    if (paramsDict.TryGetValue("WPNAV_SPEED_DN", out var spdDn)) WaypointSpeedDown = spdDn;
+                    if (paramsDict.TryGetValue("WPNAV_LOIT_SPEED", out var loitSpd)) LoiterSpeed = loitSpd;
+                    StatusMessageChanged?.Invoke(this, "Waypoint parameters loaded from autopilot");
+                }
+                else
+                {
+                    WaypointSpeed = 5.0f;
+                    WaypointRadius = 2.0f;
+                    WaypointSpeedUp = 2.5f;
+                    WaypointSpeedDown = 1.5f;
+                    LoiterSpeed = 5.0f;
+                    StatusMessageChanged?.Invoke(this, "Not connected: using default waypoint parameters");
+                }
             }
             catch (Exception ex)
             {
@@ -725,25 +742,42 @@ namespace HarvestmoonGCS.Core.ViewModels
         {
             try
             {
-                StatusMessageChanged?.Invoke(this, "Loading PID parameters...");
+                StatusMessageChanged?.Invoke(this, "Loading PID parameters from autopilot...");
                 
-                // In real implementation, request PID parameters for both Copter and Plane
-                // For now, initialize with defaults
-                RollPID = new PIDParameters { P = 0.15f, I = 0.1f, D = 0.004f, IMAX = 0.5f };
-                PitchPID = new PIDParameters { P = 0.15f, I = 0.1f, D = 0.004f, IMAX = 0.5f };
-                YawPID = new PIDParameters { P = 0.2f, I = 0.02f, D = 0.0f, IMAX = 0.5f };
-                
-                PlaneRollPID = new PIDParameters { P = 0.15f, I = 0.1f, D = 0.004f, IMAX = 0.5f };
-                PlanePitchPID = new PIDParameters { P = 0.15f, I = 0.1f, D = 0.004f, IMAX = 0.5f };
-                PlaneYawPID = new PIDParameters { P = 0.2f, I = 0.02f, D = 0.0f, IMAX = 0.5f };
-                VelocityPID = new PIDParameters { P = 1.0f, I = 0.5f, D = 0.0f, IMAX = 1.0f };
-                
-                PitchMax = 45.0f;
-                PitchMin = -45.0f;
-                RollLimit = 45.0f;
-                
-                StatusMessageChanged?.Invoke(this, "PID parameters loaded");
-                await Task.CompletedTask;
+                if (_mavlinkService.IsConnected)
+                {
+                    var p = await _mavlinkService.GetParametersAsync();
+                    if (p.TryGetValue("ATC_RAT_RLL_P", out var rP)) RollPID.P = rP;
+                    if (p.TryGetValue("ATC_RAT_RLL_I", out var rI)) RollPID.I = rI;
+                    if (p.TryGetValue("ATC_RAT_RLL_D", out var rD)) RollPID.D = rD;
+                    if (p.TryGetValue("ATC_RAT_RLL_IMAX", out var rIm)) RollPID.IMAX = rIm;
+
+                    if (p.TryGetValue("ATC_RAT_PIT_P", out var pP)) PitchPID.P = pP;
+                    if (p.TryGetValue("ATC_RAT_PIT_I", out var pI)) PitchPID.I = pI;
+                    if (p.TryGetValue("ATC_RAT_PIT_D", out var pD)) PitchPID.D = pD;
+                    if (p.TryGetValue("ATC_RAT_PIT_IMAX", out var pIm)) PitchPID.IMAX = pIm;
+
+                    if (p.TryGetValue("ATC_RAT_YAW_P", out var yP)) YawPID.P = yP;
+                    if (p.TryGetValue("ATC_RAT_YAW_I", out var yI)) YawPID.I = yI;
+                    if (p.TryGetValue("ATC_RAT_YAW_D", out var yD)) YawPID.D = yD;
+                    if (p.TryGetValue("ATC_RAT_YAW_IMAX", out var yIm)) YawPID.IMAX = yIm;
+
+                    StatusMessageChanged?.Invoke(this, "PID parameters loaded from autopilot");
+                }
+                else
+                {
+                    RollPID = new PIDParameters { P = 0.15f, I = 0.1f, D = 0.004f, IMAX = 0.5f };
+                    PitchPID = new PIDParameters { P = 0.15f, I = 0.1f, D = 0.004f, IMAX = 0.5f };
+                    YawPID = new PIDParameters { P = 0.2f, I = 0.02f, D = 0.0f, IMAX = 0.5f };
+                    PlaneRollPID = new PIDParameters { P = 0.15f, I = 0.1f, D = 0.004f, IMAX = 0.5f };
+                    PlanePitchPID = new PIDParameters { P = 0.15f, I = 0.1f, D = 0.004f, IMAX = 0.5f };
+                    PlaneYawPID = new PIDParameters { P = 0.2f, I = 0.02f, D = 0.0f, IMAX = 0.5f };
+                    VelocityPID = new PIDParameters { P = 1.0f, I = 0.5f, D = 0.0f, IMAX = 1.0f };
+                    PitchMax = 45.0f;
+                    PitchMin = -45.0f;
+                    RollLimit = 45.0f;
+                    StatusMessageChanged?.Invoke(this, "Not connected: using default PID parameters");
+                }
             }
             catch (Exception ex)
             {
