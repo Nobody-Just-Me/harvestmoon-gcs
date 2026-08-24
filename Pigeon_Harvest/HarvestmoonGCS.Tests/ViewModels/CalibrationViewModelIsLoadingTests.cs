@@ -150,20 +150,13 @@ public class CalibrationViewModelIsLoadingTests
         bool isLoadingSetToTrue = false;
 
         _mockMavLinkService
-            .Setup(m => m.SendCommandLongAsync(
-                It.IsAny<int>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>()))
+            .Setup(m => m.StartCompassCalibration42424Async(It.IsAny<byte>()))
             .Returns(async () =>
             {
                 // Check IsLoading during execution
                 isLoadingSetToTrue = _viewModel.IsLoading;
                 await Task.Delay(10);
+                return true;
             });
 
         // Act
@@ -187,22 +180,14 @@ public class CalibrationViewModelIsLoadingTests
     {
         // Arrange
         _mockMavLinkService
-            .Setup(m => m.SendCommandLongAsync(
-                It.IsAny<int>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>()))
-            .Returns(Task.CompletedTask);
+            .Setup(m => m.StartCompassCalibration42424Async(It.IsAny<byte>()))
+            .ReturnsAsync(true);
 
         // Act
         await _viewModel.StartCompassCalibrationAsync();
         
         // Wait for the simulated progress to complete
-        await Task.Delay(11000); // Wait for the full simulation (100 steps * 500ms + buffer)
+        await Task.Delay(2000); // Wait for the full simulation (100 steps * 50ms = 1000ms + buffer)
 
         // Assert
         Assert.False(_viewModel.IsLoading, "IsLoading should be false after compass calibration completes");
@@ -219,15 +204,7 @@ public class CalibrationViewModelIsLoadingTests
     {
         // Arrange
         _mockMavLinkService
-            .Setup(m => m.SendCommandLongAsync(
-                It.IsAny<int>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>()))
+            .Setup(m => m.StartCompassCalibration42424Async(It.IsAny<byte>()))
             .ThrowsAsync(new System.Exception("Compass calibration error"));
 
         // Act & Assert

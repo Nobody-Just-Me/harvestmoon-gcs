@@ -825,12 +825,19 @@ public class PythonCameraService : ICameraService
                 AddCandidate(candidates, seen, Path.Combine(current, "moonharvest_detect_stream.py"));
                 AddCandidate(candidates, seen, Path.Combine(current, "HarvestmoonGCS", "moonharvest_detect_stream.py"));
                 AddCandidate(candidates, seen, Path.Combine(current, "Pigeon_Harvest", "HarvestmoonGCS", "moonharvest_detect_stream.py"));
+                // TEKNOFEST_SIAP folder
+                AddCandidate(candidates, seen, Path.Combine(current, "TEKNOFEST_SIAP", "skrip", "moonharvest_detect_stream.py"));
+                AddCandidate(candidates, seen, Path.Combine(current, "Harvestmoon", "TEKNOFEST_SIAP", "skrip", "moonharvest_detect_stream.py"));
 
                 var parent = Directory.GetParent(current);
                 if (parent == null) break;
                 current = parent.FullName;
             }
         }
+
+        // Absolute fallback — known dev-machine paths
+        AddCandidate(candidates, seen, "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/skrip/moonharvest_detect_stream.py");
+        AddCandidate(candidates, seen, "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/HarvestmoonGCS/moonharvest_detect_stream.py");
 
         return candidates.FirstOrDefault(File.Exists);
     }

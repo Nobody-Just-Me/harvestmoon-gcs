@@ -507,19 +507,112 @@ public sealed partial class MapPage : Page
     private void FollowVehicle_Click(object sender, RoutedEventArgs e)
     {
         _isFollowingVehicle = !_isFollowingVehicle;
-        
+
+        if (followVehicleBorder != null)
+        {
+            followVehicleBorder.Background = new SolidColorBrush(_isFollowingVehicle
+                ? Color.FromArgb(0xFF, 0x00, 0xC8, 0x53)   // hijau terang saat aktif
+                : Color.FromArgb(0xFF, 0x53, 0xDF, 0xFA));  // biru muda saat nonaktif
+        }
+
         if (_isFollowingVehicle)
         {
-            if (followVehicleBorder != null)
-                followVehicleBorder.Background = new SolidColorBrush(Color.FromArgb(255, 0, 255, 0));
-            
+            mapControl.SetFollowVehicle(true);
             if (ViewModel.VehiclePosition != null)
                 CenterMapOnPosition(ViewModel.VehiclePosition.Latitude, ViewModel.VehiclePosition.Longitude);
+            _timelineService?.Add("map", "Follow vehicle aktif", "info");
         }
         else
         {
-            if (followVehicleBorder != null)
-                followVehicleBorder.Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x53, 0xDF, 0xFA));
+            mapControl.SetFollowVehicle(false);
+        }
+    }
+
+    private async void DownloadMission_Click(object sender, RoutedEventArgs e)
+    {
+        var mavLinkService = App.Current.Services.GetService<IMavLinkService>();
+        if (mavLinkService == null || !mavLinkService.IsConnected)
+        {
+            // Tampilkan pesan ke user
+            var dlg = new ContentDialog
+            {
+                Title = "Download Mission",
+                Content = "UAV tidak terhubung. Hubungkan drone via MAVLink terlebih dahulu.",
+                CloseButtonText = "OK",
+                XamlRoot = this.XamlRoot
+            };
+            await dlg.ShowAsync();
+            return;
+        }
+
+        // Update UI saat download
+        if (btn_start_mission != null)
+        {
+            btn_start_mission.IsEnabled = false;
+            if (btn_start_mission.Content is StackPanel sp)
+            {
+                foreach (var child in sp.Children.OfType<TextBlock>())
+                    child.Text = "DOWNLOADING...";
+            }
+        }
+
+        try
+        {
+            var waypoints = await mavLinkService.DownloadMissionAsync();
+            if (waypoints == null || waypoints.Count == 0)
+            {
+                var dlg = new ContentDialog
+                {
+                    Title = "Download Mission",
+                    Content = "Tidak ada waypoint di drone, atau download gagal.",
+                    CloseButtonText = "OK",
+                    XamlRoot = this.XamlRoot
+                };
+                await dlg.ShowAsync();
+                return;
+            }
+
+            // Load ke MapViewModel
+            ViewModel.Waypoints.Clear();
+            foreach (var wp in waypoints.OrderBy(w => w.Sequence))
+                ViewModel.Waypoints.Add(wp);
+
+            // Center peta ke centroid waypoint
+            var centerLat = waypoints.Average(w => w.Latitude);
+            var centerLon = waypoints.Average(w => w.Longitude);
+            mapControl.SetCenter(centerLat, centerLon, 14);
+
+            RebuildWaypointDock();
+            UpdateWaypointsOnMap();
+            UpdateTotalDistance();
+
+            _timelineService?.Add("waypoint",
+                $"Download mission sukses · {waypoints.Count} waypoint", "success");
+            Serilog.Log.Information("[MapPage] Downloaded {Count} waypoints from drone", waypoints.Count);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "[MapPage] Download mission failed");
+            var dlg = new ContentDialog
+            {
+                Title = "Download Mission Gagal",
+                Content = $"Error: {ex.Message}",
+                CloseButtonText = "OK",
+                XamlRoot = this.XamlRoot
+            };
+            await dlg.ShowAsync();
+        }
+        finally
+        {
+            if (btn_start_mission != null)
+            {
+                btn_start_mission.IsEnabled = true;
+                if (btn_start_mission.Content is StackPanel sp)
+                {
+                    foreach (var child in sp.Children.OfType<TextBlock>())
+                        child.Text = "DOWNLOAD MISSION";
+                }
+            }
         }
     }
 

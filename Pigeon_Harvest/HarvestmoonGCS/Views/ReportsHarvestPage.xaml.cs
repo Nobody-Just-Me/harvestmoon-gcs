@@ -33,12 +33,12 @@ public sealed partial class ReportsHarvestPage : Page
 
     private static readonly IReadOnlyList<ReportEntry> SeedReports = new List<ReportEntry>
     {
-        new() { Id = "MH-20260621-015", DateTime = "2026-06-21 14:22", Area = "Sawah Sektor Utama · Bandung", Duration = "00:07:42", Detections = 51, Priority = "Medium", IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":2.0,\"AverageLatencyMs\":498,\"AverageDetections\":31.2}" },
-        new() { Id = "MH-20260501-014", DateTime = "2026-05-01 12:30", Area = "Sawah Sektor B · Bandung",     Duration = "00:42:11", Detections = 23, Priority = "High",   IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":11.4,\"AverageLatencyMs\":87,\"AverageDetections\":12.3}" },
-        new() { Id = "MH-20260430-013", DateTime = "2026-04-30 09:15", Area = "Sawah Sektor A · Bandung",     Duration = "00:36:02", Detections = 17, Priority = "Medium", IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":9.8,\"AverageLatencyMs\":102,\"AverageDetections\":9.1}" },
+        new() { Id = "MH-20260621-015", DateTime = "2026-06-21 14:22", Area = "Sawah Sektor Utama · Sidoarjo", Duration = "00:07:42", Detections = 51, Priority = "Medium", IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":2.0,\"AverageLatencyMs\":498,\"AverageDetections\":31.2}" },
+        new() { Id = "MH-20260501-014", DateTime = "2026-05-01 12:30", Area = "Sawah Sektor B · Pacet",     Duration = "00:42:11", Detections = 23, Priority = "High",   IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":11.4,\"AverageLatencyMs\":87,\"AverageDetections\":12.3}" },
+        new() { Id = "MH-20260430-013", DateTime = "2026-04-30 09:15", Area = "Sawah Sektor A · Surabaya",     Duration = "00:36:02", Detections = 17, Priority = "Medium", IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":9.8,\"AverageLatencyMs\":102,\"AverageDetections\":9.1}" },
         new() { Id = "MH-20260428-012", DateTime = "2026-04-28 15:48", Area = "Sawah Sektor C · Garut",       Duration = "00:51:30", Detections = 31, Priority = "High",   IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":10.2,\"AverageLatencyMs\":98,\"AverageDetections\":15.7}" },
-        new() { Id = "MH-20260425-011", DateTime = "2026-04-25 10:02", Area = "Sawah Sektor A · Bandung",     Duration = "00:28:44", Detections = 9,  Priority = "Low",    IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":12.1,\"AverageLatencyMs\":83,\"AverageDetections\":5.2}" },
-        new() { Id = "MH-20260420-010", DateTime = "2026-04-20 14:11", Area = "Sawah Sektor D · Lembang",     Duration = "00:39:12", Detections = 22, Priority = "Medium", IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":10.7,\"AverageLatencyMs\":93,\"AverageDetections\":11.4}" }
+        new() { Id = "MH-20260425-011", DateTime = "2026-04-25 10:02", Area = "Sawah Sektor A · Sidoarjo",     Duration = "00:28:44", Detections = 9,  Priority = "Low",    IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":12.1,\"AverageLatencyMs\":83,\"AverageDetections\":5.2}" },
+        new() { Id = "MH-20260420-010", DateTime = "2026-04-20 14:11", Area = "Sawah Sektor D · Pasuruan",     Duration = "00:39:12", Detections = 22, Priority = "Medium", IsDemo = true, YoloBenchmarkJson = "{\"FramesPerSecond\":10.7,\"AverageLatencyMs\":93,\"AverageDetections\":11.4}" }
     };
 
     private readonly DispatcherTimer _feedbackTimer;

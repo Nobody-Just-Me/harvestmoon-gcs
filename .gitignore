@@ -9,9 +9,12 @@ node_modules/
 dist/
 *.pid
 logs/
+.venv/
+.venv-camera
 .venv-camera/
 .venv-yolo/
 .git_backup/
+.~lock.*#
 
 # Large files - videos, models, datasets
 *.mp4

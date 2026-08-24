@@ -434,6 +434,54 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         mapControl.SetMapControlsVisible(false);
     }
 
+    private async void OnTakeoffClicked(object sender, RoutedEventArgs e)
+    {
+        if (_mavLinkService == null || !_mavLinkService.IsConnected)
+        {
+            AddConsoleMessage("STATUSTEXT", "Vehicle not connected. Cannot takeoff.", "WARN");
+            return;
+        }
+        btn_takeoff.IsEnabled = false;
+        try
+        {
+            AddConsoleMessage("COMMAND", "Takeoff command sent (altitude: 10m)...");
+            var success = await _mavLinkService.TakeoffAsync(10.0f);
+            AddConsoleMessage("COMMAND_ACK", success ? "Takeoff accepted" : "Takeoff rejected", success ? "INFO" : "WARN");
+        }
+        catch (Exception ex)
+        {
+            AddConsoleMessage("STATUSTEXT", $"Takeoff failed: {ex.Message}", "ERROR");
+        }
+        finally
+        {
+            btn_takeoff.IsEnabled = true;
+        }
+    }
+
+    private async void OnLandClicked(object sender, RoutedEventArgs e)
+    {
+        if (_mavLinkService == null || !_mavLinkService.IsConnected)
+        {
+            AddConsoleMessage("STATUSTEXT", "Vehicle not connected. Cannot land.", "WARN");
+            return;
+        }
+        btn_land.IsEnabled = false;
+        try
+        {
+            AddConsoleMessage("COMMAND", "Land command sent...");
+            var success = await _mavLinkService.LandAsync();
+            AddConsoleMessage("COMMAND_ACK", success ? "Land accepted" : "Land rejected", success ? "INFO" : "WARN");
+        }
+        catch (Exception ex)
+        {
+            AddConsoleMessage("STATUSTEXT", $"Land failed: {ex.Message}", "ERROR");
+        }
+        finally
+        {
+            btn_land.IsEnabled = true;
+        }
+    }
+
     private async void OnStartMissionClicked(object sender, RoutedEventArgs e)
     {
         if (_mavLinkService == null || !_mavLinkService.IsConnected)
@@ -475,19 +523,25 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
             Latitude = flightData.GPS.Latitude / 1e7,
             Longitude = flightData.GPS.Longitude / 1e7,
             Altitude = flightData.AltitudeFloat,
-            RelativeAltitude = flightData.AltitudeFloat,
+            // M1: RelativeAltitude dari GLOBAL_POSITION_INT.relative_alt (AGL), bukan MSL
+            RelativeAltitude = flightData.Barometers > 0 ? flightData.Barometers : flightData.AltitudeFloat,
             Barometers = flightData.Barometers > 0 ? flightData.Barometers : flightData.AltitudeFloat,
             Roll = flightData.IMU.Roll,
             Pitch = flightData.IMU.Pitch,
             Yaw = flightData.IMU.Yaw,
             Heading = flightData.IMU.Yaw,
-            GroundSpeed = flightData.Speed,
+            // M2: GroundSpeed dari VFR_HUD.groundspeed, AirSpeed dari VFR_HUD.airspeed (berbeda)
+            GroundSpeed = flightData.GroundSpeed > 0 ? flightData.GroundSpeed : flightData.Speed,
             AirSpeed = flightData.Speed,
-            VerticalSpeed = 0,
+            // H4: VerticalSpeed dari VFR_HUD.climb (m/s), bukan hardcoded 0
+            VerticalSpeed = flightData.VerticalSpeed,
             BatteryVoltage = flightData.BatteryVolt,
             BatteryCurrent = flightData.BatteryCurr,
+            BatteryRemaining = flightData.BatteryRemaining,
+            BatteryPercentage = flightData.BatteryRemaining > 0 ? flightData.BatteryRemaining : 0,
             FlightMode = flightData.FlightMode,
-            IsArmed = flightData.FlightMode != FlightMode.DISARMED,
+            // H2: IsArmed dari BaseMode bit, bukan hanya FlightMode
+            IsArmed = flightData.IsArmed,
             SatelliteCount = flightData.GPS.Sats,
             HDOP = flightData.Hdop / 100.0,
             SignalStrength = flightData.Signal,
@@ -709,7 +763,7 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         Interlocked.Increment(ref _telemetryRenderedTotal);
         _observabilityService?.Track("flight.telemetry.apply");
 
-        // Update Stats Bar
+        // Update Stats Bar — existing fields
         if (tb_alt != null) tb_alt.Text = t.Altitude.ToString("F0");
         if (tb_speed != null) tb_speed.Text = t.AirSpeed.ToString("F1");
         if (tb_roll != null) tb_roll.Text = t.Roll.ToString("F1");
@@ -718,6 +772,63 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
 
         int rssiPercent = Math.Clamp(t.SignalStrength, 0, 100);
         if (tb_rssi != null) tb_rssi.Text = rssiPercent.ToString();
+
+        // P1: Satellite count + GPS fix quality
+        if (tb_sats != null) tb_sats.Text = t.SatelliteCount.ToString();
+        if (tb_gps_fix != null)
+        {
+            tb_gps_fix.Text = t.GPSFixType switch
+            {
+                >= 15 => "RTK FIXED",
+                6     => "RTK FLOAT",
+                5     => "3D+SBAS",
+                4     => "DGPS",
+                3     => "3D FIX",
+                2     => "2D FIX",
+                1     => "NO GPS",
+                _     => "NO FIX"
+            };
+            tb_gps_fix.Foreground = t.GPSFixType >= 3
+                ? new SolidColorBrush(Microsoft.UI.Colors.LimeGreen)
+                : new SolidColorBrush(Microsoft.UI.Colors.OrangeRed);
+        }
+
+        // P1: Battery percentage + voltage
+        if (tb_battery != null)
+        {
+            var batPct = t.BatteryRemaining > 0 ? t.BatteryRemaining : (int)t.BatteryPercentage;
+            tb_battery.Text = batPct > 0 ? batPct.ToString() : "--";
+            tb_battery.Foreground = batPct switch
+            {
+                > 50 => new SolidColorBrush(Microsoft.UI.Colors.LimeGreen),
+                > 20 => new SolidColorBrush(Microsoft.UI.Colors.Orange),
+                _    => new SolidColorBrush(Microsoft.UI.Colors.OrangeRed)
+            };
+        }
+        if (tb_batt_volt != null && t.BatteryVoltage > 0)
+            tb_batt_volt.Text = $"{t.BatteryVoltage:F1}V";
+
+        // P1: Vertical speed (climb rate)
+        if (tb_vspeed != null)
+        {
+            tb_vspeed.Text = t.VerticalSpeed.ToString("F1");
+            tb_vspeed.Foreground = t.VerticalSpeed > 0.2
+                ? new SolidColorBrush(Microsoft.UI.Colors.LimeGreen)
+                : t.VerticalSpeed < -0.2
+                    ? new SolidColorBrush(Microsoft.UI.Colors.OrangeRed)
+                    : new SolidColorBrush(Microsoft.UI.Colors.White);
+        }
+
+        // P1: Flight mode + ARM status
+        if (tb_flight_mode != null)
+            tb_flight_mode.Text = t.FlightMode.ToString().Replace("_", " ");
+        if (tb_arm_status != null)
+        {
+            tb_arm_status.Text = t.IsArmed ? "ARMED" : "DISARMED";
+            tb_arm_status.Foreground = t.IsArmed
+                ? new SolidColorBrush(Microsoft.UI.Colors.OrangeRed)
+                : new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x9C, 0xA3, 0xAF));
+        }
 
         // Update avionics instruments
         if (ind_attitude != null)
@@ -729,6 +840,9 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         if (ind_airspeed != null) ind_airspeed.Airspeed = (int)t.AirSpeed;
         if (ind_heading != null) ind_heading.Heading = (int)t.Yaw;
         
+        // Update arm button color
+        UpdateArmButton();
+
         // Update map
         if (mapControl != null && Math.Abs(t.Latitude) > 1e-6 && Math.Abs(t.Longitude) > 1e-6)
         {

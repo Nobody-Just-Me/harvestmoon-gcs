@@ -260,6 +260,19 @@ namespace HarvestmoonGCS.Tests.Diagnostics
             System.Threading.Tasks.Task.FromResult(false);
         public System.Threading.Tasks.Task<bool> SetCurrentWaypointAsync(int waypointIndex) => 
             System.Threading.Tasks.Task.FromResult(false);
+
+        public System.Threading.Tasks.Task<bool> SendMotorTestAsync(int motorInstance, float throttlePercent, float durationSec, int motorCount, int testType) =>
+            System.Threading.Tasks.Task.FromResult(false);
+        public System.Threading.Tasks.Task<bool> SendPusherMotorTestAsync(float throttlePercent, float durationSec) =>
+            System.Threading.Tasks.Task.FromResult(false);
+        public System.Threading.Tasks.Task<bool> SendEmergencyStopAsync() =>
+            System.Threading.Tasks.Task.FromResult(false);
+        public System.Threading.Tasks.Task<bool> StartCompassCalibration42424Async(byte compassInstance) =>
+            System.Threading.Tasks.Task.FromResult(false);
+        public System.Threading.Tasks.Task<bool> AcceptCompassCalibration42425Async(byte compassInstance) =>
+            System.Threading.Tasks.Task.FromResult(false);
+        public System.Threading.Tasks.Task<bool> CancelCompassCalibration42426Async(byte compassInstance) =>
+            System.Threading.Tasks.Task.FromResult(false);
     }
 
     /// <summary>

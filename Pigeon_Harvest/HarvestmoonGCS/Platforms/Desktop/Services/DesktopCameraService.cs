@@ -32,6 +32,12 @@ public class DesktopCameraService : ICameraService
 
     public bool IsStreaming => _isStreaming;
     public bool IsRecording => _isRecording;
+    public bool IsClassificationStream => false;
+
+    // Stub — Platforms/Desktop pakai PythonCameraService di production
+    public Task<bool> StartHsvStreamAsync(string source, string? modelPath = null,
+        float maxFps = 15f, bool showOverlay = true, bool demo = true, float playbackRate = 1.0f)
+        => StartCameraAsync(source);
     public string CurrentSource => _currentSource;
     public IReadOnlyList<CameraSource> AvailableSources => _availableSources?.AsReadOnly();
 

@@ -27,11 +27,17 @@ public sealed partial class DashboardPage : Page
 {
     private static readonly string[] DemoVideoPathCandidates =
     {
-        "/home/fawwazfa/Program/Harvestmoon/out/stream_v7c_final.mp4",
-        "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/HarvestmoonGCS/Assets/demo_videos/stream_v7c_final.mp4",
+        // Bundled assets — portable, works on any machine
         Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "stream_v7c_final.mp4"),
+        Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "YDXJ_fused_only_detected.mp4"),
         Path.Combine(Directory.GetCurrentDirectory(), "Assets", "demo_videos", "stream_v7c_final.mp4"),
-        Path.Combine(Directory.GetCurrentDirectory(), "out", "stream_v7c_final.mp4"),
+        Path.Combine(Directory.GetCurrentDirectory(), "Assets", "demo_videos", "YDXJ_fused_only_detected.mp4"),
+        // TEKNOFEST_SIAP demo folder fallback
+        Path.Combine(AppContext.BaseDirectory, "..", "..", "TEKNOFEST_SIAP", "demo_video", "stream_v7c_final.mp4"),
+        Path.Combine(AppContext.BaseDirectory, "..", "..", "TEKNOFEST_SIAP", "demo_video", "YDXJ_fused_only_detected.mp4"),
+        // Additional fallback paths
+        "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/stream_v7c_final.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/YDXJ_fused_only_detected.mp4",
     };
     private readonly FlightViewModel? _flightViewModel;
     private readonly MapViewModel? _mapViewModel;
@@ -209,6 +215,8 @@ public sealed partial class DashboardPage : Page
         SubscribeToGeofenceMonitor();
         AttachCameraHandlers();
         SyncYoloStateFromService();
+        // Load confidence threshold from AI settings if available
+        _ = LoadConfThresholdFromSettingsAsync();
         if (AlertsStack.Children.Count == 0) UpdateAlertCenter(_flightViewModel?.Telemetry, _flightViewModel?.IsConnected == true);
         if (SummaryHealthyCount.Text is "0" or "0%") SeedSummary();
         UpdateFarmerReport(0, 0, 0, 0, 0);
@@ -775,7 +783,6 @@ public sealed partial class DashboardPage : Page
             Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "derr.mp4"),
             Path.Combine(Directory.GetCurrentDirectory(), "derr.mp4"),
             Path.Combine(AppContext.BaseDirectory, "derr.mp4"),
-            "/home/fawwazfa/Program/Harvestmoon/derr.mp4"
         };
 
         foreach (var candidate in candidates)
@@ -862,7 +869,8 @@ public sealed partial class DashboardPage : Page
             DashboardVideoStream?.SetDetectionOverlays(Array.Empty<VideoDetectionOverlay>());
             return;
         }
-        if (!classifyActive && _aiOn && _harvestFunctionalService?.IsYoloOptionEnabled == true && !_analysisRunning)
+        bool shouldAnalyze = _aiOn || (VegToggleSwitch?.IsOn == true);
+        if (!classifyActive && shouldAnalyze && !_analysisRunning)
         {
             _lastAnalysisTime = DateTime.Now;
             _ = AnalyzeDashboardFrameAsync(frameData);
@@ -879,8 +887,9 @@ public sealed partial class DashboardPage : Page
 
             DispatcherQueue.TryEnqueue(() =>
             {
-                // If user turned off YOLO while inference was running, discard results.
-                if (!_aiOn)
+                // Discard if both YOLO and Vegetation Overlay are turned off
+                bool shouldProcess = _aiOn || (VegToggleSwitch?.IsOn == true);
+                if (!shouldProcess)
                 {
                     return;
                 }
@@ -889,7 +898,8 @@ public sealed partial class DashboardPage : Page
                 if (boxes.Count > 0 && (DateTime.UtcNow - _lastYoloTimelineEvent).TotalSeconds >= 5)
                 {
                     _lastYoloTimelineEvent = DateTime.UtcNow;
-                    _timelineService?.Add("yolo", $"YOLO detection: {boxes.Count} object(s), avg confidence {boxes.Average(b => b.Confidence) * 100:F0}%", "info");
+                    string modeStr = _aiOn ? "YOLO" : "OpenCV Fallback";
+                    _timelineService?.Add("yolo", $"{modeStr} detection: {boxes.Count} object(s), avg confidence {boxes.Average(b => b.Confidence) * 100:F0}%", "info");
                     _ = _harvestFunctionalService?.SaveLatestYoloScreenshotAsync(frameData);
                 }
                 var avgConf = boxes.Count > 0 ? boxes.Average(b => (double)b.Confidence) : 0;
@@ -898,8 +908,8 @@ public sealed partial class DashboardPage : Page
                 // During demo, InjectDemoDetectionUI owns confidence/FPS display — skip override.
                 if (!_isDemoRunning)
                 {
-                    DetectionCountText.Text = $"{boxes.Count} det";
-                    DetectionsListTitle.Text = $"Live Detections ({boxes.Count})";
+                    DetectionCountText.Text = _aiOn ? $"{boxes.Count} det" : "OpenCV active";
+                    DetectionsListTitle.Text = _aiOn ? $"Live Detections ({boxes.Count})" : "OpenCV Health Zones";
                     ConfAvgText.Text = $"Conf avg {avgConf * 100:F0}%";
                     SummaryConfidenceText.Text = $"{avgConf * 100:F0}%";
                     MissionDetectionsText.Text = boxes.Count.ToString();
@@ -916,30 +926,68 @@ public sealed partial class DashboardPage : Page
                     }
                     FpsHudText.Text = _aiOn
                         ? $"YOLOv8 · {_currentInferenceFps:F0} FPS"
-                        : "YOLO paused";
+                        : $"OpenCV · {_currentInferenceFps:F0} FPS";
 
                     // Update top bar AI FPS indicator
                     UpdateTopBarAiFps(_currentInferenceFps);
                 }
 
-                DashboardVideoStream?.SetDetectionOverlays(boxes
-                    .Where(b => b.Confidence * 100 >= _confThreshold)
-                    .Select(b => (demo: MapToDemo(b.ClassName), b))
-                    .Where(t => !string.IsNullOrEmpty(t.demo))
-                    .Select(t => new VideoDetectionOverlay
-                    {
-                        Label = t.demo,
-                        Confidence = t.b.Confidence,
-                        X = t.b.X,
-                        Y = t.b.Y,
-                        Width = t.b.Width,
-                        Height = t.b.Height
-                    }));
+                if (_aiOn)
+                {
+                    DashboardVideoStream?.SetDetectionOverlays(boxes
+                        .Where(b => b.Confidence * 100 >= _confThreshold)
+                        .Select(b => (demo: MapToDemo(b.ClassName), b))
+                        .Where(t => !string.IsNullOrEmpty(t.demo))
+                        .Select(t => new VideoDetectionOverlay
+                        {
+                            Label = t.demo,
+                            Confidence = t.b.Confidence,
+                            X = t.b.X,
+                            Y = t.b.Y,
+                            Width = t.b.Width,
+                            Height = t.b.Height
+                        }));
+                }
+                else
+                {
+                    // OpenCV fallback mode: clear normal target overlays, but we can draw severe/critical stress bounding boxes!
+                    DashboardVideoStream?.SetDetectionOverlays(boxes
+                        .Where(b => MapToDemo(b.ClassName) == "Drought/Severe Stress" || MapToDemo(b.ClassName) == "Bare Soil / Gap")
+                        .Select(b => new VideoDetectionOverlay
+                        {
+                            Label = MapToDemo(b.ClassName),
+                            Confidence = b.Confidence,
+                            X = b.X,
+                            Y = b.Y,
+                            Width = b.Width,
+                            Height = b.Height
+                        }));
+                }
 
                 if (!_isDemoRunning)
                 {
                     RenderDetectionListFromBoxes(boxes);
                     UpdateSummaryFromDetections(boxes);
+
+                    // Update the vegetation overlay gradient wash!
+                    int lushGreen = 0, inconsistent = 0, drought = 0, bareSoil = 0;
+                    foreach (var box in boxes)
+                    {
+                        switch (MapToDemo(box.ClassName))
+                        {
+                            case "Inconsistent Growth": inconsistent++; break;
+                            case "Drought/Severe Stress": drought++; break;
+                            case "Bare Soil / Gap": bareSoil++; break;
+                            case "Lush Green": lushGreen++; break;
+                        }
+                    }
+                    int total = Math.Max(1, lushGreen + inconsistent + drought + bareSoil);
+                    UpdateVegetationOverlay(
+                        lushGreen * 100.0 / total,
+                        inconsistent * 100.0 / total,
+                        drought * 100.0 / total,
+                        bareSoil * 100.0 / total
+                    );
                 }
             });
         }
@@ -1209,13 +1257,15 @@ public sealed partial class DashboardPage : Page
         SummaryStressCount.Text  = $"{inconsistentPct:F0}%";
         SummaryDiseaseCount.Text = $"{droughtPct:F0}%";
         SummaryPestCount.Text    = $"{bareSoilPct:F0}%";
-        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = "0%";
-        if (SummarySoilIssuesCount    != null) SummarySoilIssuesCount.Text    = "0%";
+        // WellIrrigated = proxy for LushGreen (most hydrated/healthy zones)
+        // SoilIssues    = proxy for BareSoil  (exposed/degraded soil)
+        if (SummaryWellIrrigatedCount != null) SummaryWellIrrigatedCount.Text = $"{lushGreenPct:F0}%";
+        if (SummarySoilIssuesCount    != null) SummarySoilIssuesCount.Text    = $"{bareSoilPct:F0}%";
 
         if (SummaryHealthyBar        != null) SummaryHealthyBar.Value        = lushGreenPct;
-        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = 0;
+        if (SummaryWellIrrigatedBar  != null) SummaryWellIrrigatedBar.Value  = lushGreenPct;
         if (SummaryStressBar         != null) SummaryStressBar.Value         = inconsistentPct;
-        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = 0;
+        if (SummarySoilIssuesBar     != null) SummarySoilIssuesBar.Value     = bareSoilPct;
         if (SummaryDiseaseBar        != null) SummaryDiseaseBar.Value        = droughtPct;
         if (SummaryPestBar           != null) SummaryPestBar.Value           = bareSoilPct;
 
@@ -1268,7 +1318,9 @@ public sealed partial class DashboardPage : Page
         if (_harvestFunctionalService != null)
         {
             _aiOn = _harvestFunctionalService.IsYoloOptionEnabled;
-            YoloToggleSwitch.IsOn = _aiOn;
+            if (YoloToggleSwitch != null) YoloToggleSwitch.IsOn = _aiOn;
+            if (VegToggleSwitch != null) VegToggleSwitch.IsOn = _harvestFunctionalService.IsVegOverlayEnabled;
+            if (ImuToggleSwitch != null) ImuToggleSwitch.IsOn = _harvestFunctionalService.IsImuOverlayEnabled;
 
             // Subscribe to external toggle changes (e.g. sidebar Yolo toggle)
             _harvestFunctionalService.YoloOptionChanged -= OnServiceYoloOptionChanged;
@@ -1329,11 +1381,25 @@ public sealed partial class DashboardPage : Page
         }
     }
 
-    private void VegToggle_Toggled(object sender, RoutedEventArgs e) => ApplyLayerVisibility();
+    private void VegToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_harvestFunctionalService != null && VegToggleSwitch != null)
+        {
+            _harvestFunctionalService.IsVegOverlayEnabled = VegToggleSwitch.IsOn;
+        }
+        ApplyLayerVisibility();
+    }
     private void ImuToggle_Toggled(object sender, RoutedEventArgs e)
     {
-        _showImuHud = ImuToggleSwitch.IsOn;
-        ImuHudPanel.Visibility = _showImuHud ? Visibility.Visible : Visibility.Collapsed;
+        if (ImuToggleSwitch != null)
+        {
+            _showImuHud = ImuToggleSwitch.IsOn;
+            if (_harvestFunctionalService != null)
+            {
+                _harvestFunctionalService.IsImuOverlayEnabled = _showImuHud;
+            }
+            ImuHudPanel.Visibility = _showImuHud ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     private void ApplyLayerVisibility()
@@ -1348,6 +1414,30 @@ public sealed partial class DashboardPage : Page
     {
         _confThreshold = (int)Math.Round(e.NewValue);
         ConfThresholdValue.Text = $"{_confThreshold}%";
+    }
+
+    /// <summary>
+    /// Load MinConfidence from AISettings so slider matches what was saved in AISettingsPage.
+    /// </summary>
+    private Task LoadConfThresholdFromSettingsAsync()
+    {
+        try
+        {
+            var settingsService = App.Current.Services.GetService<ISettingsService>();
+            if (settingsService == null) return Task.CompletedTask;
+            // GetSetting returns object for "AISettings" key; cast to AISettings
+            var aiObj = settingsService.GetSetting<object>("AISettings", null!);
+            if (aiObj is not HarvestmoonGCS.Core.Models.AI.AISettings ai) return Task.CompletedTask;
+            // AISettings.Analysis.MinConfidence is 0..1, _confThreshold is 0..100
+            int loaded = (int)Math.Round(ai.Analysis.MinConfidence * 100);
+            loaded = Math.Clamp(loaded, 10, 95);
+            _confThreshold = loaded;
+            if (ConfThresholdValue != null) ConfThresholdValue.Text = $"{_confThreshold}%";
+            if (FindName("ConfThresholdSlider") is Microsoft.UI.Xaml.Controls.Slider s)
+                s.Value = loaded;
+        }
+        catch { /* settings not yet saved — keep default 40% */ }
+        return Task.CompletedTask;
     }
 
     private DateTime _lastGridRebuild = DateTime.MinValue;
@@ -1512,8 +1602,26 @@ public sealed partial class DashboardPage : Page
                 }
 
                 await _cameraService.StopCameraAsync();
-                await _cameraService.StartCameraAsync(videoPath);
-                _timelineService?.Add("camera", $"Video: {System.IO.Path.GetFileName(videoPath)}", "success");
+
+                // Gunakan HSV stream (Python moonharvest_detect_stream.py) agar:
+                // 1. Video loop selamanya (--demo flag aktif)
+                // 2. Bounding box + overlay deteksi ditampilkan real-time
+                // 3. Target 15 FPS meskipun source video hanya 10 FPS
+                var modelPath = _harvestFunctionalService?.RuntimeModelPath;
+                bool started = await _cameraService.StartHsvStreamAsync(
+                    source: videoPath,
+                    modelPath: modelPath,
+                    maxFps: 15f,
+                    showOverlay: true,
+                    demo: true,
+                    playbackRate: 1.0f);
+
+                if (!started)
+                {
+                    // Fallback ke raw stream jika HSV stream gagal
+                    await _cameraService.StartCameraAsync(videoPath);
+                }
+                _timelineService?.Add("camera", $"Video: {System.IO.Path.GetFileName(videoPath)} · HSV+YOLO · 15 FPS loop", "success");
             }
             else
             {
@@ -1606,6 +1714,10 @@ public sealed partial class DashboardPage : Page
     private void StopDemoMode()
     {
         _isDemoRunning = false;
+
+        // Stop Python HSV stream process
+        _ = (_cameraService?.StopCameraAsync());
+
 #if __ANDROID__
         if (_androidDemoDecoder != null)
         {
@@ -1613,7 +1725,7 @@ public sealed partial class DashboardPage : Page
             _androidDemoDecoder = null;
         }
 #endif
-        _harvestFunctionalService?.SetDemoModeActive(false);  // Restore normal YOLO status, re-enable geofence alerts
+        _harvestFunctionalService?.SetDemoModeActive(false);
         ReadinessChecklistPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
         MissionMetadataPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
         _classifyRealData = null;
@@ -1638,8 +1750,9 @@ public sealed partial class DashboardPage : Page
         DashboardMapControl?.SetFollowVehicle(false);
         DashboardMapControl?.ClearWaypoints();
         SetDemoButtonState(running: false);
-        _timelineService?.Add("disconnected", "Koneksi diputus", "warning");
-        AddAlertRow("Koneksi UAV diputus", "warning");
+        UpdateModeBadge("STANDBY");
+        _timelineService?.Add("disconnected", "Demo mode dihentikan", "warning");
+        AddAlertRow("Demo mode dihentikan", "warning");
         UpdateAlertCenter(_flightViewModel?.Telemetry, false);
         UpdateFarmerReport(0, 0, 0, 0, 0);
         RenderIncidentTimeline();
@@ -1754,14 +1867,24 @@ public sealed partial class DashboardPage : Page
     {
         var fd = new HarvestmoonGCS.Models.FlightData
         {
-            FlightMode = t.FlightMode,
+            FlightMode      = t.FlightMode,
+            IsArmed         = t.IsArmed,
+            BatteryRemaining = (int)Math.Clamp(t.BatteryPercentage, 0, 100),
         };
         fd.GPS.Latitude  = (int)(t.Latitude * 1e7);
         fd.GPS.Longitude = (int)(t.Longitude * 1e7);
         fd.Altitude      = (int)t.Altitude;
         fd.AltitudeFloat = (float)t.Altitude;
+        fd.Barometers    = (float)t.RelativeAltitude;
         fd.Speed         = (float)t.Speed;
+        fd.GroundSpeed   = (float)(t.GroundSpeed > 0 ? t.GroundSpeed : t.Speed);
+        fd.VerticalSpeed = (float)t.VerticalSpeed;
+        fd.BatteryVolt   = (ushort)(t.BatteryVoltage * 1000); // V → mV
+        fd.BatteryCurr   = (ushort)(t.BatteryCurrent * 10);   // A → dA
+        fd.ThrottlePercent = t.ThrottlePercent;
         fd.Sats          = (byte)Math.Min(t.SatelliteCount, 255);
+        fd.Hdop          = (ushort)(t.HDOP * 100);
+        fd.Signal        = (byte)Math.Min(t.SignalStrength, 255);
         fd.IMU.Roll      = (float)(t.Roll * 180.0 / Math.PI);
         fd.IMU.Pitch     = (float)(t.Pitch * 180.0 / Math.PI);
         fd.IMU.Yaw       = (float)t.Heading;
@@ -1968,6 +2091,21 @@ public sealed partial class DashboardPage : Page
                 100);
 
         FarmerFhiScore.Text = fhi <= 0 ? "--" : $"{fhi:F0}";
+
+        // P3: FHI progress bar visual — update warna berdasarkan nilai
+        if (FhiProgressBar != null)
+        {
+            FhiProgressBar.Value = fhi;
+            FhiProgressBar.Foreground = new SolidColorBrush(fhi switch
+            {
+                >= 80 => Color.FromArgb(255, 22, 163, 74),   // hijau — excellent
+                >= 60 => Color.FromArgb(255, 101, 163, 13),  // hijau muda — good
+                >= 40 => Color.FromArgb(255, 234, 179, 8),   // kuning — caution
+                _     => Color.FromArgb(255, 220, 38, 38)    // merah — critical
+            });
+        }
+        if (FhiProgressLabel != null)
+            FhiProgressLabel.Text = fhi <= 0 ? "0%" : $"{fhi:F0}%";
         FarmerFhiLabel.Text = fhi <= 0
             ? "Waiting for detection data from the YDXJ video..."
             : fhi >= 80
@@ -2076,9 +2214,261 @@ public sealed partial class DashboardPage : Page
             Spacing = 6,
             Children =
             {
-                new FontIcon { Glyph = running ? "" : "", FontSize = 11 },
-                new TextBlock { Text = running ? "Stop Detection" : "Start Detection" }
+                new FontIcon { Glyph = running ? "" : "", FontSize = 11 },
+                new TextBlock { Text = running ? "Stop Demo" : "Start Demo" }
             }
+        };
+        // Update mode badge
+        UpdateModeBadge(running ? "DEMO" : (_isLiveRunning ? "LIVE" : "STANDBY"));
+    }
+
+    private bool _isLiveRunning;
+
+    private void UpdateModeBadge(string mode)
+    {
+        if (ModeBadge == null || ModeText == null) return;
+        ModeText.Text = mode;
+        ModeBadge.Background = new SolidColorBrush(mode switch
+        {
+            "DEMO"    => Color.FromArgb(255, 251, 140,  0),   // amber
+            "LIVE"    => Color.FromArgb(255,  46, 125, 50),   // green
+            "STANDBY" => Color.FromArgb(255,  29,  78, 216),  // blue
+            _         => Color.FromArgb(255,  29,  78, 216),
+        });
+    }
+
+    private async void StartLiveButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isLiveRunning) { await StopLiveModeAsync(); return; }
+        await StartLiveModeAsync();
+    }
+
+    /// <summary>
+    /// Live mode: mulai HSV detection stream dari kamera atau RTSP real.
+    /// Terhubung ke MAVLink jika belum connect, lalu start Python stream.
+    /// </summary>
+    private async Task StartLiveModeAsync()
+    {
+        if (_isLiveRunning) return;
+
+        try
+        {
+            // Hentikan demo jika sedang berjalan
+            if (_isDemoRunning) StopDemoMode();
+
+            // Tampilkan dialog untuk memilih source kamera
+            var sourceDialog = new ContentDialog
+            {
+                Title = "Start Live Detection",
+                PrimaryButtonText = "Start",
+                SecondaryButtonText = "Batal",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.XamlRoot,
+            };
+
+            var panel = new StackPanel { Spacing = 10, Padding = new Thickness(0, 8, 0, 0) };
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Source kamera (contoh: 0 untuk webcam, rtsp://192.168.1.1/live untuk RTSP, atau path video file)",
+                TextWrapping = TextWrapping.Wrap, FontSize = 12
+            });
+            var sourceBox = new TextBox
+            {
+                PlaceholderText = "0  |  rtsp://...  |  /path/to/video.mp4",
+                Text = "0",
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+            panel.Children.Add(sourceBox);
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = "MAVLink (opsional — kosongkan jika tidak ada drone)",
+                FontSize = 11, Foreground = new SolidColorBrush(Color.FromArgb(255, 100, 100, 100))
+            });
+            var mavlinkBox = new TextBox
+            {
+                PlaceholderText = "tcp:127.0.0.1:5760  |  udp:14550  |  /dev/ttyUSB0",
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+            panel.Children.Add(mavlinkBox);
+            sourceDialog.Content = panel;
+
+            var result = await sourceDialog.ShowAsync();
+            if (result != ContentDialogResult.Primary) return;
+
+            var cameraSource = sourceBox.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(cameraSource)) cameraSource = "0";
+            var mavlinkAddr = mavlinkBox.Text?.Trim();
+
+            // Tampilkan UI "connecting..." — set _isLiveRunning SETELAH stream berhasil
+            UpdateModeBadge("LIVE");
+            StartLiveButton.Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 6,
+                Children =
+                {
+                    new FontIcon { Glyph = "", FontSize = 11, Foreground = new SolidColorBrush(Colors.White) },
+                    new TextBlock { Text = "Stop Live", Foreground = new SolidColorBrush(Colors.White) }
+                }
+            };
+            (StartLiveButton as Button)!.Background = new SolidColorBrush(Color.FromArgb(255, 183, 28, 28));
+
+            // 1. Connect MAVLink jika ada address
+            if (!string.IsNullOrWhiteSpace(mavlinkAddr) && _mavLinkService != null)
+            {
+                try
+                {
+                    var config = ParseMavLinkAddress(mavlinkAddr);
+                    var connected = await _mavLinkService.ConnectAsync(config);
+                    if (connected)
+                    {
+                        // Fix: update FlightViewModel setelah MAVLink connect berhasil
+                        if (_flightViewModel != null) _flightViewModel.IsConnected = true;
+                        _timelineService?.Add("connected", $"MAVLink terhubung: {mavlinkAddr}", "success");
+                    }
+                    else
+                    {
+                        _timelineService?.Add("warning", $"MAVLink gagal: {mavlinkAddr}", "warning");
+                        AddAlertRow($"MAVLink gagal terhubung: {mavlinkAddr}", "warning");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _timelineService?.Add("warning", $"MAVLink gagal: {ex.Message}", "warning");
+                    AddAlertRow($"MAVLink gagal: {ex.Message}", "warning");
+                }
+            }
+
+            // 2. Start HSV detection stream — gunakan ICameraService interface, bukan type check
+            if (_cameraService != null)
+            {
+                // Resolve model path jika PythonCameraService tersedia
+                string? modelPath = null;
+                if (_cameraService is PythonCameraService pySvc)
+                    modelPath = PythonCameraService.ResolveHealthModelPath();
+
+                DashboardVideoStream?.ShowStatus("Memulai deteksi live...", true);
+                var ok = await _cameraService.StartHsvStreamAsync(
+                    source: cameraSource,
+                    modelPath: modelPath,
+                    maxFps: 15f,
+                    demo: false,       // REAL mode — tidak loop, bukan data simulasi
+                    playbackRate: 1.0f
+                );
+                if (!ok)
+                {
+                    AddAlertRow("Gagal memulai stream — cek source kamera", "error");
+                    _timelineService?.Add("error", "Camera stream gagal dimulai", "error");
+                    await StopLiveModeAsync();
+                    return;
+                }
+                _timelineService?.Add("camera", $"Live stream: {cameraSource}", "success");
+            }
+
+            // Fix: set _isLiveRunning SETELAH stream berhasil dimulai
+            _isLiveRunning = true;
+
+            // 3. AI on
+            _aiOn = true;
+            if (YoloToggleSwitch != null) YoloToggleSwitch.IsOn = true;
+
+            // 4. Tampilkan metadata panel
+            ReadinessChecklistPanel.Visibility = Visibility.Visible;
+            MissionMetadataPanel.Visibility = Visibility.Visible;
+            if (!_missionTimerStarted)
+            {
+                _missionStart = DateTime.Now;
+                MissionIdText.Text = $"MH-{DateTime.Now:yyyyMMdd-HHmm}-LIVE";
+                MissionStartedText.Text = DateTime.Now.ToString("HH:mm:ss");
+                _missionTimerStarted = true;
+            }
+            _missionTimer.Start();
+
+            UpdateAlertCenter(_flightViewModel?.Telemetry, _mavLinkService?.IsConnected == true);
+            _timelineService?.Add("armed", $"Live mode aktif · source: {cameraSource}", "success");
+            RenderIncidentTimeline();
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "StartLiveModeAsync failed");
+            AddAlertRow($"Live mode error: {ex.Message}", "error");
+            await StopLiveModeAsync();
+        }
+    }
+
+    private async Task StopLiveModeAsync()
+    {
+        _isLiveRunning = false;
+        UpdateModeBadge("STANDBY");
+
+        // Reset button
+        if (StartLiveButton != null)
+        {
+            StartLiveButton.Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 6,
+                Children =
+                {
+                    new FontIcon { Glyph = "", FontSize = 11, Foreground = new SolidColorBrush(Colors.White) },
+                    new TextBlock { Text = "Start Live", Foreground = new SolidColorBrush(Colors.White) }
+                }
+            };
+            (StartLiveButton as Button)!.Background = new SolidColorBrush(Color.FromArgb(255, 21, 101, 192));
+        }
+
+        // H6: Stop kamera + disconnect MAVLink + reset FlightViewModel
+        if (_cameraService != null) await _cameraService.StopCameraAsync();
+
+        if (_mavLinkService != null && _mavLinkService.IsConnected)
+        {
+            await _mavLinkService.DisconnectAsync();
+        }
+
+        if (_flightViewModel != null) _flightViewModel.IsConnected = false;
+
+        ReadinessChecklistPanel.Visibility = Visibility.Collapsed;
+        MissionMetadataPanel.Visibility = Visibility.Collapsed;
+        _missionTimer.Stop();
+        _missionTimerStarted = false;
+        _timelineService?.Add("disconnected", "Live mode dihentikan", "warning");
+        DashboardVideoStream?.ShowStatus("Live mode stopped", false);
+        UpdateAlertCenter(_flightViewModel?.Telemetry, false);
+        RenderIncidentTimeline();
+    }
+
+    /// <summary>
+    /// Parse MAVLink address string menjadi ConnectionConfig.
+    /// Format: tcp:host:port | udp:port | serial:/dev/... | /dev/...
+    /// </summary>
+    private static HarvestmoonGCS.Core.Services.ConnectionConfig ParseMavLinkAddress(string addr)
+    {
+        addr = addr.Trim();
+        if (addr.StartsWith("tcp:", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = addr.Substring(4).Split(':');
+            return new HarvestmoonGCS.Core.Services.ConnectionConfig
+            {
+                Type    = HarvestmoonGCS.Core.Models.ConnectionType.TCP,
+                Address = parts.Length > 0 ? parts[0] : "127.0.0.1",
+                Port    = parts.Length > 1 && int.TryParse(parts[1], out var p) ? p : 5760,
+            };
+        }
+        if (addr.StartsWith("udp:", StringComparison.OrdinalIgnoreCase))
+        {
+            var portStr = addr.Substring(4).Split(':').Last();
+            return new HarvestmoonGCS.Core.Services.ConnectionConfig
+            {
+                Type = HarvestmoonGCS.Core.Models.ConnectionType.UDP,
+                Port = int.TryParse(portStr, out var p) ? p : 14550,
+            };
+        }
+        // Default: Serial
+        return new HarvestmoonGCS.Core.Services.ConnectionConfig
+        {
+            Type       = HarvestmoonGCS.Core.Models.ConnectionType.Serial,
+            SerialPort = addr.StartsWith("serial:", StringComparison.OrdinalIgnoreCase)
+                ? addr.Substring(7) : addr,
+            BaudRate   = 57600,
         };
     }
 

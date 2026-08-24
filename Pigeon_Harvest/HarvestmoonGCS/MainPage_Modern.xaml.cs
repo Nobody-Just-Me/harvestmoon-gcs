@@ -376,9 +376,9 @@ public sealed partial class MainPage_Modern : Page
         }
 
         _isNavigating = true;
-        bool forceFrameNavigation = target is "ClassicMap" or "Map";
+        bool forceFrameNavigation = target is "Map";
         bool pageAlreadyCached = !forceFrameNavigation && _pageCacheManager?.IsCached(pageType) == true;
-        bool useLoadingOverlay = target is "ClassicMap" or "Map" or "TlogPlayer" && !pageAlreadyCached;
+        bool useLoadingOverlay = target is "Map" && !pageAlreadyCached;
         if (useLoadingOverlay)
         {
             MainLoadingIndicator.IsLoading = true;
@@ -541,7 +541,6 @@ public sealed partial class MainPage_Modern : Page
         yield return typeof(CameraPage);
         yield return typeof(MissionPlannerPage);
         yield return typeof(StatsPage);
-        yield return typeof(AIHarvestPage);
         yield return typeof(AISettingsPage);
         yield return typeof(ReportsHarvestPage);
         yield return typeof(SettingsPage);
@@ -557,18 +556,9 @@ public sealed partial class MainPage_Modern : Page
             "Map" => typeof(MapPage),
             "MissionPlanner" => typeof(MissionPlannerPage),
             "Stats" => typeof(StatsPage),
-            "AIHarvest" => typeof(AIHarvestPage),
             "AISettings" => typeof(AISettingsPage),
             "Tlog" => typeof(ReportsHarvestPage),
-            "LoRa" => typeof(LoRaPage),
             "Settings" => typeof(SettingsPage),
-            "FlightClassic" => typeof(FlightPage),
-            "ClassicMap" => typeof(MapPage),
-            "Calibrate" => typeof(CalibrationPage),
-            "TlogPlayer" => typeof(TlogPage),
-            "Parameter" => typeof(ParameterPage),
-            "Diagnostics" => typeof(DiagnosticsPage),
-            "Theme" => typeof(ThemePage),
             "Flight" => typeof(DashboardPage),
             "EdgeMode" => typeof(EdgeModePage),
             _ => null
@@ -592,12 +582,6 @@ public sealed partial class MainPage_Modern : Page
         if (page is MissionPlannerPage missionPlannerPage)
         {
             missionPlannerPage.OnPageActivated();
-            return;
-        }
-
-        if (page is LoRaPage loRaPage)
-        {
-            loRaPage.OnPageActivated();
         }
     }
 
@@ -627,9 +611,6 @@ public sealed partial class MainPage_Modern : Page
             case "Stats":
                 TopBar.UpdatePageTitle("Crop Analysis", "/ AI Monitoring · Real-time", "\uE9D9");
                 break;
-            case "AIHarvest":
-                TopBar.UpdatePageTitle("AI Vision", "/ Zero-Internet Edge AI · YOLOv8n ONNX", "\uE950");
-                break;
             case "AISettings":
                 TopBar.UpdatePageTitle("AI Settings", "/ Diagnostics & Models", "\uE7C1");
                 break;
@@ -638,30 +619,6 @@ public sealed partial class MainPage_Modern : Page
                 break;
             case "Settings":
                 TopBar.UpdatePageTitle("Settings", "/ System Preferences", "\uE713");
-                break;
-            case "FlightClassic":
-                TopBar.UpdatePageTitle("Flight Instruments", "/ Pigeon avionics & MAVLink", "\uE709");
-                break;
-            case "ClassicMap":
-                TopBar.UpdatePageTitle("Classic Map", "/ Pigeon map tools", "\uE707");
-                break;
-            case "Calibrate":
-                TopBar.UpdatePageTitle("Calibration", "/ Sensor, radio, ESC, servo", "\uE713");
-                break;
-            case "TlogPlayer":
-                TopBar.UpdatePageTitle("TLOG Player", "/ Telemetry playback", "\uE102");
-                break;
-            case "LoRa":
-                TopBar.UpdatePageTitle("LoRa Relay", "/ Long-range field telemetry", "\uE704");
-                break;
-            case "Parameter":
-                TopBar.UpdatePageTitle("Parameters", "/ Vehicle configuration", "\uE9D9");
-                break;
-            case "Diagnostics":
-                TopBar.UpdatePageTitle("Diagnostics", "/ Runtime health", "\uE7BA");
-                break;
-            case "Theme":
-                TopBar.UpdatePageTitle("Theme", "/ Layout and visual preferences", "\uE771");
                 break;
             case "EdgeMode":
                 TopBar.UpdatePageTitle("Edge Mode", "/ Offline AI · Zero-Internet YOLO Inference", "\uE950");

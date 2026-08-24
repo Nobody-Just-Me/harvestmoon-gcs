@@ -20,6 +20,9 @@ namespace HarvestmoonGCS.Views
         private ConnectionType _selectedType = ConnectionType.UDP;
         private readonly IMavLinkService? _mavLinkService;
         private readonly ISettingsService? _settingsService;
+        private readonly IRuncamWifiLinkService? _runcamService;
+        private bool _isRuncamMode = false;
+        private System.Threading.CancellationTokenSource? _runcamScanCts;
         private bool _isConnecting;
         private int _progressLoopToken;
         private bool _isDisconnecting;
@@ -46,6 +49,7 @@ namespace HarvestmoonGCS.Views
             this.InitializeComponent();
             _mavLinkService = mavLinkService;
             _settingsService = App.Current.Services.GetService<ISettingsService>();
+            _runcamService  = App.Current.Services.GetService<IRuncamWifiLinkService>();
             
             // Set initial state
             UpdateTabStyles();
@@ -632,6 +636,17 @@ namespace HarvestmoonGCS.Views
         {
             if (sender is Button button && button.Tag is string typeStr)
             {
+                if (typeStr == "RuncamWifi")
+                {
+                    _isRuncamMode = true;
+                    _selectedType = ConnectionType.UDP; // internal fallback
+                    UpdateTabStyles();
+                    UpdateFieldsVisibility();
+                    UpdateConnectButtonState();
+                    return;
+                }
+
+                _isRuncamMode = false;
                 if (Enum.TryParse(typeStr, out ConnectionType type))
                 {
                     _selectedType = type;
@@ -646,19 +661,29 @@ namespace HarvestmoonGCS.Views
         {
             if (Resources.ContainsKey("ActiveTabButtonStyle") && Resources.ContainsKey("TabButtonStyle"))
             {
-                var activeStyle = (Style)Resources["ActiveTabButtonStyle"];
+                var activeStyle  = (Style)Resources["ActiveTabButtonStyle"];
                 var inactiveStyle = (Style)Resources["TabButtonStyle"];
 
-                UdpTab.Style = _selectedType == ConnectionType.UDP ? activeStyle : inactiveStyle;
-                TcpTab.Style = _selectedType == ConnectionType.TCP ? activeStyle : inactiveStyle;
-                SerialTab.Style = _selectedType == ConnectionType.Serial ? activeStyle : inactiveStyle;
+                UdpTab.Style    = (!_isRuncamMode && _selectedType == ConnectionType.UDP)    ? activeStyle : inactiveStyle;
+                TcpTab.Style    = (!_isRuncamMode && _selectedType == ConnectionType.TCP)    ? activeStyle : inactiveStyle;
+                SerialTab.Style = (!_isRuncamMode && _selectedType == ConnectionType.Serial) ? activeStyle : inactiveStyle;
+                RuncamTab.Style = _isRuncamMode ? activeStyle : inactiveStyle;
             }
         }
 
         private void UpdateFieldsVisibility()
         {
-            NetworkFields.Visibility = (_selectedType == ConnectionType.UDP || _selectedType == ConnectionType.TCP) ? Visibility.Visible : Visibility.Collapsed;
-            SerialFields.Visibility = _selectedType == ConnectionType.Serial ? Visibility.Visible : Visibility.Collapsed;
+            bool isNetwork = !_isRuncamMode && (_selectedType == ConnectionType.UDP || _selectedType == ConnectionType.TCP);
+            bool isSerial  = !_isRuncamMode && _selectedType == ConnectionType.Serial;
+            bool isRuncam  = _isRuncamMode;
+
+            NetworkFields.Visibility    = isNetwork ? Visibility.Visible : Visibility.Collapsed;
+            SerialFields.Visibility     = isSerial  ? Visibility.Visible : Visibility.Collapsed;
+            RuncamWifiFields.Visibility = isRuncam  ? Visibility.Visible : Visibility.Collapsed;
+
+            // Sembunyikan presets saat mode RunCam
+            if (PresetsPanel != null)
+                PresetsPanel.Visibility = isRuncam ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void Preset_Click(object sender, RoutedEventArgs e)
@@ -678,6 +703,7 @@ namespace HarvestmoonGCS.Views
                         PortTextBox.Text = "14550";
                         break;
                     case "TELEMETRY":
+                        _isRuncamMode = false;
                         _selectedType = ConnectionType.Serial;
                         if (SerialPortComboBox.Items.Count > 0)
                         {
@@ -702,6 +728,14 @@ namespace HarvestmoonGCS.Views
                         }
 
                         BaudRateComboBox.SelectedItem = 57600;
+                        break;
+                    case "RUNCAM":
+                        // Preset RunCam WiFi Link 2 – aktifkan tab RunCam
+                        _isRuncamMode = true;
+                        RuncamIpTextBox.Text = "192.168.0.1";
+                        RuncamMavLocalPortTextBox.Text  = "14550";
+                        RuncamMavRemotePortTextBox.Text = "14551";
+                        RuncamProtocolComboBox.SelectedIndex = 2; // Auto
                         break;
                 }
                 UpdateTabStyles();
@@ -794,6 +828,64 @@ namespace HarvestmoonGCS.Views
 
             try
             {
+                // ── Mode RunCam WiFi Link 2 ─────────────────────────────────────────
+                if (_isRuncamMode && _runcamService != null)
+                {
+                    var runcamConfig = BuildRuncamConfig();
+                    bool connectCamera  = RuncamConnectCameraCheck.IsChecked == true;
+                    bool connectMavLink = RuncamConnectMavLinkCheck.IsChecked == true;
+
+                    StatusSubtitle.Text = "Menghubungkan ke RunCam WiFi Link 2...";
+                    bool success = false;
+
+                    using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(20));
+                    try
+                    {
+                        if (connectCamera && connectMavLink)
+                            success = await _runcamService.ConnectAllAsync(runcamConfig, cts.Token);
+                        else if (connectCamera)
+                            success = await _runcamService.StartCameraStreamAsync(runcamConfig, cts.Token);
+                        else if (connectMavLink)
+                            success = await _runcamService.StartMavLinkAsync(runcamConfig, cts.Token);
+                        else
+                            success = true; // tidak ada yang dipilih, anggap sukses
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        success = false;
+                    }
+
+                    _progressLoopToken++;
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        ConnectProgressBar.Value = 100;
+                        ProgressPercentage.Text = "100%";
+                        ConnectingProgressPanel.Visibility = Visibility.Collapsed;
+
+                        if (success)
+                        {
+                            var status = _runcamService.Status;
+                            StatusSubtitle.Text = $"RunCam terhubung ({status})";
+                            RuncamStatusText.Text = $"Terhubung – {runcamConfig.ActiveStreamUrl}";
+                            shouldHideDialog = true;
+                        }
+                        else
+                        {
+                            StatusSubtitle.Text = "Gagal menghubungkan RunCam";
+                            RuncamStatusText.Text = "Gagal – periksa koneksi WiFi ke RUNCAM_WIFILINK_XXXXXX";
+                        }
+                    });
+
+                    if (shouldHideDialog)
+                    {
+                        await Task.Delay(600);
+                        this.Hide();
+                    }
+
+                    return;
+                }
+
+                // ── Mode MAVLink normal (UDP / TCP / Serial) ────────────────────────
                 if (_mavLinkService != null)
                 {
                     var config = new ConnectionConfig
@@ -1016,10 +1108,94 @@ namespace HarvestmoonGCS.Views
             LoadSerialPorts();
         }
 
+        // ── RunCam WiFi Link 2 handlers ────────────────────────────────────────
+
+        /// <summary>Scan jaringan untuk mendeteksi RunCam WiFi Link 2 secara otomatis.</summary>
+        private async void RuncamScanButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_runcamService == null) return;
+
+            _runcamScanCts?.Cancel();
+            _runcamScanCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+            RuncamScanButton.IsEnabled = false;
+            RuncamStatusText.Text = "Scanning jaringan...";
+            RuncamStatusBorder.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+
+            try
+            {
+                var devices = await _runcamService.DetectDevicesAsync(_runcamScanCts.Token);
+
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (devices.Count > 0)
+                    {
+                        var best = devices[0];
+                        RuncamIpTextBox.Text               = best.CameraIp;
+                        RuncamMavLocalPortTextBox.Text      = best.MavLinkLocalPort.ToString();
+                        RuncamMavRemotePortTextBox.Text     = best.MavLinkRemotePort.ToString();
+                        RuncamProtocolComboBox.SelectedIndex = best.StreamProtocol == HarvestmoonGCS.Core.Models.RuncamStreamProtocol.Mjpeg ? 1 : 2;
+                        RuncamStatusText.Text = $"Ditemukan: {best.CameraIp} ({best.StreamProtocol})";
+                        RuncamStatusBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(40, 34, 197, 94));
+                    }
+                    else
+                    {
+                        RuncamStatusText.Text = "Tidak ditemukan. Pastikan terhubung ke WiFi RUNCAM_WIFILINK_XXXXXX";
+                        RuncamStatusBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(40, 239, 68, 68));
+                    }
+
+                    RuncamScanButton.IsEnabled = true;
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    RuncamStatusText.Text  = "Scan dibatalkan";
+                    RuncamScanButton.IsEnabled = true;
+                });
+            }
+            catch (Exception ex)
+            {
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    RuncamStatusText.Text  = $"Scan error: {ex.Message}";
+                    RuncamScanButton.IsEnabled = true;
+                });
+            }
+        }
+
+        /// <summary>Bangun RuncamWifiLinkConfig dari field UI saat ini.</summary>
+        private HarvestmoonGCS.Core.Models.RuncamWifiLinkConfig BuildRuncamConfig()
+        {
+            var ip = RuncamIpTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(ip)) ip = "192.168.0.1";
+
+            int localPort  = int.TryParse(RuncamMavLocalPortTextBox.Text,  out var lp) ? lp : 14550;
+            int remotePort = int.TryParse(RuncamMavRemotePortTextBox.Text, out var rp) ? rp : 14551;
+
+            var protocol = RuncamProtocolComboBox.SelectedIndex switch
+            {
+                0 => HarvestmoonGCS.Core.Models.RuncamStreamProtocol.Rtsp,
+                1 => HarvestmoonGCS.Core.Models.RuncamStreamProtocol.Mjpeg,
+                _ => HarvestmoonGCS.Core.Models.RuncamStreamProtocol.Auto
+            };
+
+            return new HarvestmoonGCS.Core.Models.RuncamWifiLinkConfig
+            {
+                CameraIp          = ip,
+                StreamProtocol    = protocol,
+                MavLinkLocalPort  = localPort,
+                MavLinkRemoteIp   = ip,
+                MavLinkRemotePort = remotePort
+            };
+        }
+
         private void CancelButton_Click(object sender, RoutedEventArgs e)
         {
             _progressLoopToken++;
             _isConnecting = false;
+            _runcamScanCts?.Cancel();
             this.Hide();
         }
     }

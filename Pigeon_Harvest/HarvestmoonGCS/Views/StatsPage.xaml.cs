@@ -26,6 +26,7 @@ public sealed partial class StatsPage : Page
     public StatsViewModel ViewModel => (StatsViewModel)DataContext;
     private readonly HarvestFunctionalService? _harvestFunctionalService;
     private readonly IFileService? _fileService;
+    private readonly RecommendationService? _recommendationService;
     private HarvestFunctionalService.HarvestAnalysisResult? _lastAnalysis;
 
     public StatsPage()
@@ -34,7 +35,33 @@ public sealed partial class StatsPage : Page
         DataContext = App.Current.Services.GetService<StatsViewModel>();
         _harvestFunctionalService = App.Current.Services.GetService<HarvestFunctionalService>();
         _fileService = App.Current.Services.GetService<IFileService>();
+        _recommendationService = App.Current.Services.GetService<RecommendationService>();
+
+        // Subscribe ke RecommendationsUpdated untuk real-time update saat Python stream selesai
+        if (_recommendationService != null)
+            _recommendationService.RecommendationsUpdated += OnRecommendationsUpdated;
+
         this.Loaded += (_, _) => { if (_lastAnalysis == null) RenderDemoAnalysis(); };
+        this.Unloaded += OnUnloaded;
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (_recommendationService != null)
+            _recommendationService.RecommendationsUpdated -= OnRecommendationsUpdated;
+    }
+
+    private void OnRecommendationsUpdated(object? sender, RecommendationService.RecommendationResult result)
+    {
+        // Dispatch ke UI thread karena event bisa datang dari background thread
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            try { RenderDemoAnalysis(); }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[StatsPage] OnRecommendationsUpdated error: {ex.Message}");
+            }
+        });
     }
 
     private sealed class ReportEntry
@@ -92,9 +119,46 @@ public sealed partial class StatsPage : Page
 
     private void RenderDemoAnalysis()
     {
+        // Try to load live recommendations from RecommendationService first
+        var recService = App.Current.Services.GetService<RecommendationService>();
+        var liveRec = recService?.Latest;
+
         // Load real aggregate from reports_index.json
         var (totalDet, highCount, healthy, stress, disease) = LoadReportsAggregate();
-        if (totalDet == 0) { totalDet = 153; highCount = 2; }
+        // If no persisted reports yet, use live recommendation data if available
+        if (totalDet == 0 && liveRec != null)
+        {
+            healthy  = liveRec.HealthyPct;
+            stress   = liveRec.StressPct + liveRec.DroughtPct;
+            disease  = liveRec.BareSoilPct;
+            totalDet = 0; // genuinely no reports yet
+            highCount = liveRec.Urgency is "high" or "critical" ? 1 : 0;
+        }
+        else if (totalDet == 0)
+        {
+            // No data at all — show clean empty state, not fake 153
+            TotalDetectionText.Text      = "—";
+            AverageConfidenceText.Text   = "—";
+            ImpactAreaText.Text          = "—";
+            HighPriorityText.Text        = "0";
+            HealthyDistributionText.Text = "—";
+            StressDistributionText.Text  = "—";
+            DiseaseDistributionText.Text = "—";
+            PestDistributionText.Text    = "—";
+            HealthyDistributionBar.Width  = 0;
+            StressDistributionBar.Width   = 0;
+            DiseaseDistributionBar.Width  = 0;
+            PestDistributionBar.Width     = 0;
+            RecommendationOneText.Text   = "Jalankan analisis atau mulai misi untuk melihat rekomendasi.";
+            RecommendationTwoText.Text   = "Gunakan tombol Run Analysis di atas untuk menganalisis citra UAV.";
+            RecommendationThreeText.Text = "Rekomendasi akan dihasilkan otomatis setelah deteksi pertama.";
+            PriorityZonesItemsControl.ItemsSource = null;
+            PriorityZonesEmptyText.Visibility = Visibility.Visible;
+            AnalysisStatusText.Text = "Belum ada data misi. Jalankan analisis untuk memulai.";
+            ValidationStatusText.Text = "Masukkan sampel kelembaban tanah lalu klik Validate.";
+            return;
+        }
+
         const double pest = 0.0;
 
         // Normalize to 100%
@@ -106,7 +170,7 @@ public sealed partial class StatsPage : Page
             disease = disease / visTotal * 100;
         }
 
-        TotalDetectionText.Text      = totalDet.ToString();
+        TotalDetectionText.Text      = totalDet > 0 ? totalDet.ToString() : "—";
         AverageConfidenceText.Text   = $"{System.Math.Clamp(healthy * 0.85 + 15, 50, 95):F0}%";
         ImpactAreaText.Text          = $"{stress * 0.048:F1} ha";
         HighPriorityText.Text        = highCount.ToString();
@@ -120,22 +184,41 @@ public sealed partial class StatsPage : Page
         DiseaseDistributionBar.Width  = PercentToBarWidth(disease);
         PestDistributionBar.Width     = PercentToBarWidth(pest);
 
-        RecommendationOneText.Text   = $"Stress Zone ({stress:F0}%) concentrated in west sector — prioritize irrigation and further inspection.";
-        RecommendationTwoText.Text   = $"Disease ({disease:F0}%) in Sector A–B — apply targeted nutrients or fungicide.";
-        RecommendationThreeText.Text = "Monitor Sectors C–D on the next flight to confirm conditions.";
-
-        var demoZones = new List<PriorityZoneItem>
+        // Use live recommendations from RecommendationService if available
+        if (liveRec != null && liveRec.TopRecommendations.Count > 0)
         {
-            new PriorityZoneItem { PriorityText = "P1", ZoneText = "Sector B", CoordinateText = "-6.8152, 107.6178", Severity = "Stress" },
-            new PriorityZoneItem { PriorityText = "P2", ZoneText = "Sector D", CoordinateText = "-6.8162, 107.6165", Severity = "Disease" },
-            new PriorityZoneItem { PriorityText = "P3", ZoneText = "Sector A", CoordinateText = "-6.8141, 107.6183", Severity = "Stress" },
-            new PriorityZoneItem { PriorityText = "P4", ZoneText = "Sector F", CoordinateText = "-6.8171, 107.6175", Severity = "Disease" },
-            new PriorityZoneItem { PriorityText = "P5", ZoneText = "Sector C", CoordinateText = "-6.8157, 107.6169", Severity = "Stress" },
-        };
-        PriorityZonesItemsControl.ItemsSource = demoZones;
-        PriorityZonesEmptyText.Visibility = Visibility.Collapsed;
-        AnalysisStatusText.Text = $"{totalDet} detections · 5 mission history · Click Run Analysis for new image analysis";
-        ValidationStatusText.Text = "Data from 5 missions available. Enter soil moisture samples then click Validate.";
+            RecommendationOneText.Text   = liveRec.TopRecommendations.ElementAtOrDefault(0) ?? "—";
+            RecommendationTwoText.Text   = liveRec.TopRecommendations.ElementAtOrDefault(1) ?? "—";
+            RecommendationThreeText.Text = liveRec.TopRecommendations.ElementAtOrDefault(2) ?? "—";
+        }
+        else
+        {
+            // Fallback: generate contextual text from actual percentages (no hardcoded "west sector")
+            var stressLabel  = stress > 20 ? $"Zona stres {stress:F0}%" : $"Stres terdeteksi {stress:F0}%";
+            var diseaseLabel = disease > 10 ? $"Bare soil / drought {disease:F0}%" : $"Kondisi kering {disease:F0}%";
+            RecommendationOneText.Text   = $"{stressLabel} — periksa irigasi dan lakukan inspeksi lapangan.";
+            RecommendationTwoText.Text   = $"{diseaseLabel} — pertimbangkan pemupukan atau pengairan tambahan.";
+            RecommendationThreeText.Text = $"Vegetasi sehat {healthy:F0}% — monitor area prioritas pada penerbangan berikutnya.";
+        }
+
+        // Generate priority zones from actual data percentages
+        var zones = new List<PriorityZoneItem>();
+        char sector = 'A';
+        if (stress > 20) zones.Add(new PriorityZoneItem { PriorityText = $"P{zones.Count+1}", ZoneText = $"Sektor {sector++}", CoordinateText = $"{-6.8150 - zones.Count * 0.001:F4}, {107.6175 + zones.Count * 0.001:F4}", Severity = "Stress" });
+        if (disease > 10) zones.Add(new PriorityZoneItem { PriorityText = $"P{zones.Count+1}", ZoneText = $"Sektor {sector++}", CoordinateText = $"{-6.8162 - zones.Count * 0.001:F4}, {107.6165 + zones.Count * 0.001:F4}", Severity = "Drought" });
+        if (stress > 40) zones.Add(new PriorityZoneItem { PriorityText = $"P{zones.Count+1}", ZoneText = $"Sektor {sector++}", CoordinateText = $"{-6.8141 - zones.Count * 0.001:F4}, {107.6183 + zones.Count * 0.001:F4}", Severity = "Stress" });
+        if (disease > 20) zones.Add(new PriorityZoneItem { PriorityText = $"P{zones.Count+1}", ZoneText = $"Sektor {sector++}", CoordinateText = $"{-6.8171 - zones.Count * 0.001:F4}, {107.6175 + zones.Count * 0.001:F4}", Severity = "Drought" });
+        if (zones.Count == 0 && healthy < 70)
+            zones.Add(new PriorityZoneItem { PriorityText = "P1", ZoneText = "Sektor A", CoordinateText = "-6.8152, 107.6178", Severity = "Monitor" });
+
+        PriorityZonesItemsControl.ItemsSource = zones.Count > 0 ? zones : null;
+        PriorityZonesEmptyText.Visibility = zones.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        var missionCount = totalDet > 0 ? "5 riwayat misi" : "riwayat misi tersedia";
+        AnalysisStatusText.Text = totalDet > 0
+            ? $"{totalDet} deteksi · {missionCount} · Klik Run Analysis untuk analisis baru"
+            : "Klik Run Analysis untuk memulai analisis citra UAV";
+        ValidationStatusText.Text = "Masukkan sampel kelembaban tanah lalu klik Validate.";
     }
 
     private async void BrowseImageButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)

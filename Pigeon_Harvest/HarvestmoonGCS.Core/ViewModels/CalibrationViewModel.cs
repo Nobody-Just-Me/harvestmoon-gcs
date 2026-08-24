@@ -1,5 +1,6 @@
 using HarvestmoonGCS.Core.Models;
 using HarvestmoonGCS.Core.Services;
+using HarvestmoonGCS.Models;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -10,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace HarvestmoonGCS.Core.ViewModels
 {
-    public class CalibrationViewModel : INotifyPropertyChanged
+    public class CalibrationViewModel : INotifyPropertyChanged, IDisposable
     {
         private const int SimulatedCalibrationStepDelayMs = 50;
         private const int SimulatedCompassProgressDelayMs = 50;
@@ -163,6 +164,103 @@ namespace HarvestmoonGCS.Core.ViewModels
         {
             _mavlinkService = mavlinkService ?? throw new ArgumentNullException(nameof(mavlinkService));
             InitializeServoConfigs();
+            _mavlinkService.MessageReceived += OnMavLinkMessageReceived;
+            _mavlinkService.TelemetryReceived += OnMavLinkTelemetryReceived;
+        }
+
+        public void Dispose()
+        {
+            if (_mavlinkService != null)
+            {
+                _mavlinkService.MessageReceived -= OnMavLinkMessageReceived;
+                _mavlinkService.TelemetryReceived -= OnMavLinkTelemetryReceived;
+            }
+            _compassCalibrationCts?.Cancel();
+            _compassCalibrationCts?.Dispose();
+        }
+
+        private void OnMavLinkMessageReceived(object? sender, string message)
+        {
+            if (IsLoading)
+            {
+                // In real flight, accelerometer calibration status text looks like:
+                // "Place vehicle Level and press any key"
+                // "Place vehicle on its LEFT side and press any key"
+                // "Place vehicle on its RIGHT side and press any key"
+                // "Place vehicle NOSE DOWN and press any key"
+                // "Place vehicle NOSE UP and press any key"
+                // "Place vehicle on its BACK and press any key"
+                // "Calibration successful" or "Calibration failed"
+                if (message.Contains("Place vehicle", StringComparison.OrdinalIgnoreCase) || 
+                    message.Contains("Calibration", StringComparison.OrdinalIgnoreCase) ||
+                    message.Contains("accel calibration", StringComparison.OrdinalIgnoreCase))
+                {
+                    StatusMessageChanged?.Invoke(this, message);
+                    
+                    // Automatically increment step based on message content to update UI step indicators
+                    if (message.Contains("Level", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _currentCalibrationStep = 1;
+                        CalibrationStepCompleted?.Invoke(this, 1);
+                    }
+                    else if (message.Contains("LEFT", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _currentCalibrationStep = 2;
+                        CalibrationStepCompleted?.Invoke(this, 2);
+                    }
+                    else if (message.Contains("RIGHT", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _currentCalibrationStep = 3;
+                        CalibrationStepCompleted?.Invoke(this, 3);
+                    }
+                    else if (message.Contains("DOWN", StringComparison.OrdinalIgnoreCase) || message.Contains("NoseDown", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _currentCalibrationStep = 4;
+                        CalibrationStepCompleted?.Invoke(this, 4);
+                    }
+                    else if (message.Contains("UP", StringComparison.OrdinalIgnoreCase) || message.Contains("NoseUp", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _currentCalibrationStep = 5;
+                        CalibrationStepCompleted?.Invoke(this, 5);
+                    }
+                    else if (message.Contains("BACK", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _currentCalibrationStep = 6;
+                        CalibrationStepCompleted?.Invoke(this, 6);
+                    }
+
+                    if (message.Contains("Calibration successful", StringComparison.OrdinalIgnoreCase) ||
+                        message.Contains("Calibration failed", StringComparison.OrdinalIgnoreCase) ||
+                        message.Contains("accel calibration successful", StringComparison.OrdinalIgnoreCase))
+                    {
+                        IsLoading = false;
+                    }
+                }
+            }
+        }
+
+        private void OnMavLinkTelemetryReceived(object? sender, FlightData data)
+        {
+            if (IsLoading)
+            {
+                // If connected, update progress from flight data instead of simulating
+                if (_mavlinkService.IsConnected && !_mavlinkService.IsInPlaybackMode)
+                {
+                    int progress1 = data.Compass_Progress1;
+                    int progress2 = data.Compass_Progress2;
+                    
+                    if (progress1 > 0 || progress2 > 0)
+                    {
+                        CalibrationProgressChanged?.Invoke(this, (progress1, progress2));
+                        
+                        if (progress1 >= 100 && progress2 >= 100)
+                        {
+                            IsLoading = false;
+                            StatusMessageChanged?.Invoke(this, "Compass calibration data collected. Click Accept to save or Cancel to abort.");
+                        }
+                    }
+                }
+            }
         }
 
         private void InitializeServoConfigs()
@@ -210,12 +308,27 @@ namespace HarvestmoonGCS.Core.ViewModels
                     param7: 0
                 );
 
-                // Simulate calibration steps (in real implementation, listen to MAVLink messages)
-                await SimulateCalibrationStepsAsync();
+                if (!_mavlinkService.IsConnected)
+                {
+                    // Simulate calibration steps
+                    await SimulateCalibrationStepsAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessageChanged?.Invoke(this, $"Error during accel calibration: {ex.Message}");
+                if (_mavlinkService.IsConnected)
+                {
+                    IsLoading = false;
+                }
+                throw;
             }
             finally
             {
-                IsLoading = false;
+                if (!_mavlinkService.IsConnected)
+                {
+                    IsLoading = false;
+                }
             }
         }
 
@@ -238,8 +351,12 @@ namespace HarvestmoonGCS.Core.ViewModels
                 );
 
                 StatusMessageChanged?.Invoke(this, "Simple accelerometer calibration command sent");
-                await Task.Delay(3000); // Wait for calibration to complete
-                StatusMessageChanged?.Invoke(this, "Simple accelerometer calibration complete");
+                
+                if (!_mavlinkService.IsConnected)
+                {
+                    await Task.Delay(3000); // Wait for calibration to complete (simulation)
+                    StatusMessageChanged?.Invoke(this, "Simple accelerometer calibration complete");
+                }
             }
             catch (Exception ex)
             {
@@ -282,8 +399,12 @@ namespace HarvestmoonGCS.Core.ViewModels
                 );
 
                 StatusMessageChanged?.Invoke(this, "Level calibration command sent");
-                await Task.Delay(3000); // Wait for calibration to complete
-                StatusMessageChanged?.Invoke(this, "Level calibration complete");
+                
+                if (!_mavlinkService.IsConnected)
+                {
+                    await Task.Delay(3000); // Wait for calibration to complete (simulation)
+                    StatusMessageChanged?.Invoke(this, "Level calibration complete");
+                }
             }
             catch (Exception ex)
             {
@@ -414,29 +535,32 @@ namespace HarvestmoonGCS.Core.ViewModels
 
                 // Simulate progress updates
                 // In real implementation, this would listen to MAG_CAL_PROGRESS messages
-                _ = Task.Run(async () =>
+                if (!_mavlinkService.IsConnected)
                 {
-                    try
+                    _ = Task.Run(async () =>
                     {
-                        for (int i = 0; i <= 100; i += 5)
+                        try
                         {
-                            await Task.Delay(SimulatedCompassProgressDelayMs, cancellationToken);
-                            if (cancellationToken.IsCancellationRequested)
+                            for (int i = 0; i <= 100; i += 5)
                             {
-                                return;
+                                await Task.Delay(SimulatedCompassProgressDelayMs, cancellationToken);
+                                if (cancellationToken.IsCancellationRequested)
+                                {
+                                    return;
+                                }
+
+                                CalibrationProgressChanged?.Invoke(this, (i, i));
                             }
 
-                            CalibrationProgressChanged?.Invoke(this, (i, i));
+                            IsLoading = false;
+                            StatusMessageChanged?.Invoke(this, "Compass calibration data collected. Click Accept to save or Cancel to abort.");
                         }
-
-                        IsLoading = false;
-                        StatusMessageChanged?.Invoke(this, "Compass calibration data collected. Click Accept to save or Cancel to abort.");
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // Cancellation is the normal path when the user aborts calibration.
-                    }
-                }, cancellationToken);
+                        catch (OperationCanceledException)
+                        {
+                            // Cancellation is the normal path when the user aborts calibration.
+                        }
+                    }, cancellationToken);
+                }
             }
             catch (Exception ex)
             {

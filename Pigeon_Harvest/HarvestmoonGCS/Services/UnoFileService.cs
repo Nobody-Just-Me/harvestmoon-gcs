@@ -21,21 +21,61 @@ public class UnoFileService : IFileService
     
     public async Task<string?> PickFileAsync(string[] extensions)
     {
-        var picker = new FileOpenPicker();
-        
-        var hwnd = WindowNative.GetWindowHandle(App.MainWindow);
-        InitializeWithWindow.Initialize(picker, hwnd);
-
-        picker.ViewMode = PickerViewMode.List;
-        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-        
-        foreach (var ext in extensions)
+        if (OperatingSystem.IsLinux())
         {
-            picker.FileTypeFilter.Add(ext);
+            try
+            {
+                var filterArg = extensions != null && extensions.Length > 0
+                    ? $"--file-filter=\"Supported Files | {string.Join(" ", extensions.Select(e => $"*{e}"))}\""
+                    : "";
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "zenity",
+                    Arguments = $"--file-selection --title=\"Pilih File Model / Class\" {filterArg}",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var process = System.Diagnostics.Process.Start(psi);
+                if (process != null)
+                {
+                    var output = await process.StandardOutput.ReadToEndAsync();
+                    await process.WaitForExitAsync();
+                    var selectedPath = output.Trim();
+                    if (!string.IsNullOrWhiteSpace(selectedPath) && File.Exists(selectedPath))
+                    {
+                        return selectedPath;
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback to WinUI picker
+            }
         }
 
-        var file = await picker.PickSingleFileAsync();
-        return file?.Path;
+        try
+        {
+            var picker = new FileOpenPicker();
+            
+            var hwnd = WindowNative.GetWindowHandle(App.MainWindow);
+            InitializeWithWindow.Initialize(picker, hwnd);
+
+            picker.ViewMode = PickerViewMode.List;
+            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+            
+            foreach (var ext in extensions)
+            {
+                picker.FileTypeFilter.Add(ext);
+            }
+
+            var file = await picker.PickSingleFileAsync();
+            return file?.Path;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public async Task<string?> SaveFileAsync(string suggestedName, string extension)

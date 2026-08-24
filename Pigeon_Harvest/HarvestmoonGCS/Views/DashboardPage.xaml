@@ -129,10 +129,23 @@
                                                FontSize="13" FontWeight="SemiBold" Foreground="#0F3024" VerticalAlignment="Center"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <!-- Mode indicator badge -->
+                                    <Border x:Name="ModeBadge" CornerRadius="6" Padding="8,3" Background="#1D4ED8">
+                                        <TextBlock x:Name="ModeText" Text="STANDBY" FontSize="10"
+                                                   Foreground="White" FontWeight="Bold"/>
+                                    </Border>
                                     <Button x:Name="StartDemoButton" Style="{StaticResource HarvestPrimaryButton}" Padding="10,5" Click="StartDemoButton_Click">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <FontIcon Glyph="&#xE768;" FontSize="11"/>
-                                            <TextBlock Text="Start Detection"/>
+                                            <TextBlock Text="Start Demo"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button x:Name="StartLiveButton" Padding="10,5" Click="StartLiveButton_Click"
+                                            Background="#1565C0" Foreground="White" CornerRadius="6"
+                                            ToolTipService.ToolTip="Start Live: hubungkan UAV dan mulai deteksi kamera real">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE714;" FontSize="11" Foreground="White"/>
+                                            <TextBlock Text="Start Live" Foreground="White"/>
                                         </StackPanel>
                                     </Button>
                                     <Border x:Name="AiStatusPill" Style="{StaticResource PillSuccessStyle}">
@@ -480,6 +493,19 @@
                                 <Border Grid.Column="1" CornerRadius="26" Width="52" Height="52" Background="#ECFDF5" Margin="10,0,0,0" VerticalAlignment="Center">
                                     <TextBlock x:Name="FarmerFhiScore" Text="--" FontSize="18" FontWeight="Bold" Foreground="#2E7D32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
+                            </Grid>
+                            <!-- FHI Progress Bar visual -->
+                            <Grid Margin="0,4,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ProgressBar x:Name="FhiProgressBar" Minimum="0" Maximum="100" Value="0"
+                                             Height="8" CornerRadius="4"
+                                             Foreground="#2E7D32" Background="#ECFDF5"/>
+                                <TextBlock Grid.Column="1" x:Name="FhiProgressLabel" Text="0%" 
+                                           FontSize="10" FontWeight="SemiBold" Foreground="#4F6B5C"
+                                           VerticalAlignment="Center" Margin="6,0,0,0"/>
                             </Grid>
                             <Border Height="1" Background="#E5F3E8"/>
                             <StackPanel Spacing="6">

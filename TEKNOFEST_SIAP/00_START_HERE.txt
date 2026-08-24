@@ -1,0 +1,102 @@
+# TEKNOFEST_SIAP — Folder Presentasi MoonHarvest
+
+Semua yang kamu butuhkan untuk presentasi TEKNOFEST 2026 (Agriculture Technology) ada di folder ini.
+
+```
+TEKNOFEST_SIAP/
+├── dokumen/        ← Dokumen presentasi & laporan
+│   ├── MANUAL_BOOK.docx
+│   ├── PANDUAN_PRESENTASI.docx
+│   ├── PANDUAN_POSTER.docx
+│   ├── EFRISA - MOONHARVEST-1.pdf
+│   └── EFRISA TEKNO 26 - PROJECT PELIMINARY EVALUATION REPORT.pdf
+│
+├── demo_video/     ← Video demo hasil deteksi
+│   ├── stream_v7c_final.mp4       (video utama demo)
+│   ├── YDXJ_fused_only_detected.mp4
+│   └── test_deteksi.mp4
+│
+├── model/          ← Model ONNX untuk deteksi
+│   ├── moonharvest-health-cls.onnx
+│   ├── moonharvest-health-cls-int8.onnx
+│   ├── moonharvest-uav-det.onnx
+│   └── moonharvest-uav-det-int8.onnx
+│
+├── skrip/          ← Skrip deteksi Python
+│   ├── run_detection_video.py
+│   ├── moonharvest_detect_stream.py
+│   └── FINAL_CONFIG.json
+│
+└── 00_START_HERE.txt   ← File ini (baca dulu)
+```
+
+---
+
+## Urutan Persiapan Menjelang Hari H
+
+### 1. BACA Dokumen (minimal 1x sebelum lomba)
+
+| File | Untuk Apa |
+|------|-----------|
+| `PANDUAN_PRESENTASI.docx` | **PALING PENTING** — cara presentasi + 30+ Q&A juri |
+| `MANUAL_BOOK.docx` | Cara menggunakan sistem, troubleshooting |
+| `PANDUAN_POSTER.docx` | Panduan bikin poster untuk booth |
+
+### 2. PENTING — Ganti Video Demo dengan Sawah Asli
+
+Video di `demo_video/` saat ini adalah **video sintetis** (frame warna polos) untuk keperluan tes. Di depan juri, kamu harus pakai **video sawah asli** dari drone.
+
+Jika kamu punya rekaman sawah asli (SD card drone, HP, flash disk):
+
+```bash
+# 1. Copy video asli ke folder ini, misalnya nama video_asli.mp4
+
+# 2. Aktifkan venv (sudah dibuat di Pigeon_Harvest/.venv-yolo)
+cd /home/fawwazfa/Program/Harvestmoon
+source Pigeon_Harvest/.venv-yolo/bin/activate
+
+# 3. Jalankan deteksi
+python3 run_detection_video.py \
+  --source video_asli.mp4 \
+  --model model/moonharvest-health-cls.onnx \
+  --out demo_video/stream_v7c_final.mp4
+```
+
+### 3. Jalankan GCS untuk Demo
+
+```bash
+cd /home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest
+./HarvestmoonGCS/bin/Release/net9.0-desktop/HarvestmoonGCS
+```
+
+### 4. Demo di depan juri — alur yang disarankan
+
+1. Buka GCS → Camera Page → play video demo
+2. Tunjukkan bounding box per kelas muncul
+3. Tunjukkan FHI berubah real-time
+4. Buka Stats Page → grafik distribusi
+5. Buka Reports Page → laporan tersimpan
+
+---
+
+## Angka Kunci yang Wajib Dihafal
+
+| Angka | Arti |
+|-------|------|
+| **98.8%** | Validation accuracy model |
+| **82.2%** | Aerial accuracy (fusion HSV + YOLO) |
+| **2.5ms** | Inference speed per image |
+| **2 FPS** | Kecepatan processing mode fusion |
+| **78.9** | FHI video demo sawah 15 hari |
+| **4 kelas** | Lush Green, Inconsistent, Drought, Bare Soil |
+
+## Aturan yang Tidak Boleh Dilanggar
+
+- ❌ JANGAN klaim "mendeteksi penyakit" — klaim "indikasi visual berbasis citra"
+- ❌ JANGAN klaim "98.8% di lapangan" — itu akurasi lab
+- ✅ Gunakan narasi: "alat monitoring visual awal untuk prioritisasi inspeksi"
+
+---
+
+*Folder ini dibuat agar semua kebutuhan presentasi ada di satu tempat.*
+*Yang TIDAK ada di sini: video sawah asli (harus kamu sediakan) dan aplikasi GCS (ada di Pigeon_Harvest).*

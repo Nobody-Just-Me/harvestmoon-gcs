@@ -51,6 +51,8 @@ public interface IMavLinkService
     Task SendCommandAsync(Command command, params float[] parameters);
     Task<bool> ArmDisarmAsync(bool arm);
     Task<bool> SetFlightModeAsync(string mode);
+    Task<bool> TakeoffAsync(float altitudeMeters = 10f);
+    Task<bool> LandAsync();
     
     // VTOL specific operations
     Task<bool> VtolTransitionAsync(MavLinkNet.MavVtolState targetState);
@@ -79,6 +81,9 @@ public interface IMavLinkService
     // Mission operations
     Task<bool> UploadMissionAsync(IEnumerable<WaypointData> waypoints);
     Task<List<WaypointData>> DownloadMissionAsync();
+
+    // Geofence operations
+    Task<bool> SetGeofenceAsync(IEnumerable<(double Latitude, double Longitude)> points);
     
     // Parameter operations
     Task<Dictionary<string, float>> GetParametersAsync();
@@ -102,6 +107,10 @@ public interface IMavLinkService
     void InjectPacket(MavLinkPacketBase packet);
     void ProcessTlogPacket(byte[] rawPacket);
     
+    // Transport injection — digunakan oleh RuncamWifiLinkService untuk
+    // menyambungkan UDP transport yang sudah dibuat ke MavLinkService.
+    Task ConnectWithTransportAsync(HarvestmoonGCS.Core.Services.Connection.IMavLinkTransport transport);
+
     // Playback mode management
     bool EnterPlaybackMode();
     void ExitPlaybackMode();

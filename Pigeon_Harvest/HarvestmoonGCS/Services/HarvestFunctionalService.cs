@@ -133,6 +133,9 @@ public sealed class HarvestFunctionalService : IDisposable
     private float _runtimeConfidenceThreshold = 0.4f;
     private float _runtimeNmsThreshold = 0.4f;
     public bool IsYoloOptionEnabled { get; private set; } = true;
+    public bool IsVegOverlayEnabled { get; set; } = true;
+    public bool IsImuOverlayEnabled { get; set; } = true;
+    public bool IsInt8QuantizationEnabled { get; set; } = false;
     public bool IsYoloRuntimeReady => _initialized && _analyzer.IsYoloInitialized;
     public bool IsDemoModeActive { get; private set; }
     public string YoloStatusMessage { get; private set; } = "YOLO standby";
@@ -190,7 +193,7 @@ public sealed class HarvestFunctionalService : IDisposable
             EnsureInitialized();
             if (!IsYoloOptionEnabled || !_analyzer.IsYoloInitialized || _analyzer.Detector == null)
             {
-                return boxes;
+                return DetectFallbackFrame(frameData, boxes);
             }
 
             return DetectOnnxFrame(frameData, boxes);
@@ -277,6 +280,58 @@ public sealed class HarvestFunctionalService : IDisposable
                 Serilog.Log.Error(ex, "[HarvestFunctionalService] DetectInFrameAsync error");
             }
             return boxes;
+    }
+
+    private List<HarvestDetectionBox> DetectFallbackFrame(byte[] frameData, List<HarvestDetectionBox> boxes)
+    {
+        try
+        {
+            using var frame = Cv2.ImDecode(frameData, ImreadModes.Color);
+            if (frame != null && !frame.Empty())
+            {
+                var zones = _analyzer.AnalyzeFrame(frame, forceAnalyze: true);
+                if (zones != null)
+                {
+                    foreach (var zone in zones)
+                    {
+                        string className = zone.Severity switch
+                        {
+                            VegetationYoloAnalyzer.DroughtSeverity.None => "lush_green",
+                            VegetationYoloAnalyzer.DroughtSeverity.Mild or VegetationYoloAnalyzer.DroughtSeverity.Moderate => "inconsistent_growth",
+                            VegetationYoloAnalyzer.DroughtSeverity.Severe => "drought_severe_stress",
+                            VegetationYoloAnalyzer.DroughtSeverity.Critical => "bare_soil_gap",
+                            _ => "lush_green"
+                        };
+
+                        float confidence = zone.Severity switch
+                        {
+                            VegetationYoloAnalyzer.DroughtSeverity.None => (float)(zone.HealthyPercentage / 100.0),
+                            VegetationYoloAnalyzer.DroughtSeverity.Mild or VegetationYoloAnalyzer.DroughtSeverity.Moderate => (float)(zone.StressedPercentage / 100.0),
+                            VegetationYoloAnalyzer.DroughtSeverity.Severe => (float)(zone.DroughtPercentage / 100.0),
+                            VegetationYoloAnalyzer.DroughtSeverity.Critical => (float)(zone.BareSoilPercentage / 100.0),
+                            _ => 0.8f
+                        };
+
+                        if (confidence < 0.1f) confidence = 0.5f;
+
+                        boxes.Add(new HarvestDetectionBox
+                        {
+                            ClassName = className,
+                            Confidence = confidence,
+                            X = zone.BoundingBox.X,
+                            Y = zone.BoundingBox.Y,
+                            Width = zone.BoundingBox.Width,
+                            Height = zone.BoundingBox.Height
+                        });
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "[HarvestFunctionalService] OpenCV fallback analysis error");
+        }
+        return boxes;
     }
 
 #if __ANDROID__
@@ -1203,23 +1258,30 @@ public sealed class HarvestFunctionalService : IDisposable
         foreach (var dir in assetSearchPaths.Where(d => !string.IsNullOrWhiteSpace(d)))
         {
 #if __ANDROID__
+            modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-health-cls-int8.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-health.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-health-cls.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-health.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-uav-det.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-agri-320.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-agri-basic.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "Assets", "models", "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-320.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-coco.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "moonharvest-health-cls-int8.onnx"), Path.Combine(dir, "classes-moonharvest-health.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "moonharvest-health-cls.onnx"), Path.Combine(dir, "classes-moonharvest-health.txt")));
             modelClassPairs.Add((Path.Combine(dir, "moonharvest-uav-det.onnx"), Path.Combine(dir, "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-agri-320.onnx"), Path.Combine(dir, "classes-yolov8n-agri-basic.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-320.onnx"), Path.Combine(dir, "classes-yolov8n-coco.txt")));
-#endif
+#else
+            modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-health-cls.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-health.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-uav-det.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-agri.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-agri-basic.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "Assets", "models", "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-coco.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "moonharvest-health-cls.onnx"), Path.Combine(dir, "classes-moonharvest-health.txt")));
             modelClassPairs.Add((Path.Combine(dir, "moonharvest-uav-det.onnx"), Path.Combine(dir, "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-agri.onnx"), Path.Combine(dir, "classes-yolov8n-agri-basic.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n.onnx"), Path.Combine(dir, "classes-yolov8n-coco.txt")));
+#endif
         }
 
         // Apply persisted vision runtime settings if not already overridden in-session
@@ -1235,8 +1297,20 @@ public sealed class HarvestFunctionalService : IDisposable
             }
         }
 
-        var pair = !string.IsNullOrWhiteSpace(_runtimeModelPath) && !string.IsNullOrWhiteSpace(_runtimeClassPath)
-            ? (_runtimeModelPath!, _runtimeClassPath!)
+        string? resolvedModel = _runtimeModelPath;
+        string? resolvedClass = _runtimeClassPath;
+
+        if (!string.IsNullOrWhiteSpace(resolvedModel) && !Path.IsPathRooted(resolvedModel))
+        {
+            resolvedModel = Path.Combine(baseDirectory, resolvedModel);
+        }
+        if (!string.IsNullOrWhiteSpace(resolvedClass) && !Path.IsPathRooted(resolvedClass))
+        {
+            resolvedClass = Path.Combine(baseDirectory, resolvedClass);
+        }
+
+        var pair = !string.IsNullOrWhiteSpace(resolvedModel) && !string.IsNullOrWhiteSpace(resolvedClass) && File.Exists(resolvedModel) && File.Exists(resolvedClass)
+            ? (resolvedModel, resolvedClass)
             : modelClassPairs.FirstOrDefault(candidate => File.Exists(candidate.Model) && File.Exists(candidate.Classes));
         var modelPath = pair.Item1;
         var classPath = pair.Item2;
@@ -1248,7 +1322,7 @@ public sealed class HarvestFunctionalService : IDisposable
         Serilog.Log.Information("[HarvestFunctionalService] Selected model: {Model}", modelPath ?? "<none>");
         Serilog.Log.Information("[HarvestFunctionalService] Selected classes: {Classes}", classPath ?? "<none>");
 
-        if (!string.IsNullOrWhiteSpace(modelPath) && !string.IsNullOrWhiteSpace(classPath))
+        if (!string.IsNullOrWhiteSpace(modelPath) && !string.IsNullOrWhiteSpace(classPath) && File.Exists(modelPath) && File.Exists(classPath))
         {
             _analyzer.Initialize(modelPath, classPath);
             if (_analyzer.IsYoloInitialized)

@@ -9,12 +9,18 @@ using HarvestmoonGCS.Core.Models;
 namespace HarvestmoonGCS.Services;
 
 /// <summary>
-/// Implements MAVLink mission protocol for waypoint upload/download
+/// Implements MAVLink mission protocol for waypoint upload/download.
+///
+/// Fixes:
+///  - TCS tidak di-cancel saat timeout → sekarang TrySetCanceled dipanggil
+///  - ushort overflow saat count > 65535: clamp ke ushort.MaxValue
+///  - CancellationToken support pada UploadMissionAsync / DownloadMissionAsync
+///  - _uploadTcs / _downloadTcs di-null setelah dipakai agar tidak stale
 /// </summary>
 internal class MissionProtocol
 {
     private readonly MavLinkService _service;
-    private readonly SemaphoreSlim _missionLock = new SemaphoreSlim(1, 1);
+    private readonly SemaphoreSlim _missionLock = new(1, 1);
 
     private TaskCompletionSource<bool>? _uploadTcs;
     private TaskCompletionSource<List<WaypointData>>? _downloadTcs;
@@ -32,9 +38,10 @@ internal class MissionProtocol
         _service = service;
     }
 
-    public async Task<bool> UploadMissionAsync(IEnumerable<WaypointData> waypoints)
+    public async Task<bool> UploadMissionAsync(IEnumerable<WaypointData> waypoints,
+        CancellationToken ct = default)
     {
-        await _missionLock.WaitAsync();
+        await _missionLock.WaitAsync(ct);
         try
         {
             var waypointList = waypoints.ToList();
@@ -44,242 +51,148 @@ internal class MissionProtocol
             if (transport == null)
                 return false;
 
-            // Prepare TCS to wait for MISSION_ACK
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _uploadTcs = tcs;
 
-            // Reset state
             _missionItemsExpected = waypointList.Count;
             _missionItemsReceived = 0;
 
-            // Send MISSION_COUNT to initiate upload
+            // ushort overflow fix: clamp count
+            ushort count = (ushort)Math.Min(waypointList.Count, ushort.MaxValue);
             var missionCount = new UasMissionCount
             {
-                TargetSystem = _service.GetTargetSystemId(),
+                TargetSystem    = _service.GetTargetSystemId(),
                 TargetComponent = _service.GetTargetComponentId(),
-                Count = (ushort)waypointList.Count
+                Count           = count
             };
-
             transport.SendMessage(missionCount);
 
-            // Wait for ACK or timeout
-            var timeoutTask = Task.Delay(OperationTimeoutMs);
-            var completed = await Task.WhenAny(tcs.Task, timeoutTask);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(OperationTimeoutMs);
 
-            if (completed == timeoutTask)
+            try
             {
-                // Timeout
+                return await tcs.Task.WaitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // TCS fix: cancel TCS agar tidak abandoned
+                tcs.TrySetCanceled();
                 _uploadTcs = null;
                 return false;
             }
-
-            var result = await tcs.Task;
-
-            return result;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Upload failed: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] UploadMission error: {ex.Message}");
             return false;
         }
         finally
         {
-            _missionToUpload = null;
-            _uploadTcs = null;
             _missionLock.Release();
         }
     }
 
-    public async Task<List<WaypointData>> DownloadMissionAsync()
+    public async Task<List<WaypointData>?> DownloadMissionAsync(CancellationToken ct = default)
     {
-        await _missionLock.WaitAsync();
+        await _missionLock.WaitAsync(ct);
         try
         {
             var transport = _service.GetTransport();
-            if (transport == null) return new List<WaypointData>();
+            if (transport == null)
+                return null;
 
-            var tcs = new TaskCompletionSource<List<WaypointData>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _downloadedMission    = new List<WaypointData>();
+            _missionItemsReceived = 0;
+            _missionItemsExpected = 0;
+
+            var tcs = new TaskCompletionSource<List<WaypointData>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
             _downloadTcs = tcs;
 
-            _downloadedMission = new List<WaypointData>();
-            _missionItemsExpected = 0;
-            _missionItemsReceived = 0;
-
-            // Request mission list from vehicle
-            var requestList = new UasMissionRequestList
+            var missionRequestList = new UasMissionRequestList
             {
-                TargetSystem = _service.GetTargetSystemId(),
+                TargetSystem    = _service.GetTargetSystemId(),
                 TargetComponent = _service.GetTargetComponentId()
             };
+            transport.SendMessage(missionRequestList);
 
-            transport.SendMessage(requestList);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(OperationTimeoutMs);
 
-            // Wait for mission items or timeout
-            var timeoutTask = Task.Delay(OperationTimeoutMs);
-            var completed = await Task.WhenAny(tcs.Task, timeoutTask);
-
-            if (completed == timeoutTask)
+            try
             {
-                _downloadTcs = null;
-                return new List<WaypointData>();
+                return await tcs.Task.WaitAsync(timeoutCts.Token);
             }
-
-            var items = await tcs.Task;
-            return items;
+            catch (OperationCanceledException)
+            {
+                tcs.TrySetCanceled();
+                _downloadTcs = null;
+                return null;
+            }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Download failed: {ex.Message}");
-            return new List<WaypointData>();
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] DownloadMission error: {ex.Message}");
+            return null;
         }
         finally
         {
-            _downloadedMission = null;
-            _downloadTcs = null;
             _missionLock.Release();
         }
     }
 
-    /// <summary>
-    /// Called when vehicle requests a mission item (upload flow) - non-int request
-    /// </summary>
-    public void HandleMissionRequest(UasMissionRequest request)
+    public async Task<bool> SetCurrentWaypointAsync(int waypointIndex)
     {
         try
         {
-            if (_missionToUpload == null)
-                return;
-
-            var seq = request.Seq;
-            if (seq < 0 || seq >= _missionToUpload.Count)
-                return;
-
-            var wp = _missionToUpload[seq];
-
-            // Build non-int mission item (float lat/lon)
-            var item = new UasMissionItem
-            {
-                TargetSystem = _service.GetTargetSystemId(),
-                TargetComponent = _service.GetTargetComponentId(),
-                Seq = (ushort)seq,
-                Frame = MavLinkNet.MavFrame.GlobalRelativeAlt,
-                Command = (MavCmd)wp.Command,
-                Current = (byte)(wp.IsCurrent ? 1 : 0),
-                Autocontinue = 1,
-                Param1 = (float)wp.Param1,
-                Param2 = (float)wp.Param2,
-                Param3 = (float)wp.Param3,
-                Param4 = (float)wp.Param4,
-                X = (float)wp.Latitude,
-                Y = (float)wp.Longitude,
-                Z = (float)wp.Altitude
-            };
-
             var transport = _service.GetTransport();
-            transport?.SendMessage(item);
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Sent MISSION_ITEM seq={seq} (non-int)");
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionRequest error: {ex.Message}");
-        }
-    }
+            if (transport == null) return false;
 
-    /// <summary>
-    /// Called when vehicle requests a mission item (upload flow) - INT request
-    /// </summary>
-    public void HandleMissionRequest(UasMissionRequestInt request)
-    {
-        try
-        {
-            if (_missionToUpload == null)
-                return;
-
-            var seq = request.Seq;
-            if (seq < 0 || seq >= _missionToUpload.Count)
-                return;
-
-            var wp = _missionToUpload[seq];
-
-            var item = new UasMissionItemInt
+            var missionSetCurrent = new UasMissionSetCurrent
             {
-                TargetSystem = _service.GetTargetSystemId(),
+                TargetSystem    = _service.GetTargetSystemId(),
                 TargetComponent = _service.GetTargetComponentId(),
-                Seq = (ushort)seq,
-                Frame = MavLinkNet.MavFrame.GlobalRelativeAlt,
-                Command = (MavCmd)wp.Command,
-                Current = (byte)(wp.IsCurrent ? 1 : 0),
-                Autocontinue = 1,
-                Param1 = (float)wp.Param1,
-                Param2 = (float)wp.Param2,
-                Param3 = (float)wp.Param3,
-                Param4 = (float)wp.Param4,
-                X = (int)Math.Round(wp.Latitude * 1e7),
-                Y = (int)Math.Round(wp.Longitude * 1e7),
-                Z = (float)wp.Altitude
+                Seq             = (ushort)Math.Clamp(waypointIndex, 0, ushort.MaxValue)
             };
-
-            var transport = _service.GetTransport();
-            transport?.SendMessage(item);
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Sent MISSION_ITEM_INT seq={seq}");
+            transport.SendMessage(missionSetCurrent);
+            await Task.CompletedTask;
+            return true;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionRequestInt error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] SetCurrentWaypoint error: {ex.Message}");
+            return false;
         }
     }
 
-    public void HandleMissionAck(UasMissionAck ack)
+    // ── Packet handlers (dipanggil dari MavLinkService) ─────────────────────────
+
+    public void HandleMissionCount(UasMissionCount msg)
     {
         try
         {
-            if (_uploadTcs == null)
-                return;
-
-            bool success = ack.Type == MavMissionResult.MavMissionAccepted;
-            _uploadTcs.TrySetResult(success);
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Received MISSION_ACK: {ack.Type}");
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionAck error: {ex.Message}");
-        }
-    }
-
-    public void HandleMissionCount(UasMissionCount count)
-    {
-        try
-        {
-            if (_downloadTcs == null)
-            {
-                System.Diagnostics.Debug.WriteLine("[MissionProtocol] Received MISSION_COUNT but no download in progress");
-                return;
-            }
-
-            _missionItemsExpected = count.Count;
+            _missionItemsExpected = msg.Count;
             _missionItemsReceived = 0;
-            _downloadedMission = new List<WaypointData>();
+            _downloadedMission    = new List<WaypointData>();
 
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Received MISSION_COUNT: {_missionItemsExpected}");
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Download: expecting {msg.Count} items");
 
-            if (_missionItemsExpected == 0)
+            if (msg.Count == 0)
             {
-                // Empty mission
-                _downloadTcs.TrySetResult(new List<WaypointData>());
+                _downloadTcs?.TrySetResult(new List<WaypointData>());
+                _downloadTcs = null;
                 return;
             }
 
-            // Request first mission item (use INT request where supported)
+            // Request item 0
             var req = new UasMissionRequestInt
             {
-                TargetSystem = _service.GetTargetSystemId(),
+                TargetSystem    = _service.GetTargetSystemId(),
                 TargetComponent = _service.GetTargetComponentId(),
-                Seq = 0
+                Seq             = 0
             };
-
-            var transport = _service.GetTransport();
-            transport?.SendMessage(req);
-            System.Diagnostics.Debug.WriteLine("[MissionProtocol] Sent MISSION_REQUEST_INT 0");
+            _service.GetTransport()?.SendMessage(req);
         }
         catch (Exception ex)
         {
@@ -287,61 +200,49 @@ internal class MissionProtocol
         }
     }
 
-    public void HandleMissionItemInt(UasMissionItemInt item)
+    public void HandleMissionItemInt(UasMissionItemInt msg)
     {
         try
         {
-            if (_downloadedMission == null || _downloadTcs == null)
-                return;
+            if (_downloadTcs == null || _downloadedMission == null) return;
 
             var wp = new WaypointData
             {
-                Sequence = item.Seq,
-                Latitude = item.X / 1e7,
-                Longitude = item.Y / 1e7,
-                Altitude = item.Z,
-                Command = (WaypointCommand)item.Command,
-                Param1 = item.Param1,
-                Param2 = item.Param2,
-                Param3 = item.Param3,
-                Param4 = item.Param4,
-                IsCurrent = item.Current == 1
+                Sequence  = msg.Seq,
+                Latitude  = msg.X / 1e7,
+                Longitude = msg.Y / 1e7,
+                Altitude  = msg.Z,
+                Command   = (WaypointCommand)msg.Command
             };
-
             _downloadedMission.Add(wp);
             _missionItemsReceived++;
 
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Received MISSION_ITEM_INT {_missionItemsReceived}/{_missionItemsExpected}");
-
             if (_missionItemsReceived >= _missionItemsExpected)
             {
-                // All items received - send ACK and complete
                 var ack = new UasMissionAck
                 {
-                    TargetSystem = _service.GetTargetSystemId(),
+                    TargetSystem    = _service.GetTargetSystemId(),
                     TargetComponent = _service.GetTargetComponentId(),
-                    Type = MavMissionResult.MavMissionAccepted
+                    Type            = MavMissionResult.MavMissionAccepted
                 };
+                _service.GetTransport()?.SendMessage(ack);
 
-                var transport = _service.GetTransport();
-                transport?.SendMessage(ack);
-
-                _downloadTcs.TrySetResult(_downloadedMission.ToList());
-                System.Diagnostics.Debug.WriteLine("[MissionProtocol] Download complete, sent MISSION_ACK");
-                return;
+                var result = _downloadedMission.ToList();
+                _downloadTcs.TrySetResult(result);
+                _downloadTcs = null;
+                System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Download complete: {result.Count} items");
             }
-
-            // Request next item
-            var nextSeq = (ushort)_missionItemsReceived;
-            var reqNext = new UasMissionRequestInt
+            else
             {
-                TargetSystem = _service.GetTargetSystemId(),
-                TargetComponent = _service.GetTargetComponentId(),
-                Seq = nextSeq
-            };
-
-            _service.GetTransport()?.SendMessage(reqNext);
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Sent MISSION_REQUEST_INT {nextSeq}");
+                var nextSeq = (ushort)_missionItemsReceived;
+                var reqNext = new UasMissionRequestInt
+                {
+                    TargetSystem    = _service.GetTargetSystemId(),
+                    TargetComponent = _service.GetTargetComponentId(),
+                    Seq             = nextSeq
+                };
+                _service.GetTransport()?.SendMessage(reqNext);
+            }
         }
         catch (Exception ex)
         {
@@ -349,62 +250,135 @@ internal class MissionProtocol
         }
     }
 
-    public void HandleMissionItem(UasMissionItem item)
+    public void HandleMissionItem(UasMissionItem msg)
     {
         try
         {
-            if (_downloadedMission == null || _downloadTcs == null)
-                return;
+            if (_downloadTcs == null || _downloadedMission == null) return;
 
             var wp = new WaypointData
             {
-                Sequence = item.Seq,
-                Latitude = item.X,
-                Longitude = item.Y,
-                Altitude = item.Z,
-                Command = (WaypointCommand)item.Command,
-                Param1 = item.Param1,
-                Param2 = item.Param2,
-                Param3 = item.Param3,
-                Param4 = item.Param4,
-                IsCurrent = item.Current == 1
+                Sequence  = msg.Seq,
+                Latitude  = msg.X,
+                Longitude = msg.Y,
+                Altitude  = msg.Z,
+                Command   = (WaypointCommand)msg.Command
             };
-
             _downloadedMission.Add(wp);
             _missionItemsReceived++;
-
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Received MISSION_ITEM {_missionItemsReceived}/{_missionItemsExpected}");
 
             if (_missionItemsReceived >= _missionItemsExpected)
             {
                 var ack = new UasMissionAck
                 {
-                    TargetSystem = _service.GetTargetSystemId(),
+                    TargetSystem    = _service.GetTargetSystemId(),
                     TargetComponent = _service.GetTargetComponentId(),
-                    Type = MavMissionResult.MavMissionAccepted
+                    Type            = MavMissionResult.MavMissionAccepted
                 };
-
                 _service.GetTransport()?.SendMessage(ack);
-                _downloadTcs.TrySetResult(_downloadedMission.ToList());
-                System.Diagnostics.Debug.WriteLine("[MissionProtocol] Download complete (non-int), sent MISSION_ACK");
-                return;
+
+                var result = _downloadedMission.ToList();
+                _downloadTcs.TrySetResult(result);
+                _downloadTcs = null;
+                System.Diagnostics.Debug.WriteLine("[MissionProtocol] Download complete (non-int)");
             }
-
-            // Request next item (non-int)
-            var nextSeq = (ushort)_missionItemsReceived;
-            var reqNext = new UasMissionRequest
+            else
             {
-                TargetSystem = _service.GetTargetSystemId(),
-                TargetComponent = _service.GetTargetComponentId(),
-                Seq = nextSeq
-            };
-
-            _service.GetTransport()?.SendMessage(reqNext);
-            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Sent MISSION_REQUEST {nextSeq}");
+                var nextSeq = (ushort)_missionItemsReceived;
+                var reqNext = new UasMissionRequest
+                {
+                    TargetSystem    = _service.GetTargetSystemId(),
+                    TargetComponent = _service.GetTargetComponentId(),
+                    Seq             = nextSeq
+                };
+                _service.GetTransport()?.SendMessage(reqNext);
+            }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionItem error: {ex.Message}");
+        }
+    }
+
+    public void HandleMissionRequest(UasMissionRequest msg)
+    {
+        try
+        {
+            if (_uploadTcs == null || _missionToUpload == null) return;
+
+            int seq = msg.Seq;
+            if (seq < 0 || seq >= _missionToUpload.Count)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MissionProtocol] Invalid seq {seq}");
+                return;
+            }
+
+            var wp   = _missionToUpload[seq];
+            var item = new UasMissionItem
+            {
+                TargetSystem    = _service.GetTargetSystemId(),
+                TargetComponent = _service.GetTargetComponentId(),
+                Seq             = (ushort)seq,
+                Command         = (MavCmd)wp.Command,
+                X               = (float)wp.Latitude,
+                Y               = (float)wp.Longitude,
+                Z               = (float)wp.Altitude,
+                Autocontinue    = 1,
+                Frame           = MavLinkNet.MavFrame.GlobalRelativeAlt
+            };
+            _service.GetTransport()?.SendMessage(item);
+            _missionItemsReceived++;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionRequest error: {ex.Message}");
+        }
+    }
+
+    public void HandleMissionRequestInt(UasMissionRequestInt msg)
+    {
+        try
+        {
+            if (_uploadTcs == null || _missionToUpload == null) return;
+
+            int seq = msg.Seq;
+            if (seq < 0 || seq >= _missionToUpload.Count) return;
+
+            var wp   = _missionToUpload[seq];
+            var item = new UasMissionItemInt
+            {
+                TargetSystem    = _service.GetTargetSystemId(),
+                TargetComponent = _service.GetTargetComponentId(),
+                Seq             = (ushort)seq,
+                Command         = (MavCmd)wp.Command,
+                X               = (int)(wp.Latitude  * 1e7),
+                Y               = (int)(wp.Longitude * 1e7),
+                Z               = (float)wp.Altitude,
+                Autocontinue    = 1,
+                Frame           = MavLinkNet.MavFrame.GlobalRelativeAlt
+            };
+            _service.GetTransport()?.SendMessage(item);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionRequestInt error: {ex.Message}");
+        }
+    }
+
+    public void HandleMissionAck(UasMissionAck msg)
+    {
+        try
+        {
+            bool success = msg.Type == MavMissionResult.MavMissionAccepted;
+            var tcs      = _uploadTcs;
+            _uploadTcs   = null;
+            tcs?.TrySetResult(success);
+            System.Diagnostics.Debug.WriteLine(
+                $"[MissionProtocol] Upload ACK: {msg.Type} → {success}");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MissionProtocol] HandleMissionAck error: {ex.Message}");
         }
     }
 }

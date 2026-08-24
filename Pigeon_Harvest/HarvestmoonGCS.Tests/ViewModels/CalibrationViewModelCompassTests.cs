@@ -269,31 +269,14 @@ public class CalibrationViewModelCompassTests
     {
         // Arrange
         _mockMavLinkService
-            .Setup(m => m.SendCommandLongAsync(
-                It.IsAny<int>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>()))
-            .Returns(Task.CompletedTask);
+            .Setup(m => m.CancelCompassCalibration42426Async(It.IsAny<byte>()))
+            .ReturnsAsync(true);
 
         // Act
         await _viewModel.CancelCompassCalibrationAsync();
 
-        // Assert - Verify MAV_CMD_PREFLIGHT_CALIBRATION (241) with param2=0
-        _mockMavLinkService.Verify(m => m.SendCommandLongAsync(
-            241,  // MAV_CMD_PREFLIGHT_CALIBRATION
-            0,    // param1
-            0,    // param2 = 0 to cancel
-            0,    // param3
-            0,    // param4
-            0,    // param5
-            0,    // param6
-            0),   // param7
-            Times.Once);
+        // Assert - Verify CancelCompassCalibration42426Async(magMask=0) was called once
+        _mockMavLinkService.Verify(m => m.CancelCompassCalibration42426Async(0), Times.Once);
     }
 
     [Fact]
@@ -309,16 +292,8 @@ public class CalibrationViewModelCompassTests
         };
 
         _mockMavLinkService
-            .Setup(m => m.SendCommandLongAsync(
-                It.IsAny<int>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>()))
-            .Returns(Task.CompletedTask);
+            .Setup(m => m.CancelCompassCalibration42426Async(It.IsAny<byte>()))
+            .ReturnsAsync(true);
 
         // Act
         await _viewModel.CancelCompassCalibrationAsync();
@@ -335,16 +310,8 @@ public class CalibrationViewModelCompassTests
         _viewModel.IsLoading = true; // Set loading state
         
         _mockMavLinkService
-            .Setup(m => m.SendCommandLongAsync(
-                It.IsAny<int>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>()))
-            .Returns(Task.CompletedTask);
+            .Setup(m => m.CancelCompassCalibration42426Async(It.IsAny<byte>()))
+            .ReturnsAsync(true);
 
         // Act
         await _viewModel.CancelCompassCalibrationAsync();
@@ -361,16 +328,8 @@ public class CalibrationViewModelCompassTests
         _viewModel.StatusMessageChanged += (sender, message) => statusMessages.Add(message);
         
         _mockMavLinkService
-            .Setup(m => m.SendCommandLongAsync(
-                It.IsAny<int>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>()))
-            .Returns(Task.CompletedTask);
+            .Setup(m => m.CancelCompassCalibration42426Async(It.IsAny<byte>()))
+            .ReturnsAsync(true);
 
         // Act
         await _viewModel.CancelCompassCalibrationAsync();
@@ -388,15 +347,7 @@ public class CalibrationViewModelCompassTests
         _viewModel.StatusMessageChanged += (sender, message) => errorMessage = message;
         
         _mockMavLinkService
-            .Setup(m => m.SendCommandLongAsync(
-                It.IsAny<int>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>()))
+            .Setup(m => m.CancelCompassCalibration42426Async(It.IsAny<byte>()))
             .ThrowsAsync(new System.Exception("Connection error"));
 
         // Act & Assert - Should throw exception
@@ -412,33 +363,18 @@ public class CalibrationViewModelCompassTests
     public async Task CancelCompassCalibrationAsync_SendsCorrectCommandParameters()
     {
         // Arrange
-        float capturedParam1 = -1;
-        float capturedParam2 = -1;
+        byte capturedMagMask = 255;
         
         _mockMavLinkService
-            .Setup(m => m.SendCommandLongAsync(
-                It.IsAny<int>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>()))
-            .Callback<int, float, float, float, float, float, float, float>(
-                (cmd, p1, p2, p3, p4, p5, p6, p7) =>
-                {
-                    capturedParam1 = p1;
-                    capturedParam2 = p2;
-                })
-            .Returns(Task.CompletedTask);
+            .Setup(m => m.CancelCompassCalibration42426Async(It.IsAny<byte>()))
+            .Callback<byte>(mask => capturedMagMask = mask)
+            .ReturnsAsync(true);
 
         // Act
         await _viewModel.CancelCompassCalibrationAsync();
 
-        // Assert - param1 should be 0, param2 should be 0 (cancel)
-        Assert.Equal(0, capturedParam1);
-        Assert.Equal(0, capturedParam2);
+        // Assert - magMask should be 0 (all compasses)
+        Assert.Equal(0, capturedMagMask);
     }
 
     [Fact]
@@ -446,16 +382,11 @@ public class CalibrationViewModelCompassTests
     {
         // Arrange - Start calibration first
         _mockMavLinkService
-            .Setup(m => m.SendCommandLongAsync(
-                It.IsAny<int>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>(),
-                It.IsAny<float>()))
-            .Returns(Task.CompletedTask);
+            .Setup(m => m.StartCompassCalibration42424Async(It.IsAny<byte>()))
+            .ReturnsAsync(true);
+        _mockMavLinkService
+            .Setup(m => m.CancelCompassCalibration42426Async(It.IsAny<byte>()))
+            .ReturnsAsync(true);
 
         await _viewModel.StartCompassCalibrationAsync();
         

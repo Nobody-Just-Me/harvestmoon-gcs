@@ -360,14 +360,31 @@ public sealed partial class AISettingsPage : Page
             defaultModelPath = Path.Combine(baseDirectory, "Assets", "models", "moonharvest-health-cls.onnx");
         var defaultClassPath = Path.Combine(baseDirectory, "Assets", "models", "classes-moonharvest-health.txt");
 
-        VisionModelPathBox.Text = _harvestFunctionalService?.RuntimeModelPath
-            ?? (File.Exists(defaultModelPath) ? defaultModelPath : string.Empty);
-        VisionClassPathBox.Text = _harvestFunctionalService?.RuntimeClassPath
-            ?? (File.Exists(defaultClassPath) ? defaultClassPath : string.Empty);
+        var currentModel = _harvestFunctionalService?.RuntimeModelPath;
+        var currentClass = _harvestFunctionalService?.RuntimeClassPath;
+
+        bool isModelValid = !string.IsNullOrWhiteSpace(currentModel) && File.Exists(Path.IsPathRooted(currentModel) ? currentModel : Path.Combine(baseDirectory, currentModel));
+        bool isClassValid = !string.IsNullOrWhiteSpace(currentClass) && File.Exists(Path.IsPathRooted(currentClass) ? currentClass : Path.Combine(baseDirectory, currentClass));
+
+        if (!isModelValid) currentModel = defaultModelPath;
+        if (!isClassValid) currentClass = defaultClassPath;
+
+        VisionModelPathBox.Text = currentModel;
+        VisionClassPathBox.Text = currentClass;
         VisionConfidenceBox.Text = (_harvestFunctionalService?.RuntimeConfidenceThreshold ?? 0.4f)
             .ToString("0.00", CultureInfo.InvariantCulture);
         VisionNmsBox.Text = (_harvestFunctionalService?.RuntimeNmsThreshold ?? 0.4f)
             .ToString("0.00", CultureInfo.InvariantCulture);
+
+        if (_harvestFunctionalService != null)
+        {
+            _harvestFunctionalService.ConfigureYoloRuntime(
+                currentModel, 
+                currentClass, 
+                _harvestFunctionalService.RuntimeConfidenceThreshold, 
+                _harvestFunctionalService.RuntimeNmsThreshold);
+        }
+
         VisionRuntimeStatusText.Text = _harvestFunctionalService?.YoloStatusMessage ?? "Vision runtime standby.";
     }
 

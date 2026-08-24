@@ -90,7 +90,10 @@ public partial class App : Application
         services.AddSingleton<Serilog.ILogger>(_ => Log.Logger);
         services.AddSingleton<ILoggingService, SerilogLoggingService>();
 
-        services.AddSingleton<IMavLinkService, HarvestmoonGCS.Core.Services.MavLinkService>();
+        // CRITICAL: Gunakan HarvestmoonGCS.Services.MavLinkService (bukan Core) karena
+        // versi ini memiliki sub-components lengkap: ConnectionManager, HeartbeatManager,
+        // StreamRequestManager, dll. Core.MavLinkService hanya untuk testing.
+        services.AddSingleton<IMavLinkService, HarvestmoonGCS.Services.MavLinkService>();
         services.AddSingleton<IWaypointService, WaypointService>();
         services.AddSingleton<IMissionService, MissionService>();
         services.AddSingleton<IStatisticsService, StatisticsService>();
@@ -106,6 +109,8 @@ public partial class App : Application
         services.AddSingleton<ISpeechService, UnoSpeechService>();
         services.AddSingleton<IFileService, UnoFileService>();
         services.AddSingleton<HarvestFunctionalService>();
+        services.AddSingleton<RecommendationService>();
+        services.AddSingleton<BatteryWarningSystem>();
 
 #if __ANDROID__
         // Android needs Context for camera, file, and other platform services
@@ -113,9 +118,18 @@ public partial class App : Application
         services.AddSingleton<ISerialPortService, HarvestmoonGCS.Platforms.Android.Services.AndroidSerialPortService>();
         services.AddSingleton<ICameraService, HarvestmoonGCS.Platforms.Android.Services.AndroidCameraService>();
         services.AddSingleton<IVideoPlayerService, HarvestmoonGCS.Platforms.Android.Services.AndroidVideoPlayerService>();
+        // RunCam WiFi Link 2 – Android: MediaCodec hardware RTSP decode
+        services.AddSingleton<IRuncamWifiLinkService>(sp =>
+            new HarvestmoonGCS.Platforms.Android.Services.AndroidRuncamWifiLinkService(
+                sp.GetRequiredService<Android.Content.Context>(),
+                sp.GetRequiredService<IMavLinkService>()));
 #else
         services.AddSingleton<ISerialPortService, DesktopSerialPortService>();
         services.AddSingleton<ICameraService, PythonCameraService>();
+        // RunCam WiFi Link 2 – Desktop: OpenCvSharp RTSP decode
+        services.AddSingleton<IRuncamWifiLinkService>(sp =>
+            new HarvestmoonGCS.Core.Services.RuncamWifiLinkService(
+                sp.GetRequiredService<IMavLinkService>()));
 #endif
         services.AddSingleton<IVideoRecorderService, VideoRecorderService>();
         services.AddSingleton<IncidentTimelineService>();

@@ -122,9 +122,12 @@
                         <TextBlock Text="MODEL CONFIG" Style="{StaticResource SectionLabelStyle}"/>
 
                         <ComboBox x:Name="ModelCombo" HorizontalAlignment="Stretch" FontSize="11" SelectedIndex="0" Height="32">
-                            <ComboBoxItem Content="yolov8n-agri.onnx"/>
-                            <ComboBoxItem Content="yolov8n-rice.onnx"/>
-                            <ComboBoxItem Content="yolov8n-custom.onnx"/>
+                            <ComboBoxItem Content="moonharvest-health-cls.onnx"/>
+                            <ComboBoxItem Content="moonharvest-health-cls-int8.onnx"/>
+                            <ComboBoxItem Content="moonharvest-uav-det.onnx"/>
+                            <ComboBoxItem Content="moonharvest-uav-det-int8.onnx"/>
+                            <ComboBoxItem Content="yolov8n-crop-weed-416.onnx"/>
+                            <ComboBoxItem Content="yolov8n-320.onnx"/>
                         </ComboBox>
 
                         <!-- Conf threshold -->

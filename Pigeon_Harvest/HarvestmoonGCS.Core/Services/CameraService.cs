@@ -14,6 +14,12 @@ public class CameraService : ICameraService
 
     public bool IsStreaming { get; private set; }
     public bool IsRecording => _isRecording;
+    public bool IsClassificationStream => false;
+
+    // Stub — CameraService (Core) tidak support HSV stream
+    public Task<bool> StartHsvStreamAsync(string source, string? modelPath = null,
+        float maxFps = 15f, bool showOverlay = true, bool demo = true, float playbackRate = 1.0f)
+        => StartCameraAsync(source);
     
     public event EventHandler<byte[]> FrameReceived;
     public event EventHandler<bool> StreamingStatusChanged;
