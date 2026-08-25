@@ -121,13 +121,13 @@ public sealed partial class DashboardPage : Page
     private double _demoPitchDeg = -5.0;
     private double _demoRollDeg;
     private double _demoYawDeg = 45.0;
-    private double _demoAltitudeMeters = 82.0;
+    private double _demoAltitudeMeters = 60.0;
     private double _demoSpeedMetersPerSecond = 9.4;
     // Per-run random seed so telemetry values vary slightly each demo session
     private Random _demoRng = new Random();
-    private double _demoAltitudeBase = 82.0;   // randomized at demo start
+    private double _demoAltitudeBase = 60.0;   // randomized at demo start
     private double _demoSpeedBase    = 9.4;    // randomized at demo start
-    private double _demoBatteryStart = 82.0;   // randomized at demo start
+    private double _demoBatteryStart = 95.0;   // randomized at demo start
     private int    _demoSatCount     = 15;     // randomized at demo start
     private double _demoBatteryVoltage = 12.6; // randomized at demo start
     private const int DemoTicksPerSegment = 10; // ~4 m/s cruise × 10 ticks per segment
@@ -1571,11 +1571,12 @@ public sealed partial class DashboardPage : Page
         _demoStep = 0;
         ReadinessChecklistPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
         MissionMetadataPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
-        // Randomize per-run demo values so each session shows slightly different numbers
+        // Randomize per-run demo values so each session shows slightly different numbers,
+        // all within ranges a real agricultural survey flight would actually show.
         _demoRng = new Random();
-        _demoAltitudeBase   = 72.6 + _demoRng.NextDouble() * 1.0;   // 72.6–73.6 m
+        _demoAltitudeBase   = 59.5 + _demoRng.NextDouble() * 1.0;   // 59.5–60.5 m AGL — typical low-altitude crop survey
         _demoSpeedBase      =  8.6 + _demoRng.NextDouble() * 2.0;   // 8.6–10.6 m/s
-        _demoBatteryStart   = 82.0;
+        _demoBatteryStart   = 93.0 + _demoRng.NextDouble() * 4.0;   // 93–97% at mission start (post-takeoff)
         _demoSatCount       = 13   + _demoRng.Next(0, 5);           // 13–17 sats
         _demoBatteryVoltage = 12.3 + _demoRng.NextDouble() * 0.6;   // 12.3–12.9 V
         _demoBattery = _demoBatteryStart;
@@ -1667,7 +1668,7 @@ public sealed partial class DashboardPage : Page
                         Sequence    = DemoWaypointStartSequence + i,
                         Latitude    = wpLat,
                         Longitude   = wpLon,
-                        Altitude    = 73,
+                        Altitude    = 60,
                         Command     = WaypointCommand.Waypoint,
                     });
                 }
@@ -1689,7 +1690,7 @@ public sealed partial class DashboardPage : Page
             // 6. Seed timeline
             _timelineService?.Add("connected", "MAVLink connected · ",     "success");
             _timelineService?.Add("tlog",      "Auto TLOG recorder armed",                         "success");
-            _timelineService?.Add("armed",     "Armed · AUTO mode · altitude 73m · survey active", "success");
+            _timelineService?.Add("armed",     "Armed · AUTO mode · altitude 60m · survey active", "success");
             _timelineService?.Add("waypoint",  "Survey route active · 900m E-W · WP 6-13 · Sukamerta, Karawang", "info");
             RenderIncidentTimeline();
             UpdateAlertCenter(_flightViewModel?.Telemetry, true);
@@ -1810,7 +1811,7 @@ public sealed partial class DashboardPage : Page
         bool isTurning      = Math.Abs(headingDelta) > 45;
         _demoHeading        = newHeading;
 
-        // Altitude: gentle oscillation around ~73 m to keep the demo stable and believable.
+        // Altitude: gentle oscillation around ~60 m AGL to keep the demo stable and believable.
         double altitude     = _demoAltitudeBase + Math.Sin(step * 0.31) * 0.6;
 
         // Roll: gentle banking during turns, subtle waggle on straights
@@ -1828,7 +1829,9 @@ public sealed partial class DashboardPage : Page
         // Vertical speed: tiny oscillation
         double verticalSpeed = Math.Sin(step * 0.5) * 0.15;
 
-        _demoBattery = Math.Max(82, _demoBatteryStart - (step * 0.015));
+        // Real, monotonic drain across the loop (was previously floored at exactly the
+        // starting value via Math.Max(82, start - ...), so the battery never actually moved).
+        _demoBattery = Math.Max(84.0, _demoBatteryStart - step * 0.09);
 
         var telemetry = new TelemetryData
         {
@@ -1844,7 +1847,7 @@ public sealed partial class DashboardPage : Page
             BatteryVoltage     = _demoBatteryVoltage,
             SatelliteCount     = _demoSatCount,
             HDOP               = 0.4,
-            GPSFixType         = 15,  // RTK Fixed for demo
+            GPSFixType         = 6,   // GPS_FIX_TYPE_RTK_FIXED (real MAVLink enum tops out at 8 — 15 was never a valid fix type)
             FlightMode         = HarvestmoonGCS.Core.Models.FlightMode.AUTO,
             IsArmed            = true,
             ThrottlePercent    = isTurning ? 60 : 68,
