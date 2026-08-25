@@ -2553,7 +2553,9 @@ public sealed partial class DashboardPage : Page
         var telemetry = _flightViewModel?.Telemetry;
         var connected = _flightViewModel?.IsConnected == true;
         var videoPath = _videoRecorderService?.CurrentRecordingPath ?? string.Empty;
-        var mapPath = _harvestFunctionalService.SaveMapSnapshotPlaceholder(
+        var mapSnapshotBytes = DashboardMapControl?.CaptureSnapshotPng();
+        var mapPath = _harvestFunctionalService.SaveMapSnapshot(
+            mapSnapshotBytes,
             telemetry?.Latitude ?? _centerLat,
             telemetry?.Longitude ?? _centerLon,
             connected ? "Live dashboard position" : "Dashboard standby position");

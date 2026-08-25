@@ -113,6 +113,14 @@
                                 <Border x:Name="FpsProgressBar" Height="4" CornerRadius="2" Background="#22C55E" HorizontalAlignment="Left" Width="0"/>
                             </Border>
                         </StackPanel>
+
+                        <!-- Real on-device benchmark: measures actual inference time on the last captured frame -->
+                        <Button x:Name="RunBenchmarkButton" Content="Run Benchmark" FontSize="11" Padding="10,5" CornerRadius="6"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                Background="{ThemeResource PrimaryBrush}" Foreground="White"
+                                Click="RunBenchmarkButton_Click"/>
+                        <TextBlock x:Name="BenchmarkStatusText" Text="Numbers above are from the last on-device benchmark run — tap Run Benchmark to measure now."
+                                   FontSize="9" TextWrapping="Wrap" Foreground="{ThemeResource MutedForegroundBrush}"/>
                     </StackPanel>
                 </Border>
 

@@ -307,6 +307,46 @@ namespace HarvestmoonGCS.Controls
             }
         }
 
+        /// <summary>
+        /// Renders the current map state (tiles, geofence, waypoints, vehicle marker) to an
+        /// off-screen surface and returns it as PNG bytes — a real snapshot of what the map
+        /// control is showing right now, for evidence/report attachments.
+        /// </summary>
+        public byte[]? CaptureSnapshotPng(int width = 960, int height = 640)
+        {
+            try
+            {
+                var info = new SKImageInfo(Math.Max(1, width), Math.Max(1, height));
+                using var surface = SKSurface.Create(info);
+                var canvas = surface.Canvas;
+                canvas.Clear(SKColors.LightGray);
+
+                DrawMapTiles(canvas, width, height);
+                DrawGeofence(canvas, width, height);
+                DrawWaypointTrail(canvas, width, height);
+                DrawWaypointMarkers(canvas, width, height);
+                if (_showVehicle)
+                {
+                    DrawVehicleMarker(canvas, width, height);
+                }
+                if (_showTracker)
+                {
+                    DrawTrackerMarker(canvas, width, height);
+                }
+                DrawGridLines(canvas, width, height);
+                DrawScale(canvas, width, height);
+
+                using var image = surface.Snapshot();
+                using var data = image.Encode(SKEncodedImageFormat.Png, 90);
+                return data.ToArray();
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "[SkiaMapControl] CaptureSnapshotPng failed");
+                return null;
+            }
+        }
+
         private void DrawWaypointTrail(SKCanvas canvas, int width, int height)
         {
             if (_waypointOverlayItems.Count < 2)

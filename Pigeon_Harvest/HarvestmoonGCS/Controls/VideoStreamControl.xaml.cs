@@ -159,9 +159,31 @@ public sealed partial class VideoStreamControl : UserControl
         });
     }
 
-    public void ShowStatus(string message, bool showLoading = false) { }
+    /// <summary>
+    /// Shows a status message (and optional loading spinner) over the video/background area.
+    /// </summary>
+    public void ShowStatus(string message, bool showLoading = false)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            StatusText.Text = message ?? string.Empty;
+            StatusLoadingRing.IsActive = showLoading;
+            StatusLoadingRing.Visibility = showLoading ? Visibility.Visible : Visibility.Collapsed;
+            StatusOverlay.Visibility = Visibility.Visible;
+        });
+    }
 
-    public void HideOverlay() { }
+    /// <summary>
+    /// Hides the status overlay shown by <see cref="ShowStatus"/>.
+    /// </summary>
+    public void HideOverlay()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            StatusLoadingRing.IsActive = false;
+            StatusOverlay.Visibility = Visibility.Collapsed;
+        });
+    }
 
     /// <summary>
     /// Force the video canvas to be visible and repaint the last cached frame.

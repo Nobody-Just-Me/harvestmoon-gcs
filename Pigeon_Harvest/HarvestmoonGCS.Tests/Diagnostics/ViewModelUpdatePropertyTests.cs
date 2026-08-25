@@ -273,6 +273,15 @@ namespace HarvestmoonGCS.Tests.Diagnostics
             System.Threading.Tasks.Task.FromResult(false);
         public System.Threading.Tasks.Task<bool> CancelCompassCalibration42426Async(byte compassInstance) =>
             System.Threading.Tasks.Task.FromResult(false);
+
+        public System.Threading.Tasks.Task<bool> TakeoffAsync(float altitudeMeters = 10f) =>
+            System.Threading.Tasks.Task.FromResult(false);
+        public System.Threading.Tasks.Task<bool> LandAsync() =>
+            System.Threading.Tasks.Task.FromResult(false);
+        public System.Threading.Tasks.Task<bool> SetGeofenceAsync(System.Collections.Generic.IEnumerable<(double Latitude, double Longitude)> points) =>
+            System.Threading.Tasks.Task.FromResult(false);
+        public System.Threading.Tasks.Task ConnectWithTransportAsync(HarvestmoonGCS.Core.Services.Connection.IMavLinkTransport transport) =>
+            System.Threading.Tasks.Task.CompletedTask;
     }
 
     /// <summary>

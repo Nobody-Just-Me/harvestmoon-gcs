@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -132,6 +133,7 @@ public sealed class HarvestFunctionalService : IDisposable
     private string? _runtimeClassPath;
     private float _runtimeConfidenceThreshold = 0.4f;
     private float _runtimeNmsThreshold = 0.4f;
+    public string LatestYoloScreenshotPath => _latestYoloScreenshotPath;
     public bool IsYoloOptionEnabled { get; private set; } = true;
     public bool IsVegOverlayEnabled { get; set; } = true;
     public bool IsImuOverlayEnabled { get; set; } = true;
@@ -666,12 +668,26 @@ public sealed class HarvestFunctionalService : IDisposable
         return path;
     }
 
-    public string SaveMapSnapshotPlaceholder(double latitude, double longitude, string label)
+    /// <summary>
+    /// Saves a map snapshot for report evidence. When <paramref name="mapPngBytes"/> is a real
+    /// rendered PNG from the live map control it is written as-is; only when no real render is
+    /// available (e.g. map not yet loaded) does this fall back to an honest placeholder card.
+    /// </summary>
+    public string SaveMapSnapshot(byte[]? mapPngBytes, double latitude, double longitude, string label)
     {
         var folder = GetEvidenceRootFolder("Screenshots");
         Directory.CreateDirectory(folder);
         var path = Path.Combine(folder, $"map_{DateTime.Now:yyyyMMdd_HHmmss_fff}.png");
-        WritePlaceholderPng(path, "MoonHarvest Map Snapshot", $"{label} · {latitude:F6}, {longitude:F6}");
+
+        if (mapPngBytes != null && mapPngBytes.Length > 0)
+        {
+            File.WriteAllBytes(path, mapPngBytes);
+        }
+        else
+        {
+            WritePlaceholderPng(path, "MoonHarvest Map Snapshot (unavailable)", $"{label} · {latitude:F6}, {longitude:F6}");
+        }
+
         _latestMapScreenshotPath = path;
         return path;
     }
@@ -865,6 +881,39 @@ public sealed class HarvestFunctionalService : IDisposable
         });
 
         return bundleFolder;
+    }
+
+    /// <summary>
+    /// Prepares a report for handoff to a cooperative: builds the full evidence bundle (PDF,
+    /// JSON, timeline, tlog, video, screenshots) and zips it into a local "Outbox" folder.
+    /// There is no cooperative server to transmit to, so this genuinely produces a file on
+    /// disk ready to be sent manually (WhatsApp, email, USB) rather than faking a network send.
+    /// </summary>
+    public async Task<string> QueueReportForCooperativeAsync(HarvestReportRecord record)
+    {
+        if (record == null)
+        {
+            return string.Empty;
+        }
+
+        var bundleFolder = await CreateEvidenceBundleAsync(record);
+        if (string.IsNullOrWhiteSpace(bundleFolder) || !Directory.Exists(bundleFolder))
+        {
+            return string.Empty;
+        }
+
+        var outboxFolder = GetEvidenceRootFolder("Outbox");
+        Directory.CreateDirectory(outboxFolder);
+        var safeId = MakeSafeFileName(string.IsNullOrWhiteSpace(record.Id) ? $"MH-{DateTime.Now:yyyyMMdd-HHmmss}" : record.Id);
+        var zipPath = Path.Combine(outboxFolder, $"{safeId}.zip");
+
+        if (File.Exists(zipPath))
+        {
+            File.Delete(zipPath);
+        }
+        ZipFile.CreateFromDirectory(bundleFolder, zipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
+
+        return zipPath;
     }
 
     private static string BuildSimplePdf(string title, IReadOnlyList<string> lines)

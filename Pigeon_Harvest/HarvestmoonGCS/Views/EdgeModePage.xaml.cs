@@ -15,6 +15,8 @@ public sealed partial class EdgeModePage : Page
     private readonly HarvestFunctionalService? _harvestService;
     private readonly IFileService? _fileService;
     private DispatcherTimer? _refreshTimer;
+    private HarvestFunctionalService.YoloBenchmarkResult? _lastBenchmark;
+    private bool _isBenchmarking;
 
     public EdgeModePage()
     {
@@ -84,35 +86,19 @@ public sealed partial class EdgeModePage : Page
 
     private void RefreshPerformanceStats()
     {
-        bool yoloActive = _harvestService?.IsYoloRuntimeReady == true &&
-                          _harvestService?.IsYoloOptionEnabled == true;
-
-        if (yoloActive)
+        if (_isBenchmarking)
         {
-            bool useCuda = Environment.GetEnvironmentVariable("PIGEON_YOLO_USE_CUDA") == "1";
-            bool isInt8 = _harvestService?.IsInt8QuantizationEnabled == true;
+            return;
+        }
 
-            if (useCuda)
-            {
-                FpsValueText.Text = "30-60";
-                LatencyValueText.Text = "16-33 ms";
-            }
-            else if (isInt8)
-            {
-                // INT8 quantized model on low-end CPU
-                FpsValueText.Text = "12-18";
-                LatencyValueText.Text = "55-80 ms";
-            }
-            else
-            {
-                // Standard FP32 model on low-end CPU
-                FpsValueText.Text = "8-12";
-                LatencyValueText.Text = "80-125 ms";
-            }
-
-            DetectionsValueText.Text = "Live";
-            FpsTargetText.Text = "100%";
-            FpsProgressBar.Width = 280;
+        if (_lastBenchmark != null)
+        {
+            FpsValueText.Text = _lastBenchmark.FramesPerSecond.ToString("F1");
+            LatencyValueText.Text = $"{_lastBenchmark.AverageLatencyMs:F0} ms";
+            DetectionsValueText.Text = _lastBenchmark.AverageDetections.ToString("F1");
+            var pct = Math.Clamp(_lastBenchmark.FramesPerSecond / 15.0 * 100.0, 0, 100);
+            FpsTargetText.Text = $"{pct:F0}%";
+            FpsProgressBar.Width = 280 * (pct / 100.0);
         }
         else
         {
@@ -121,6 +107,55 @@ public sealed partial class EdgeModePage : Page
             DetectionsValueText.Text = "—";
             FpsTargetText.Text = "0%";
             FpsProgressBar.Width = 0;
+        }
+    }
+
+    /// <summary>
+    /// Runs a real on-device YOLO benchmark against the last captured camera/YOLO frame and
+    /// shows the genuinely measured FPS/latency/detection count — replaces the previous
+    /// hardcoded per-device estimate strings.
+    /// </summary>
+    private async void RunBenchmarkButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_harvestService == null || _isBenchmarking)
+        {
+            return;
+        }
+
+        var samplePath = _harvestService.LatestYoloScreenshotPath;
+        if (string.IsNullOrWhiteSpace(samplePath) || !System.IO.File.Exists(samplePath))
+        {
+            BenchmarkStatusText.Text = "No captured frame available yet — open Camera and start the feed first, then come back here.";
+            return;
+        }
+
+        try
+        {
+            _isBenchmarking = true;
+            RunBenchmarkButton.IsEnabled = false;
+            BenchmarkStatusText.Text = "Benchmarking on this device…";
+
+            var result = await _harvestService.BenchmarkImageAsync(samplePath);
+
+            if (result == null)
+            {
+                BenchmarkStatusText.Text = "Benchmark failed — YOLO runtime may not be initialized.";
+                return;
+            }
+
+            _lastBenchmark = result;
+            RefreshPerformanceStats();
+            BenchmarkStatusText.Text = $"Measured on {result.Device} · {result.Iterations} iterations · {DateTime.Now:HH:mm:ss}";
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[EdgeModePage] Benchmark failed");
+            BenchmarkStatusText.Text = "Benchmark failed — see logs for details.";
+        }
+        finally
+        {
+            _isBenchmarking = false;
+            RunBenchmarkButton.IsEnabled = true;
         }
     }
 

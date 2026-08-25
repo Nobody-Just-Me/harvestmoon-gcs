@@ -189,17 +189,28 @@ public sealed partial class ReportsHarvestPage : Page
             return;
         }
 
-        var message = label switch
+        if (_harvestFunctionalService != null && label == "Share")
         {
-            "PDF" => "PDF report generated",
-            "CSV" => "CSV detections exported",
-            "JSON" => "JSON exported",
-            "Share" => "Sharing link created",
-            "Send to Cooperative" => "Report sent to cooperative",
-            _ => "Action executed"
-        };
+            var record = ToHarvestReportRecord(selected);
+            var baseName = selected.Id.Replace(" ", "_").Replace("/", "-");
+            var path = await _harvestFunctionalService.ExportReportPdfAsync(record, baseName);
+            ShowActionFeedback(string.IsNullOrWhiteSpace(path)
+                ? "Failed to prepare report for sharing"
+                : $"Report ready to share: {path}");
+            return;
+        }
 
-        ShowActionFeedback(message);
+        if (_harvestFunctionalService != null && label == "Send to Cooperative")
+        {
+            var record = ToHarvestReportRecord(selected);
+            var zipPath = await _harvestFunctionalService.QueueReportForCooperativeAsync(record);
+            ShowActionFeedback(string.IsNullOrWhiteSpace(zipPath)
+                ? "Failed to prepare report bundle"
+                : $"Report bundle queued in Outbox — send manually to the cooperative: {zipPath}");
+            return;
+        }
+
+        ShowActionFeedback("Action executed");
     }
 
     private void MissionRow_Tapped(object sender, TappedRoutedEventArgs e)

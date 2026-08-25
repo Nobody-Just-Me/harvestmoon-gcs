@@ -72,7 +72,6 @@ public partial class App : Application
         services.AddSingleton<MapViewModel>();
         services.AddTransient<StatsViewModel>();
         services.AddTransient<TrackerViewModel>();
-        services.AddTransient<CalibrationViewModel>();
         services.AddTransient<LoRaViewModel>();
         services.AddTransient<TlogViewModel>();
 #if !__WASM__

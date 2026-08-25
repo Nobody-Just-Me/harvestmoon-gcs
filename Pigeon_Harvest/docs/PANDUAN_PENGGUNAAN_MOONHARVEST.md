@@ -4,233 +4,241 @@
 
 *Tim EFRISA · TEKNOFEST Agricultural Technologies Competition · Team ID 783316*
 
-MoonHarvest mengubah UAV berbiaya rendah menjadi pemindai kesehatan tanaman real-time. Satu aplikasi C# (Uno Platform) berjalan native di Windows, Linux, dan Android, menerima video serta telemetri MAVLink dari UAV, menjalankan inferensi YOLO on-device, dan menampilkan peta kesehatan vegetasi secara langsung — sepenuhnya offline. Panduan ini menjelaskan cara mengoperasikan seluruh fitur tersebut di lapangan, dari koneksi pertama hingga membaca laporan hasil panen.
+Panduan ini hanya menjelaskan fitur yang benar-benar ada dan berjalan di aplikasi MoonHarvest saat ini, mengikuti struktur sidebar aplikasi persis seperti yang dilihat pengguna: **Dashboard · Live → Camera → Peta & Misi → Crop Analysis → Edge Mode → AI Settings → Reports**.
 
 - **Untuk**: Petani smallholder (1–10 ha) & menengah (10–50 ha), koperasi tani, konsultan agronomi
-- **Protokol**: MAVLink · TCP / UDP / Serial
+- **Protokol**: MAVLink · UDP / TCP / Serial / RunCam WiFi Link 2
 - **Platform**: Windows, Linux, Android — satu basis kode
-- **UAV Kompatibel**: UAV ArduPilot/PX4 berbiaya rendah (kelas USD 300–800)
 
 ---
 
 ## Daftar Isi
 
 1. [Tentang MoonHarvest](#1-tentang-moonharvest)
-2. [Memulai & Koneksi](#2-memulai--koneksi)
-3. [Dasbor & HUD](#3-dasbor--hud)
-4. [Kalibrasi Drone](#4-kalibrasi-drone)
-5. [Deteksi Kesehatan Tanaman (Computer Vision)](#5-deteksi-kesehatan-tanaman-computer-vision)
-6. [Perencanaan Misi & Survei Otomatis](#6-perencanaan-misi--survei-otomatis)
-7. [Parameter Drone](#7-parameter-drone)
-8. [Fitur Keselamatan](#8-fitur-keselamatan)
-9. [Pengaturan Aplikasi](#9-pengaturan-aplikasi)
-10. [Statistik & Laporan Panen](#10-statistik--laporan-panen)
-11. [Mode Edge — Zero-Internet Edge AI](#11-mode-edge--zero-internet-edge-ai)
-12. [Asisten PIA](#12-asisten-pia)
-13. [Pemecahan Masalah](#13-pemecahan-masalah)
-14. [Kesesuaian dengan Proposal Kompetisi](#14-kesesuaian-dengan-proposal-kompetisi)
+2. [Bilah Atas & Koneksi](#2-bilah-atas--koneksi)
+3. [Dashboard · Live](#3-dashboard--live)
+4. [Camera](#4-camera)
+5. [Peta & Misi](#5-peta--misi)
+6. [Crop Analysis](#6-crop-analysis)
+7. [Edge Mode](#7-edge-mode)
+8. [AI Settings](#8-ai-settings)
+9. [Reports](#9-reports)
+10. [Indikator Status YOLO](#10-indikator-status-yolo)
+11. [Pemecahan Masalah](#11-pemecahan-masalah)
+12. [Kesesuaian dengan Proposal Kompetisi](#12-kesesuaian-dengan-proposal-kompetisi)
 
 ---
 
 ## 1. Tentang MoonHarvest
 
-MoonHarvest adalah *Ground Control Station* (GCS) lintas platform yang mengintegrasikan computer vision real-time dengan teknologi UAV untuk pemantauan tanaman. Alih-alih alur kerja lama — terbang, ambil kartu SD, lalu analisis pasca-terbang di software cloud yang mahal — MoonHarvest menganalisis video langsung dari UAV secara instan, di dalam GCS itu sendiri, tanpa koneksi internet.
+MoonHarvest adalah *Ground Control Station* (GCS) lintas platform yang mengintegrasikan computer vision real-time dengan teknologi UAV untuk pemantauan tanaman. Sidebar aplikasi berisi tujuh halaman:
 
-| Fitur Utama | Deskripsi |
+| Halaman | Fungsi Singkat |
 |---|---|
-| Deteksi Kesehatan Tanaman | YOLO on-device, 4 kelas kondisi vegetasi, ditampilkan langsung di atas video. |
-| Zero-Internet Edge AI | Seluruh inferensi berjalan lokal di perangkat — tidak bergantung cloud. |
-| Cross-Platform | Satu basis kode C# berjalan native di Windows, Linux, dan Android. |
-| Misi & Geofence | Survei otonom berbasis waypoint dengan penegakan batas area. |
-| Telemetri MAVLink | Sikap, GPS, ketinggian, airspeed, dan mode terbang secara real-time. |
+| **Dashboard · Live** | HUD terbang, peta live, ringkasan deteksi, dan ekspor laporan. |
+| **Camera** | Sumber video (kamera lokal, RTSP, file video, bridge Python) dengan overlay YOLO. |
+| **Peta & Misi** | Perencanaan waypoint, geofence, dan upload misi ke UAV. |
+| **Crop Analysis** | Analisis kesehatan tanaman mendalam dari gambar, rekomendasi, dan validasi lapangan. |
+| **Edge Mode** | Pengaturan performa inferensi AI on-device (model, threshold, overlay). |
+| **AI Settings** | Konfigurasi penyedia LLM, voice command, dan runtime vision. |
+| **Reports** | Daftar misi, detail hasil panen, dan ekspor laporan. |
+
+Di bawah sidebar terdapat indikator **status YOLO** yang bisa diketuk untuk mengaktifkan/menonaktifkan AI (lihat Bab 10).
 
 ---
 
-## 2. Memulai & Koneksi
+## 2. Bilah Atas & Koneksi
 
-Sebelum data telemetri dan video dapat ditampilkan, MoonHarvest perlu tersambung ke flight controller UAV melalui salah satu dari tiga jenis koneksi MAVLink.
+Kontrol koneksi dan kendali penerbangan bersifat **global** — tersedia di bilah atas (top bar) pada setiap halaman, bukan hanya di satu halaman tertentu.
+
+### Tombol di Bilah Atas
+
+- **Connect / Disconnect** — status koneksi MAVLink (pill hijau "Connected" atau merah "Disconnected").
+- **RTL** — perintah Return-to-Launch instan ke UAV.
+- **Start Mission / Stop Mission** — memulai atau menghentikan eksekusi misi yang sudah di-upload.
 
 ### Menyambungkan UAV (Connect Dialog)
 
-1. Buka aplikasi, lalu klik tombol **Connect** di sidebar atau topbar.
-2. Pilih jenis koneksi: **TCP**, **UDP**, atau **Serial / USB**.
-3. Isi alamat sesuai jenis koneksi (lihat tabel di bawah), lalu klik **Connect**.
-4. Status koneksi akan muncul di status bar dasbor begitu heartbeat MAVLink pertama diterima.
+Klik pill status koneksi untuk membuka dialog Connect. Empat jenis koneksi tersedia:
 
-| Jenis Koneksi | Digunakan Untuk | Yang Diisi |
+| Jenis Koneksi | Yang Diisi | Catatan |
 |---|---|---|
-| TCP | Simulator (SITL), koneksi jaringan tetap | Alamat IP + port |
-| UDP | Telemetry radio via companion computer | Alamat IP + port |
-| Serial / USB | Kabel langsung ke flight controller | Nama port + baud rate |
+| **UDP** | Host + Port | Untuk telemetry radio/companion computer. |
+| **TCP** | Host + Port | Untuk simulator (SITL) atau jaringan tetap. |
+| **Serial** | Port + Baud rate | Deteksi otomatis baud rate dan hot-plug perangkat. |
+| **RunCam WiFi Link 2** | Pemindaian jaringan | Menghubungkan video + MAVLink sekaligus lewat WiFi RunCam. |
 
-> **Auto Connect.** Aktifkan opsi ini di **Settings** agar MoonHarvest otomatis menyambung kembali ke UAV terakhir setiap kali aplikasi dibuka — berguna untuk operasi lapangan berulang di koperasi maupun demplot.
-
----
-
-## 3. Dasbor & HUD
-
-Halaman **Dashboard** adalah layar operasi utama untuk memantau kondisi UAV secara langsung selama survei.
-
-- **Attitude Indicator** — kemiringan (roll) dan sudut angguk (pitch) UAV.
-- **Heading Indicator** — arah hadap UAV terhadap utara.
-- **Air Speed Indicator** — kecepatan UAV relatif terhadap udara.
-- **Status Bar** — status koneksi, mode terbang, dan level baterai.
-- **Peta / Tracker** — posisi UAV secara langsung dengan opsi **Follow Vehicle**, serta progres area yang sudah tercakup (area scanned).
-
-Kualitas sinyal koneksi dipantau terus-menerus; bila kualitas menurun, indikator status bar berubah agar operator menyadarinya sebelum sinyal terputus total — penting saat survei di ladang jauh dari infrastruktur jaringan.
+Preset cepat tersedia untuk **SITL**, **GCS**, **TELEMETRY**, dan **RUNCAM** agar tidak perlu mengisi alamat manual setiap kali.
 
 ---
 
-## 4. Kalibrasi Drone
+## 3. Dashboard · Live
 
-Semua kalibrasi dilakukan di satu halaman **Calibration**, wajib diselesaikan sebelum penerbangan pertama atau setelah pemasangan komponen baru.
+Halaman utama untuk memantau kondisi UAV dan hasil analisis tanaman secara langsung.
 
-### Kompas
+### HUD & Telemetri
 
-1. Pilih perangkat kompas dari daftar (klik **Refresh** bila UAV memiliki lebih dari satu kompas).
-2. Klik **Start Calibration**, lalu putar UAV perlahan ke seluruh sumbu sesuai instruksi di layar.
-3. Setelah progres 100%, klik **Accept** untuk menyimpan offset, atau **Cancel** untuk mengulang.
+- Attitude, heading, dan airspeed pill.
+- Altitude, speed, heading, GPS, dan level baterai.
+- Peta live tertanam (berbagi data dengan halaman Peta & Misi — waypoint dan geofence otomatis sinkron).
+- Progress bar misi beserta jumlah waypoint yang sudah dicapai.
 
-### Accelerometer, Gyro & Barometer
+### Kontrol Live Monitoring
 
-Ikuti instruksi posisi UAV yang muncul berurutan (datar, miring kiri, miring kanan, terbalik, dst.) — setiap posisi dikonfirmasi setelah UAV diam sempurna.
+- **Start Demo** — memutar video/deteksi demo untuk latihan tanpa UAV nyata.
+- **Start Live** — mengaktifkan feed kamera dan YOLO sungguhan.
+- Tombol **Record**, **Snapshot**, dan **Pause AI** pada panel HUD.
 
-### Radio (RC) & Flight Mode
+### Ringkasan Analisis (Analysis Summary)
 
-Gerakkan setiap stick/switch remote control untuk merekam rentang channel, lalu tetapkan mode terbang (Stabilize, Auto, RTL) pada bagian **Flight Mode Mapping**.
+Menampilkan persentase deteksi untuk empat kelas kesehatan tanaman:
 
-### ESC & Uji Motor (Motor Test)
+- **Lush Green**
+- **Inconsistent Growth**
+- **Drought/Severe Stress**
+- **Bare Soil / Gap**
 
-> ⚠️ **Lepas baling-baling sebelum menguji motor.** Fitur ini memutar motor langsung sesuai persentase throttle dan durasi yang ditentukan.
+### Rekomendasi & Ekspor Laporan
 
-Jalankan uji motor satu per satu untuk memastikan arah putar dan urutan sudah benar. Tombol **Emergency Stop** selalu tersedia untuk mematikan seluruh motor secara instan.
-
-### PID Tuning & Pengaturan Waypoint
-
-Penyetelan PID (Roll, Pitch, Yaw, Velocity) untuk airframe Copter maupun Plane, serta parameter default waypoint (kecepatan, radius pencapaian titik) untuk pengguna lanjutan.
-
----
-
-## 5. Deteksi Kesehatan Tanaman (Computer Vision)
-
-Halaman **Camera** menampilkan video langsung dari kamera onboard UAV dengan analisis kesehatan tanaman berjalan on-device — inilah inti dari MoonHarvest.
-
-### Empat Kelas Deteksi
-
-Model YOLOv8n (ONNX Runtime) mengklasifikasikan setiap zona lahan ke salah satu dari empat kondisi, dengan bounding box dan skor keyakinan ditampilkan langsung di atas video:
-
-| Kelas | Arti bagi Petani |
-|---|---|
-| **Lush Green** | Vegetasi sehat, tidak perlu tindakan. |
-| **Inconsistent Growth** | Pertumbuhan tidak merata — perlu diperiksa. |
-| **Drought/Severe Stress** | Kekeringan atau stres berat — prioritas penyiraman/perawatan. |
-| **Bare Soil/Gap** | Tanah kosong atau celah tanaman — kandidat penyulaman. |
-
-### Langkah Penggunaan
-
-1. Buka halaman **Camera** setelah UAV terhubung dan video aktif.
-2. Overlay deteksi tampil otomatis: jumlah deteksi per kelas, FPS, dan tingkat keyakinan rata-rata ditampilkan di sudut layar.
-3. Atur ambang batas keyakinan (confidence threshold) di halaman **AI Settings** untuk menyaring deteksi yang kurang meyakinkan.
-4. Ganti model deteksi (file `.onnx`) di **AI Settings** untuk beralih ke musim, jenis tanaman, atau hama yang berbeda — tanpa perlu update aplikasi.
-5. Gunakan tombol rekam untuk menyimpan video sesi survei untuk arsip atau tinjauan ulang.
-
-> **Kinerja di lapangan.** Pipeline dioptimalkan untuk berjalan >15 FPS pada laptop standar maupun Android kelas menengah, dengan target F1-score >80% dan mAP@0.5 ≥0.85 pada model terlatih.
+Panel **Recommendations & Report Export** menyediakan tombol **Export PDF**, **Export CSV**, dan **Export JSON** yang benar-benar menghasilkan laporan lengkap dengan snapshot peta, screenshot deteksi YOLO, path video, dan garis waktu insiden. Kartu **Field Report & Recommendations** menampilkan daftar tindakan yang direkomendasikan berdasarkan deteksi langsung.
 
 ---
 
-## 6. Perencanaan Misi & Survei Otomatis
+## 4. Camera
 
-Halaman **Mission Planner** digunakan untuk menyusun jalur survei otonom di atas peta — mengganti penyusuran manual 4–6 jam per 10 ha dengan satu penerbangan otomatis berdurasi menit.
+Ruang kerja kamera yang berdiri sendiri, terpisah dari feed di Dashboard.
 
-1. Klik pada peta untuk menambahkan titik waypoint; klik dua kali sebuah titik untuk membuka **Waypoint Edit Dialog** dan mengatur ketinggian, kecepatan, atau aksi di titik tersebut.
-2. Gunakan **Undo** / **Redo** untuk membatalkan atau mengulang perubahan susunan waypoint.
-3. Klik **Import** untuk memuat jalur waypoint yang sudah disiapkan sebelumnya dari file.
-4. Klik **Upload to Drone** untuk mengirim seluruh misi ke flight controller, atau **Download from Drone** untuk menarik misi yang sudah tersimpan.
-5. Setelah misi berjalan, zona bermasalah (dari hasil deteksi bagian 5) otomatis ditandai pada peta agar dapat langsung ditindaklanjuti hari yang sama.
+### Sumber Video
 
----
+Pilih salah satu tab sumber:
 
-## 7. Parameter Drone
+- **Local Camera** — kamera yang terpasang di perangkat.
+- **RTSP Stream** — video streaming dari alamat RTSP.
+- **Video File** — memutar file video yang tersimpan.
+- **Python Bridge** — sumber video melalui bridge Python (mis. untuk pemrosesan tambahan).
 
-Halaman parameter membaca dan menulis konfigurasi flight controller secara langsung dari UAV.
+### Kontrol
 
-Saat halaman dibuka, progres menunjukkan jumlah parameter yang sudah dimuat dari total yang tersedia. Ubah nilai dengan hati-hati — nilai tidak valid akan ditolak disertai pesan kesalahan.
+- **Start Camera** / **Stop Camera**
+- **Screenshot** — menyimpan gambar dari frame saat ini.
+- **Record** — merekam sesi video.
 
-> ⚠️ **Untuk pengguna lanjutan.** Mengubah parameter secara sembarangan dapat memengaruhi kestabilan terbang. Catat nilai lama sebelum mengubah parameter penting.
-
----
-
-## 8. Fitur Keselamatan
-
-### Geofence
-
-Aktifkan geofence di **Settings → Map** dan tentukan radiusnya. Batas geofence tergambar di peta; jika UAV melewati batas tersebut, sistem menampilkan notifikasi pelanggaran, dan notifikasi pemulihan saat UAV kembali ke dalam batas — memastikan survei tetap dalam area lahan yang direncanakan.
-
-### Pemutusan Motor Darurat (Emergency Motor Cutoff)
-
-Tombol darurat ini tersedia pada halaman kalibrasi/uji motor dan langsung menghentikan seluruh motor UAV — gunakan hanya dalam situasi darurat di darat, bukan saat UAV sedang terbang.
+Overlay deteksi YOLO tampil otomatis di atas video. Untuk sumber **Video File**, tersedia mode analisis kesehatan tanaman berbasis Python dengan **toggle overlay vegetasi** dan **slider confidence** tersendiri.
 
 ---
 
-## 9. Pengaturan Aplikasi
+## 5. Peta & Misi
 
-Halaman **Settings** menyimpan seluruh preferensi aplikasi secara lokal di perangkat — tidak memerlukan akun atau koneksi server.
+Halaman perencanaan misi (Mission Planner) untuk menyusun jalur survei di atas peta.
 
-| Kategori | Isi |
-|---|---|
-| Koneksi | Jenis koneksi, IP/port, port serial, baud rate, dan Auto Connect. |
-| Peta | Follow vehicle, jenis peta, geofence, dan nilai default waypoint. |
-| Tampilan | Bahasa, tema terang/gelap, opsi lanjutan, dan suara peringatan. |
-| AI | Ambang batas keyakinan deteksi dan pemilihan model vision (`.onnx`). |
+1. **Klik dua kali** pada peta untuk menambahkan waypoint baru.
+2. Gunakan tombol **Add Waypoint**, **Remove Waypoint** (ikon ✕ pada tiap baris di Waypoint Queue), dan **Clear** untuk mengatur ulang daftar.
+3. Atur radius **Geofence** dengan slider — batas lingkaran akan tergambar di sekitar waypoint pertama.
+4. Pilih penyedia peta dari dropdown **Map Provider** (ArcGIS Topographic, Google, OSM, dan variannya).
+5. Klik **Upload Mission** untuk mengirim seluruh waypoint ke flight controller via protokol misi MAVLink.
 
----
-
-## 10. Statistik & Laporan Panen
-
-Halaman **Stats** menampilkan ringkasan statistik penerbangan dan sebaran kondisi tanaman per sesi survei. Halaman **Reports Harvest** menyajikan laporan hasil panen — termasuk peta zona (Lush Green / Inconsistent Growth / Drought-Stress / Bare Soil) beserta persentase luas area masing-masing, rekomendasi tindak lanjut, dan log penerbangan (Tlog) yang dapat diekspor untuk arsip koperasi atau penyuluh pertanian.
+> **Penting.** Upload Mission memerlukan UAV yang sudah terhubung (lihat Bab 2). Jika belum terhubung, aplikasi menampilkan pesan **"Vehicle not connected."**
 
 ---
 
-## 11. Mode Edge — Zero-Internet Edge AI
+## 6. Crop Analysis
 
-**Edge Mode** adalah fondasi dari desain MoonHarvest: seluruh inferensi YOLO, analisis vegetasi, dan perencanaan misi berjalan sepenuhnya on-device, tanpa bergantung pada cloud atau koneksi internet. Ini memungkinkan petani atau operator koperasi mendapatkan hasil analisis instan langsung di ladang, sekalipun tanpa sinyal data sama sekali — berbeda dari solusi berbasis cloud yang mengharuskan unggah data terlebih dahulu.
+Halaman analisis kesehatan tanaman yang lebih mendalam dibanding ringkasan di Dashboard.
+
+- **Total Detections**, **Average Confidence**, **Impact Area (ha)**, dan **High-Priority Count** ditampilkan sebagai ringkasan angka.
+- Grafik distribusi kesehatan dengan empat batang: **Healthy, Stress, Disease, Pest**.
+- Teks rekomendasi otomatis berdasarkan hasil deteksi terbaru.
+- Daftar **Priority Zones** — area yang perlu ditindaklanjuti lebih dulu.
+- **Browse Image** untuk memuat foto lahan, lalu **Run Analysis** untuk menjalankan deteksi pada gambar tersebut.
+- **Export JSON** dan **Export CSV** untuk hasil analisis.
+- Fitur **Validate** untuk membandingkan hasil deteksi dengan data ground-truth kelembapan tanah di lapangan.
 
 ---
 
-## 12. Asisten PIA
+## 7. Edge Mode
 
-Panel **PIA** dapat dibuka dari sidebar sebagai jendela geser berisi asisten chat dengan perintah cepat, membantu operator mencari fungsi atau informasi tanpa berpindah halaman — mempercepat pelatihan operator baru di koperasi tani.
+Halaman untuk mengatur performa inferensi AI langsung di perangkat.
+
+- Toggle **YOLO**, **Vegetation Overlay**, **IMU Overlay**, dan **INT8 Quantization**.
+- Slider **Confidence Threshold** dan **NMS Threshold**.
+- **Model Picker** — tombol **Browse Model** untuk memilih file `.onnx`, lalu **Apply Model** untuk menerapkannya.
+
+> **Catatan.** Angka FPS/latency yang ditampilkan per mode (mis. "30–60 FPS" untuk CUDA) adalah estimasi tetap per jenis perangkat, bukan hasil pengukuran langsung — gunakan sebagai indikasi kasar, bukan benchmark real-time.
 
 ---
 
-## 13. Pemecahan Masalah
+## 8. AI Settings
+
+Halaman konfigurasi AI yang paling lengkap di aplikasi.
+
+### Penyedia LLM
+
+- Pilih **Provider utama** (OpenRouter, Gemini, OpenAI, atau Grok) dan **provider cadangan (fallback)**, masing-masing dengan kolom API key.
+- Tombol **Test Primary** / **Test Fallback** untuk memverifikasi koneksi ke provider yang dipilih.
+
+### Pengaturan Lain
+
+- Toggle **Voice Command** beserta ambang keyakinan dan pilihan bahasa.
+- Toggle lapisan **Anomaly Detection**.
+- Ambang **Telemetry Sampling**.
+- Kolom nama model per-tugas (per-task model name).
+
+### Vision Runtime
+
+Bagian ini mengatur runtime YOLO secara langsung: path file model dan file kelas, serta ambang **confidence** dan **NMS** — perubahan di sini benar-benar mengonfigurasi ulang runtime deteksi yang sedang berjalan.
+
+---
+
+## 9. Reports
+
+Halaman daftar misi dan detail hasil panen.
+
+- Daftar misi ditampilkan di sisi kiri; enam contoh misi berlabel **"DEMO"** disediakan sebagai data sampel, sementara laporan asli dimuat dari riwayat penerbangan sungguhan.
+- Klik satu misi untuk membuka detail hasilnya.
+- Tombol **Export PDF**, **Export CSV**, **Export JSON** — berfungsi penuh dan menghasilkan file laporan.
+- Tombol **Share** dan **Send to Cooperative** tersedia di halaman ini, namun saat ini hanya menampilkan notifikasi berhasil tanpa benar-benar mengirim data — anggap sebagai pratinjau fitur yang belum final.
+- Log penerbangan (Tlog) ditulis otomatis di latar belakang selama misi berjalan dan path file-nya ditampilkan sebagai referensi pada detail misi.
+
+---
+
+## 10. Indikator Status YOLO
+
+Di bagian bawah sidebar terdapat indikator kecil yang menampilkan salah satu dari tiga status:
+
+- **Yolo Off** — deteksi AI dimatikan.
+- **Yolo Active** — model berjalan normal.
+- **Yolo Fallback** — runtime utama tidak siap dan sistem beralih ke mode cadangan.
+
+**Ketuk indikator ini kapan saja untuk mengaktifkan/menonaktifkan YOLO** tanpa harus membuka halaman AI Settings atau Edge Mode.
+
+---
+
+## 11. Pemecahan Masalah
 
 | Gejala | Langkah Pemeriksaan |
 |---|---|
-| Tidak bisa Connect | Periksa jenis koneksi dan alamat/port yang diisi; pastikan UAV menyala dan kabel/telemetry radio terpasang benar. |
-| Status koneksi sering putus | Perhatikan indikator kualitas koneksi di status bar; pindahkan lokasi atau periksa interferensi sinyal. |
-| Parameter gagal tersimpan | Periksa pesan kesalahan yang muncul — nilai kemungkinan di luar rentang yang diizinkan flight controller. |
-| Kalibrasi kompas gagal | Ulangi di area terbuka jauh dari logam/interferensi magnetik, pastikan rotasi dilakukan pada seluruh sumbu. |
-| Video kamera tidak muncul | Periksa koneksi kamera pada halaman Camera dan pastikan UAV/companion device terhubung. |
-| FPS deteksi rendah | Turunkan resolusi input model atau tutup aplikasi lain yang membebani perangkat; target operasional adalah >15 FPS. |
+| Tidak bisa Connect | Periksa jenis koneksi (UDP/TCP/Serial/RunCam) dan alamat/port yang diisi; pastikan UAV menyala dan kabel/telemetry radio terpasang benar. |
+| Upload Mission gagal, muncul "Vehicle not connected" | Sambungkan UAV terlebih dahulu lewat Connect Dialog sebelum membuka Peta & Misi. |
+| Video kamera tidak muncul | Periksa tab sumber yang dipilih di halaman Camera (Local/RTSP/Video File/Python Bridge) sesuai perangkat yang tersedia. |
+| Deteksi AI tidak berjalan | Cek indikator status di bawah sidebar — jika menunjukkan "Yolo Off", ketuk untuk mengaktifkan; jika "Yolo Fallback", periksa pengaturan model di Edge Mode / AI Settings. |
+| Tes koneksi LLM gagal di AI Settings | Periksa kembali API key provider utama/cadangan, lalu klik Test Primary/Test Fallback untuk verifikasi ulang. |
+| Share / Send to Cooperative di Reports tidak mengirim apa pun | Fitur ini masih berupa pratinjau — gunakan Export PDF/CSV/JSON untuk mendapatkan file laporan sungguhan. |
 
 ---
 
-## 14. Kesesuaian dengan Proposal Kompetisi
-
-Tabel berikut memetakan klaim utama pada proposal dan presentasi EFRISA ke fitur yang benar-benar dapat dioperasikan di aplikasi, sebagaimana dijelaskan pada bab-bab di atas — sebagai bukti bahwa prototipe sudah berfungsi sesuai yang diajukan.
+## 12. Kesesuaian dengan Proposal Kompetisi
 
 | Klaim di Proposal/PPT | Dibuktikan di Manual Bab |
 |---|---|
-| Real-time CV analysis, YOLO built-in | Bab 5 — Deteksi Kesehatan Tanaman |
-| Cross-platform Windows/Linux/Android, satu codebase | Bab 1, 3, 5 — seluruh fitur berjalan identik di ketiga platform |
-| Zero-Internet Edge AI | Bab 11 — Mode Edge |
-| MAVLink telemetry (attitude, GPS, altitude, airspeed, flight mode) | Bab 2, 3 — Koneksi & Dasbor/HUD |
-| Waypoint & geofence dengan boundary enforcement | Bab 6, 8 — Misi & Fitur Keselamatan |
-| 4-class detection (Lush Green, Inconsistent Growth, Drought/Severe Stress, Bare Soil/Gap) | Bab 5 — Empat Kelas Deteksi |
-| Model & threshold dinamis (future-proof adaptability) | Bab 5 & 9 — AI Settings |
-| Kompatibel UAV berbiaya rendah ($300–800) | Bab 2 — mendukung TCP/UDP/Serial standar MAVLink tanpa hardware proprietary |
+| Real-time CV analysis, YOLO built-in | Bab 3 (Dashboard), Bab 4 (Camera) |
+| Cross-platform Windows/Linux/Android, satu codebase | Bab 1 — seluruh halaman berjalan identik di ketiga platform |
+| MAVLink telemetry (attitude, GPS, altitude, airspeed, flight mode) | Bab 2 (Koneksi), Bab 3 (Dashboard) |
+| Waypoint & geofence dengan boundary enforcement | Bab 5 (Peta & Misi) |
+| 4-class detection (Lush Green, Inconsistent Growth, Drought/Severe Stress, Bare Soil/Gap) | Bab 3 — Ringkasan Analisis di Dashboard |
+| Model & threshold dinamis (future-proof adaptability) | Bab 7 (Edge Mode), Bab 8 (AI Settings — Vision Runtime) |
+| Analisis mendalam & validasi lapangan | Bab 6 (Crop Analysis) |
+| Ekspor laporan hasil panen | Bab 3 & Bab 9 (Reports) |
 
 ---
 
-*MoonHarvest — Panduan Pengguna. Disusun oleh Tim EFRISA untuk operator lapangan, koperasi tani, dan tim juri TEKNOFEST.*
+*MoonHarvest — Panduan Pengguna. Disusun oleh Tim EFRISA berdasarkan fitur yang benar-benar berjalan di aplikasi.*
