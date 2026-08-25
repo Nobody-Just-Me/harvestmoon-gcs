@@ -139,7 +139,17 @@ public partial class App : Application
         // AI/PIA services
         services.AddSingleton<IAlertManager, AlertManager>();
         services.AddSingleton<AlertManager>(sp => (AlertManager)sp.GetRequiredService<IAlertManager>());
-        services.AddSingleton<IVoiceRecognitionService, NoOpVoiceRecognitionService>();
+#if __ANDROID__
+        // Native Android SpeechRecognizer — was previously always overridden by the NoOp
+        // fallback below regardless of platform, so Voice Command silently never worked.
+        services.AddSingleton<IVoiceRecognitionService>(sp =>
+            new HarvestmoonGCS.Platforms.Android.Services.AndroidVoiceRecognitionService(
+                sp.GetRequiredService<Android.Content.Context>()));
+#else
+        // Desktop (Windows/Linux/macOS all build under net9.0-desktop): external STT command
+        // adapter, same pattern as PythonCameraService below for ICameraService.
+        services.AddSingleton<IVoiceRecognitionService, DesktopVoiceRecognitionService>();
+#endif
         services.AddAIServices();
 #if !__WASM__
         services.AddSingleton<IPIAHistoryStore, SqlitePIAHistoryStore>();

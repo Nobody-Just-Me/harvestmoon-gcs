@@ -2302,12 +2302,34 @@ public sealed partial class DashboardPage : Page
 
             ReadinessChecklistPanel.Visibility = Visibility.Visible;
             MissionMetadataPanel.Visibility = Visibility.Visible;
-            if (!_missionTimerStarted)
+
+            // Always start a fresh mission ID/timer/report for this live session — do NOT gate
+            // on _missionTimerStarted, which DashboardPage_Loaded already sets true as soon as
+            // the page opens (before any connection), purely to show a placeholder ID. Reusing
+            // that flag here meant this block silently never ran once the page had loaded, and
+            // no live session ever created a Reports-history row.
+            _missionStart = DateTime.Now;
+            MissionIdText.Text = $"MH-{DateTime.Now:yyyyMMdd-HHmmss}-LIVE";
+            MissionStartedText.Text = DateTime.Now.ToString("HH:mm:ss");
+            _missionTimerStarted = true;
+
+            // Create a real Reports-history row for this live session as soon as it starts, so
+            // it actually shows up in Reports/Crop-Analysis aggregates — previously only "Run
+            // Analysis" on Crop Analysis ever inserted a row; a live Dashboard session produced
+            // export files but never appeared in mission history at all.
+            if (_harvestFunctionalService != null)
             {
-                _missionStart = DateTime.Now;
-                MissionIdText.Text = $"MH-{DateTime.Now:yyyyMMdd-HHmm}-LIVE";
-                MissionStartedText.Text = DateTime.Now.ToString("HH:mm:ss");
-                _missionTimerStarted = true;
+                _ = _harvestFunctionalService.AddReportAsync(new HarvestFunctionalService.HarvestReportRecord
+                {
+                    Id = MissionIdText.Text,
+                    Area = "Dashboard Live Session",
+                    DateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    Duration = "00:00:00",
+                    Detections = 0,
+                    Priority = "Low",
+                    AiModelUsed = _harvestFunctionalService.IsYoloOptionEnabled ? "YOLOv8n ONNX local" : "OpenCV fallback",
+                    OperatorNote = "Live session started from Dashboard",
+                });
             }
             _missionTimer.Start();
 

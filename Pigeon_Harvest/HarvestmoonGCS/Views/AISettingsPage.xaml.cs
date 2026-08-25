@@ -27,6 +27,7 @@ public sealed partial class AISettingsPage : Page
     private LLMServiceFactory? _llmServiceFactory;
     private HarvestFunctionalService? _harvestFunctionalService;
     private IFileService? _fileService;
+    private IAnomalyDetectionService? _anomalyDetectionService;
 
     public AISettingsPage()
     {
@@ -34,19 +35,31 @@ public sealed partial class AISettingsPage : Page
         this.Loaded += AISettingsPage_Loaded;
         ProviderCombo.SelectionChanged += ProviderCombo_SelectionChanged;
         FallbackProviderCombo.SelectionChanged += FallbackProviderCombo_SelectionChanged;
-    }
 
-    protected override void OnNavigatedTo(NavigationEventArgs e)
-    {
-        base.OnNavigatedTo(e);
-        
+        // Resolved in the constructor, not OnNavigatedTo: this app's sidebar navigation caches
+        // pages and swaps Frame.Content directly (PageCacheManager.GetOrCreatePage) instead of
+        // calling Frame.Navigate, so OnNavigatedTo never actually fires for cached pages. With
+        // resolution only in OnNavigatedTo, every field here stayed null forever and clicking
+        // Save Settings crashed with a NullReferenceException on _settingsService!.
         _settingsService = App.Current.Services.GetService(typeof(ISettingsService)) as ISettingsService;
         _apiKeyStore = App.Current.Services.GetService(typeof(IApiKeyStore)) as IApiKeyStore;
         _llmServiceFactory = App.Current.Services.GetService(typeof(LLMServiceFactory)) as LLMServiceFactory;
         _harvestFunctionalService = App.Current.Services.GetService(typeof(HarvestFunctionalService)) as HarvestFunctionalService;
         _fileService = App.Current.Services.GetService(typeof(IFileService)) as IFileService;
-        
+        _anomalyDetectionService = App.Current.Services.GetService(typeof(IAnomalyDetectionService)) as IAnomalyDetectionService;
+
         LoadSettings();
+    }
+
+    /// <summary>Reloads settings each time this cached page becomes the active tab.</summary>
+    public void OnPageActivated()
+    {
+        LoadSettings();
+    }
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
     }
 
     private void AISettingsPage_Loaded(object sender, RoutedEventArgs e)
@@ -280,6 +293,7 @@ public sealed partial class AISettingsPage : Page
             _aiSettings.Models.Fallback = TextOrFallback(FallbackModelBox.Text, _aiSettings.Models.Fallback);
 
             ApplyVisionRuntimeSettings();
+            await RestartAnomalyDetectionIfRunningAsync();
 
             _settingsService.Settings.AI = _aiSettings;
             await _settingsService.SetSettingAsync("AISettings", _aiSettings);
@@ -405,6 +419,24 @@ public sealed partial class AISettingsPage : Page
         VisionRuntimeStatusText.Text = ready
             ? $"YOLO aktif: {Path.GetFileName(_harvestFunctionalService.RuntimeModelPath)} | conf={confidence:0.00} | nms={nms:0.00}"
             : _harvestFunctionalService.YoloStatusMessage;
+    }
+
+    /// <summary>
+    /// The RuleBased/Statistical/AI anomaly-detection toggles above now write into the same
+    /// <see cref="AnomalyDetectionConfig"/> instance the running <see cref="IAnomalyDetectionService"/>
+    /// reads (see ServiceCollectionExtensions.AddPIAIntelligence). RuleBased is checked live on
+    /// every telemetry snapshot, but the Statistical/AI timers are only created in StartAsync,
+    /// so a stop/start is needed for those two toggles to take effect immediately.
+    /// </summary>
+    private async Task RestartAnomalyDetectionIfRunningAsync()
+    {
+        if (_anomalyDetectionService == null || !_anomalyDetectionService.IsRunning)
+        {
+            return;
+        }
+
+        await _anomalyDetectionService.StopAsync();
+        await _anomalyDetectionService.StartAsync();
     }
 
     private async void BrowseVisionModelButton_Click(object sender, RoutedEventArgs e)

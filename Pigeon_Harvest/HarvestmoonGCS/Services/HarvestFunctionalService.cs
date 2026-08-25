@@ -42,6 +42,15 @@ public sealed class HarvestFunctionalService : IDisposable
         public string YoloScreenshotPath { get; set; } = string.Empty;
         public string VideoRecordingPath { get; set; } = string.Empty;
         public string ExportPath { get; set; } = string.Empty;
+        /// <summary>Real mean of per-detection confidence scores (0-100), not a derived estimate.</summary>
+        public double AverageConfidence { get; set; }
+        /// <summary>
+        /// Estimated stressed/drought ground area in hectares, computed from the stressed+drought
+        /// share of the assumed ~120m x 120m (1.44 ha) frame footprint used elsewhere for zone
+        /// GPS estimation (see EstimateZoneCoordinate) — not a real GSD/altitude measurement, since
+        /// no camera focal length/sensor size is available, but internally consistent with it.
+        /// </summary>
+        public double ImpactAreaHa { get; set; }
     }
 
     public sealed class HarvestZonePriority
@@ -85,6 +94,10 @@ public sealed class HarvestFunctionalService : IDisposable
         public List<string> Recommendations { get; set; } = new();
         public List<HarvestZonePriority> Priorities { get; set; } = new();
         public List<HarvestDetectionBox> DetectionBoxes { get; set; } = new();
+        /// <summary>Real mean of DetectionBoxes[].Confidence (0-100). 0 when no detections.</summary>
+        public double AverageConfidence { get; set; }
+        /// <summary>See <see cref="HarvestReportRecord.ImpactAreaHa"/> for the assumption behind this figure.</summary>
+        public double ImpactAreaHa { get; set; }
     }
 
     public sealed class HarvestGroundTruthSample
@@ -553,6 +566,12 @@ public sealed class HarvestFunctionalService : IDisposable
             }).ToList()
         };
 
+        result.AverageConfidence = result.DetectionBoxes.Count > 0
+            ? result.DetectionBoxes.Average(d => d.Confidence) * 100.0
+            : 0;
+        // Assumed ~120m x 120m (1.44 ha) frame footprint, consistent with EstimateZoneCoordinate.
+        result.ImpactAreaHa = (result.StressedPercentage + result.DroughtPercentage) / 100.0 * 1.44;
+
         await AddReportAsync(new HarvestReportRecord
         {
             Id = $"MH-{DateTime.Now:yyyyMMdd-HHmmss}",
@@ -567,6 +586,8 @@ public sealed class HarvestFunctionalService : IDisposable
             StressedPercentage = result.StressedPercentage,
             DroughtPercentage = result.DroughtPercentage,
             BareSoilPercentage = result.BareSoilPercentage,
+            AverageConfidence = result.AverageConfidence,
+            ImpactAreaHa = result.ImpactAreaHa,
             PriorityZonesJson = JsonSerializer.Serialize(result.Priorities)
         });
 
@@ -793,8 +814,8 @@ public sealed class HarvestFunctionalService : IDisposable
 
     public async Task<string> ExportReportCsvAsync(HarvestReportRecord record, string baseName)
     {
-        var header = "Id,DateTime,Area,Duration,Detections,Priority,AiModelUsed,Healthy,Stressed,Drought,BareSoil,Validation,TlogPath,VideoRecordingPath,EvidenceBundlePath,OperatorNote";
-        var row = $"{record.Id},{record.DateTime},{record.Area},{record.Duration},{record.Detections},{record.Priority},{record.AiModelUsed},{record.HealthyPercentage:F2},{record.StressedPercentage:F2},{record.DroughtPercentage:F2},{record.BareSoilPercentage:F2},\"{record.GroundTruthValidationSummary.Replace("\"", "''")}\",{record.TlogPath},{record.VideoRecordingPath},{record.EvidenceBundlePath},\"{record.OperatorNote.Replace("\"", "''")}\"";
+        var header = "Id,DateTime,Area,Duration,Detections,Priority,AiModelUsed,Healthy,Stressed,Drought,BareSoil,AverageConfidence,ImpactAreaHa,Validation,TlogPath,VideoRecordingPath,EvidenceBundlePath,OperatorNote";
+        var row = $"{record.Id},{record.DateTime},{record.Area},{record.Duration},{record.Detections},{record.Priority},{record.AiModelUsed},{record.HealthyPercentage:F2},{record.StressedPercentage:F2},{record.DroughtPercentage:F2},{record.BareSoilPercentage:F2},{record.AverageConfidence:F2},{record.ImpactAreaHa:F3},\"{record.GroundTruthValidationSummary.Replace("\"", "''")}\",{record.TlogPath},{record.VideoRecordingPath},{record.EvidenceBundlePath},\"{record.OperatorNote.Replace("\"", "''")}\"";
         return await _fileService.ExportToDownloadsAsync($"{baseName}.csv", header + Environment.NewLine + row);
     }
 

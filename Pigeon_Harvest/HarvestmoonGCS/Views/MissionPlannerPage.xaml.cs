@@ -29,6 +29,7 @@ public sealed partial class MissionPlannerPage : Page
     private readonly IMissionService _missionService;
     private readonly IMavLinkService _mavLinkService;
     private readonly IWaypointService _waypointService;
+    private readonly IGeofenceService? _geofenceService;
     private readonly MapViewModel? _mapViewModel;
     private readonly List<MissionWaypointItem> _waypoints = new();
     private bool _initialized;
@@ -42,6 +43,7 @@ public sealed partial class MissionPlannerPage : Page
         _missionService = App.GetService<IMissionService>();
         _mavLinkService = App.GetService<IMavLinkService>();
         _waypointService = App.GetService<IWaypointService>();
+        _geofenceService = App.Current.Services.GetService<IGeofenceService>();
         _mapViewModel   = App.GetService<MapViewModel>();
 
         Loaded += MissionPlannerPage_Loaded;
@@ -292,11 +294,62 @@ public sealed partial class MissionPlannerPage : Page
         if (_waypoints.Count == 0)
         {
             MissionMapControl.ClearGeofence();
+            _geofenceService?.SetGeofenceActive(false);
             return;
         }
 
         var center = _waypoints[0];
         MissionMapControl.SetGeofence(true, center.Latitude, center.Longitude, GeofenceRadiusSlider.Value);
+
+        // Keep the shared geofence model (used by IGeofenceService.SendGeofenceToVehicleAsync and
+        // the Dashboard's boundary-distance alerting) in sync with what's drawn here.
+        _geofenceService?.SetGeofenceType(GeofenceType.Circular);
+        _geofenceService?.SetGeofenceCenter(center.Latitude, center.Longitude);
+        _geofenceService?.SetGeofenceRadius(GeofenceRadiusSlider.Value);
+        _geofenceService?.SetGeofenceActive(true);
+    }
+
+    /// <summary>
+    /// Actually pushes the geofence configured above to the connected vehicle as real
+    /// FENCE_ENABLE/FENCE_TYPE/FENCE_RADIUS/FENCE_ACTION MAVLink parameters — previously this
+    /// slider only drew a circle on the map with no vehicle-side enforcement.
+    /// </summary>
+    private async void SendGeofenceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_geofenceService == null)
+        {
+            WaypointSummaryText.Text = "Geofence service not available";
+            return;
+        }
+
+        if (_waypoints.Count == 0)
+        {
+            WaypointSummaryText.Text = "Add a waypoint first to anchor the geofence";
+            return;
+        }
+
+        if (!_mavLinkService.IsConnected)
+        {
+            WaypointSummaryText.Text = "Vehicle not connected";
+            return;
+        }
+
+        SendGeofenceButton.IsEnabled = false;
+        WaypointSummaryText.Text = "Sending geofence to vehicle...";
+        try
+        {
+            ApplyGeofence();
+            await _geofenceService.SendGeofenceToVehicleAsync();
+            WaypointSummaryText.Text = $"Geofence sent: {GeofenceRadiusSlider.Value:F0} m radius";
+        }
+        catch (Exception ex)
+        {
+            WaypointSummaryText.Text = $"Geofence send failed: {ex.Message}";
+        }
+        finally
+        {
+            SendGeofenceButton.IsEnabled = true;
+        }
     }
 
     private void RefreshWaypointList()

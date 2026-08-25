@@ -582,6 +582,21 @@ public sealed partial class MainPage_Modern : Page
         if (page is MissionPlannerPage missionPlannerPage)
         {
             missionPlannerPage.OnPageActivated();
+            return;
+        }
+
+        if (page is ReportsHarvestPage reportsPage)
+        {
+            // Pages are preloaded/cached at startup, so without this the mission list only ever
+            // reflected whatever reports existed at app launch — a live session started later
+            // never appeared until the app was restarted.
+            reportsPage.OnPageActivated();
+            return;
+        }
+
+        if (page is AISettingsPage aiSettingsPage)
+        {
+            aiSettingsPage.OnPageActivated();
         }
     }
 
@@ -648,6 +663,105 @@ public sealed partial class MainPage_Modern : Page
         }
     }
 
+    /// <summary>
+    /// Sends a real MAVLink RTL (Return-to-Launch) flight mode change. Previously this button
+    /// only raised an event with no subscriber anywhere in the app — clicking it did nothing.
+    /// </summary>
+    private async void TopBar_RTLClicked(object sender, EventArgs e)
+    {
+        if (_mavLinkService?.IsConnected != true)
+        {
+            await ShowSimpleDialogAsync("RTL", "Vehicle not connected — cannot send Return-to-Launch.");
+            return;
+        }
+
+        var confirm = new ContentDialog
+        {
+            Title = "Return to Launch",
+            Content = "Send RTL command to the connected vehicle now?",
+            PrimaryButtonText = "Send RTL",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot
+        };
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        try
+        {
+            var ok = await _mavLinkService.SetFlightModeAsync("RTL");
+            Log.Information("RTL command sent, success={Success}", ok);
+            if (!ok)
+            {
+                await ShowSimpleDialogAsync("RTL", "Vehicle did not acknowledge the RTL command.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to send RTL command");
+            await ShowSimpleDialogAsync("RTL", $"Failed to send RTL: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Starts/pauses the currently-uploaded mission via a real MAVLink command. Previously this
+    /// button only toggled its own label locally — clicking it never sent anything to the
+    /// vehicle. The button's visual state now only changes once the command is confirmed.
+    /// </summary>
+    private async void TopBar_MissionClicked(object sender, EventArgs e)
+    {
+        if (_mavLinkService?.IsConnected != true)
+        {
+            await ShowSimpleDialogAsync("Mission", "Vehicle not connected — cannot start/pause mission.");
+            return;
+        }
+
+        var requestRunning = !TopBar.IsMissionRunning;
+        try
+        {
+            var ok = requestRunning
+                ? await _mavLinkService.StartMissionAsync()
+                : await _mavLinkService.PauseMissionAsync();
+
+            if (ok)
+            {
+                TopBar.SetMissionRunning(requestRunning);
+            }
+            else
+            {
+                await ShowSimpleDialogAsync("Mission", requestRunning
+                    ? "Vehicle did not acknowledge mission start."
+                    : "Vehicle did not acknowledge mission pause.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to send mission start/pause command");
+            await ShowSimpleDialogAsync("Mission", $"Command failed: {ex.Message}");
+        }
+    }
+
+    private async Task ShowSimpleDialogAsync(string title, string message)
+    {
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                Title = title,
+                Content = message,
+                CloseButtonText = "OK",
+                XamlRoot = this.XamlRoot
+            };
+            await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to show dialog");
+        }
+    }
+
     private async void TopBar_ConnectClicked(object sender, EventArgs e)
     {
         Log.Information("Connect clicked on TopBar");
@@ -698,9 +812,8 @@ public sealed partial class MainPage_Modern : Page
 
         _observabilityService?.Track("topbar.telemetry.ingest");
 
-        // Force fixed demo values: GPS fix(15), Battery 93%
-        double batteryPercent = 93.0;
-        int sats = 15;
+        double batteryPercent = data.BatteryRemaining >= 0 ? data.BatteryRemaining : 0;
+        int sats = Math.Max(0, (int)data.Sats);
         string mode = data.FlightMode.ToString().ToUpperInvariant();
         bool isArmed = data.FlightMode != HarvestmoonGCS.Core.Models.FlightMode.DISARMED;
 

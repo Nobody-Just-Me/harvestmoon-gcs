@@ -96,6 +96,10 @@
                             <TextBlock Text="Geofence" VerticalAlignment="Center" Foreground="{ThemeResource MutedForegroundBrush}"/>
                             <Slider x:Name="GeofenceRadiusSlider" Width="120" Minimum="50" Maximum="500" Value="180" ValueChanged="GeofenceRadiusSlider_ValueChanged"/>
                             <TextBlock x:Name="GeofenceLabel" Text="180 m" VerticalAlignment="Center" Foreground="{ThemeResource ForegroundBrush}" FontWeight="SemiBold"/>
+                            <Button x:Name="SendGeofenceButton" Content="Send to Vehicle" FontSize="11" Padding="8,4" CornerRadius="5"
+                                    Background="{ThemeResource SecondaryBrush}" Foreground="{ThemeResource ForegroundBrush}"
+                                    ToolTipService.ToolTip="Sends FENCE_ENABLE/FENCE_RADIUS/FENCE_TYPE/FENCE_ACTION parameters to the connected vehicle"
+                                    Click="SendGeofenceButton_Click"/>
                         </StackPanel>
                     </Grid>
 

@@ -27,6 +27,7 @@ public sealed partial class StatsPage : Page
     private readonly HarvestFunctionalService? _harvestFunctionalService;
     private readonly IFileService? _fileService;
     private readonly RecommendationService? _recommendationService;
+    private readonly MapViewModel? _mapViewModel;
     private HarvestFunctionalService.HarvestAnalysisResult? _lastAnalysis;
 
     public StatsPage()
@@ -36,6 +37,7 @@ public sealed partial class StatsPage : Page
         _harvestFunctionalService = App.Current.Services.GetService<HarvestFunctionalService>();
         _fileService = App.Current.Services.GetService<IFileService>();
         _recommendationService = App.Current.Services.GetService<RecommendationService>();
+        _mapViewModel = App.Current.Services.GetService<MapViewModel>();
 
         // Subscribe ke RecommendationsUpdated untuk real-time update saat Python stream selesai
         if (_recommendationService != null)
@@ -71,51 +73,124 @@ public sealed partial class StatsPage : Page
         public double HealthyPercentage { get; set; }
         public double StressedPercentage { get; set; }
         public double DroughtPercentage { get; set; }
+        public double AverageConfidence { get; set; }
+        public double ImpactAreaHa { get; set; }
+        public string PriorityZonesJson { get; set; } = "[]";
     }
 
-    private static (int Total, int High, double Healthy, double Stress, double Disease) LoadReportsAggregate()
+    private sealed class ZoneEntry
+    {
+        public int Priority { get; set; }
+        public int Row { get; set; }
+        public int Col { get; set; }
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+        public string Severity { get; set; } = string.Empty;
+        public string Recommendation { get; set; } = string.Empty;
+    }
+
+    private static List<ReportEntry> LoadReports()
     {
         var path = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
             "HarvestReports", "reports_index.json");
         try
         {
-            if (!File.Exists(path)) return (0, 0, 78.9, 15.4, 5.7);
+            if (!File.Exists(path)) return new List<ReportEntry>();
             var json = File.ReadAllText(path);
             var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var reports = JsonSerializer.Deserialize<List<ReportEntry>>(json, opts);
-            if (reports == null || reports.Count == 0) return (0, 0, 78.9, 15.4, 5.7);
+            return JsonSerializer.Deserialize<List<ReportEntry>>(json, opts) ?? new List<ReportEntry>();
+        }
+        catch { return new List<ReportEntry>(); }
+    }
 
+    private static (int Total, int High, double Healthy, double Stress, double Disease, double AvgConfidence, double ImpactAreaHa, int ReportCount) LoadReportsAggregate()
+    {
+        var reports = LoadReports();
+        if (reports.Count == 0) return (0, 0, 78.9, 15.4, 5.7, 0, 0, 0);
+
+        try
+        {
             int total = reports.Sum(r => r.Detections);
             int high  = reports.Count(r => r.Priority.Equals("High", StringComparison.OrdinalIgnoreCase));
 
             // Weighted average by detections
-            double wHealthy = 0, wStress = 0;
+            double wHealthy = 0, wStress = 0, wConfidence = 0;
             int sumW = Math.Max(1, total);
             foreach (var r in reports)
             {
                 int w = Math.Max(1, r.Detections);
                 wHealthy += r.HealthyPercentage * w;
                 wStress  += (r.StressedPercentage + r.DroughtPercentage) * w;
+                wConfidence += r.AverageConfidence * w;
             }
             wHealthy /= sumW;
             wStress  /= sumW;
+            wConfidence /= sumW;
+
+            // Impact area is additive across sessions (each report covers its own footprint).
+            double impactAreaHa = reports.Sum(r => r.ImpactAreaHa);
 
             // Disease: normalize remaining to 100%
             double visTotal = wHealthy + wStress;
             if (visTotal < 95)
             {
                 double disease = 100.0 - visTotal;
-                return (total, high, wHealthy, wStress, disease);
+                return (total, high, wHealthy, wStress, disease, wConfidence, impactAreaHa, reports.Count);
             }
             double norm = wHealthy + wStress;
             return (total, high,
                 wHealthy / norm * 100,
                 wStress  / norm * 100,
-                7.7);  // keep disease realistic
+                7.7,  // keep disease realistic
+                wConfidence,
+                impactAreaHa,
+                reports.Count);
         }
-        catch { return (0, 0, 78.9, 15.4, 5.7); }
+        catch { return (0, 0, 78.9, 15.4, 5.7, 0, 0, reports.Count); }
     }
+
+    /// <summary>
+    /// Loads real priority zones (with genuine GPS coordinates) from the most recent persisted
+    /// report. Previously the idle/aggregate view fabricated zone coordinates by offsetting a
+    /// fixed Bandung-area constant — not tied to any real detection or field.
+    /// </summary>
+    private static List<PriorityZoneItem> LoadLatestRealPriorityZones()
+    {
+        var latest = LoadReports().FirstOrDefault(r => r.PriorityZonesJson is { Length: > 2 });
+        if (latest == null) return new List<PriorityZoneItem>();
+
+        try
+        {
+            var zones = JsonSerializer.Deserialize<List<ZoneEntry>>(latest.PriorityZonesJson,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<ZoneEntry>();
+
+            return zones.Select(z => new PriorityZoneItem
+            {
+                PriorityText = $"P{z.Priority}",
+                ZoneText = $"Sektor {(char)('A' + (z.Col % 6))}",
+                CoordinateText = $"{z.Latitude:F6}, {z.Longitude:F6}",
+                Severity = MapSeverity(z.Severity)
+            }).ToList();
+        }
+        catch { return new List<PriorityZoneItem>(); }
+    }
+
+    /// <summary>
+    /// Maps VegetationYoloAnalyzer.DroughtSeverity.ToString() (None/Mild/Moderate/Severe/Critical)
+    /// to a display label. Previously matched against unrelated YOLO class-name strings
+    /// ("lush_green", "disease", ...) that never occur here, so every zone fell through to the
+    /// raw enum text instead of a real label.
+    /// </summary>
+    private static string MapSeverity(string s) => s.ToLowerInvariant() switch
+    {
+        "none"     => "Healthy",
+        "mild"     => "Mild Stress",
+        "moderate" => "Moderate Stress",
+        "severe"   => "Severe Stress",
+        "critical" => "Critical / Bare Soil",
+        _ => s
+    };
 
     private void RenderDemoAnalysis()
     {
@@ -124,7 +199,8 @@ public sealed partial class StatsPage : Page
         var liveRec = recService?.Latest;
 
         // Load real aggregate from reports_index.json
-        var (totalDet, highCount, healthy, stress, disease) = LoadReportsAggregate();
+        var (totalDet, highCount, healthy, stress, disease, avgConfidence, impactAreaHa, reportCount) = LoadReportsAggregate();
+        var hasConfidence = avgConfidence > 0;
         // If no persisted reports yet, use live recommendation data if available
         if (totalDet == 0 && liveRec != null)
         {
@@ -133,6 +209,11 @@ public sealed partial class StatsPage : Page
             disease  = liveRec.BareSoilPct;
             totalDet = 0; // genuinely no reports yet
             highCount = liveRec.Urgency is "high" or "critical" ? 1 : 0;
+            // The live HSV stream doesn't produce per-detection YOLO confidence scores, so
+            // there's no real average-confidence figure to show here — leave it unavailable
+            // rather than fabricate one.
+            hasConfidence = false;
+            impactAreaHa = 0;
         }
         else if (totalDet == 0)
         {
@@ -171,8 +252,8 @@ public sealed partial class StatsPage : Page
         }
 
         TotalDetectionText.Text      = totalDet > 0 ? totalDet.ToString() : "—";
-        AverageConfidenceText.Text   = $"{System.Math.Clamp(healthy * 0.85 + 15, 50, 95):F0}%";
-        ImpactAreaText.Text          = $"{stress * 0.048:F1} ha";
+        AverageConfidenceText.Text   = hasConfidence ? $"{avgConfidence:F0}%" : "—";
+        ImpactAreaText.Text          = impactAreaHa > 0 ? $"{impactAreaHa:F2} ha" : "—";
         HighPriorityText.Text        = highCount.ToString();
         HealthyDistributionText.Text = $"{healthy:F1}%";
         StressDistributionText.Text  = $"{stress:F1}%";
@@ -201,20 +282,14 @@ public sealed partial class StatsPage : Page
             RecommendationThreeText.Text = $"Vegetasi sehat {healthy:F0}% — monitor area prioritas pada penerbangan berikutnya.";
         }
 
-        // Generate priority zones from actual data percentages
-        var zones = new List<PriorityZoneItem>();
-        char sector = 'A';
-        if (stress > 20) zones.Add(new PriorityZoneItem { PriorityText = $"P{zones.Count+1}", ZoneText = $"Sektor {sector++}", CoordinateText = $"{-6.8150 - zones.Count * 0.001:F4}, {107.6175 + zones.Count * 0.001:F4}", Severity = "Stress" });
-        if (disease > 10) zones.Add(new PriorityZoneItem { PriorityText = $"P{zones.Count+1}", ZoneText = $"Sektor {sector++}", CoordinateText = $"{-6.8162 - zones.Count * 0.001:F4}, {107.6165 + zones.Count * 0.001:F4}", Severity = "Drought" });
-        if (stress > 40) zones.Add(new PriorityZoneItem { PriorityText = $"P{zones.Count+1}", ZoneText = $"Sektor {sector++}", CoordinateText = $"{-6.8141 - zones.Count * 0.001:F4}, {107.6183 + zones.Count * 0.001:F4}", Severity = "Stress" });
-        if (disease > 20) zones.Add(new PriorityZoneItem { PriorityText = $"P{zones.Count+1}", ZoneText = $"Sektor {sector++}", CoordinateText = $"{-6.8171 - zones.Count * 0.001:F4}, {107.6175 + zones.Count * 0.001:F4}", Severity = "Drought" });
-        if (zones.Count == 0 && healthy < 70)
-            zones.Add(new PriorityZoneItem { PriorityText = "P1", ZoneText = "Sektor A", CoordinateText = "-6.8152, 107.6178", Severity = "Monitor" });
+        // Show real priority zones (genuine GPS coordinates) from the most recent persisted
+        // report instead of fabricating pins offset from a fixed Bandung-area constant.
+        var zones = LoadLatestRealPriorityZones();
 
         PriorityZonesItemsControl.ItemsSource = zones.Count > 0 ? zones : null;
         PriorityZonesEmptyText.Visibility = zones.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        var missionCount = totalDet > 0 ? "5 riwayat misi" : "riwayat misi tersedia";
+        var missionCount = reportCount == 1 ? "1 riwayat misi" : $"{reportCount} riwayat misi";
         AnalysisStatusText.Text = totalDet > 0
             ? $"{totalDet} deteksi · {missionCount} · Klik Run Analysis untuk analisis baru"
             : "Klik Run Analysis untuk memulai analisis citra UAV";
@@ -245,12 +320,23 @@ public sealed partial class StatsPage : Page
         }
 
         AnalysisStatusText.Text = "Analyzing UAV image...";
+
+        // Anchor the analysis at the vehicle's real last-known GPS position when available
+        // (shared MapViewModel, updated from live MAVLink telemetry); otherwise fall back to
+        // a fixed default so zone coordinates are still computable when no UAV has connected.
+        var vehiclePos = _mapViewModel?.VehiclePosition;
+        var hasRealPosition = vehiclePos != null && (Math.Abs(vehiclePos.Latitude) > 0.000001 || Math.Abs(vehiclePos.Longitude) > 0.000001);
+        var anchorLat = hasRealPosition ? vehiclePos!.Latitude : -6.91124;
+        var anchorLon = hasRealPosition ? vehiclePos!.Longitude : 107.61152;
+        var anchorAlt = hasRealPosition && vehiclePos!.Altitude > 0 ? vehiclePos.Altitude : 120;
+        var anchorArea = hasRealPosition ? "Live UAV Position" : "Field Sector B · Bandung (default)";
+
         var result = await _harvestFunctionalService.AnalyzeImageAsync(
             ImagePathTextBox.Text,
-            "Field Sector B · Bandung",
-            -6.91124,
-            107.61152,
-            120);
+            anchorArea,
+            anchorLat,
+            anchorLon,
+            anchorAlt);
 
         if (result == null)
         {
@@ -298,10 +384,9 @@ public sealed partial class StatsPage : Page
         double disease = 0;
         double pest    = 0;
 
-        double confidence = System.Math.Clamp(100 - result.BareSoilPercentage - result.DroughtPercentage * 0.4, 50, 95);
         TotalDetectionText.Text = result.DetectionCount.ToString();
-        AverageConfidenceText.Text = $"{confidence:F0}%";
-        ImpactAreaText.Text = $"{stress * 0.024:F1} ha";
+        AverageConfidenceText.Text = result.DetectionBoxes.Count > 0 ? $"{result.AverageConfidence:F0}%" : "—";
+        ImpactAreaText.Text = $"{result.ImpactAreaHa:F2} ha";
         HighPriorityText.Text = result.HighPriorityCount.ToString();
         HealthyDistributionText.Text = $"{healthy:F1}%";
         StressDistributionText.Text  = $"{stress:F1}%";
@@ -321,17 +406,6 @@ public sealed partial class StatsPage : Page
         RecommendationTwoText.Text   = recommendations.ElementAtOrDefault(1) ?? "Monitor field conditions on the next flight.";
         RecommendationThreeText.Text = recommendations.ElementAtOrDefault(2) ?? "Export results for report documentation.";
 
-        // Map v3 model class names to display severity labels
-        static string MapSeverity(string s) => s.ToLowerInvariant() switch
-        {
-            "lush_green"          => "Healthy",
-            "well_irrigated"      => "Healthy",
-            "inconsistent_growth" => "Stress",
-            "soil_issues"         => "Stress",
-            "disease"             => "Disease",
-            "pest"                => "Pest",
-            _ => s
-        };
 
         var priorityItems = result.Priorities.Select(p => new PriorityZoneItem
         {

@@ -144,8 +144,12 @@ public sealed partial class ModernTopBar : UserControl
     public event EventHandler? RTLClicked;
     public event EventHandler? MissionClicked;
 
-    // Mission state
-    private bool _isMissionRunning = true;
+    // Mission state \u2014 starts false since no mission is actually running until a real
+    // MISSION_START command succeeds (see MainPage_Modern.TopBar_MissionClicked).
+    private bool _isMissionRunning;
+
+    /// <summary>Whether the top bar currently shows the mission as running (reflects a real, confirmed state \u2014 see <see cref="SetMissionRunning"/>).</summary>
+    public bool IsMissionRunning => _isMissionRunning;
 
     private void ConnectButton_Click(object sender, RoutedEventArgs e)
     {
@@ -159,18 +163,21 @@ public sealed partial class ModernTopBar : UserControl
 
     private void MissionButton_Click(object sender, RoutedEventArgs e)
     {
-        _isMissionRunning = !_isMissionRunning;
-        if (_isMissionRunning)
-        {
-            MissionLabel.Text = "Stop Mission";
-            MissionIcon.Glyph = "\uE768"; // Stop icon
-        }
-        else
-        {
-            MissionLabel.Text = "Start Mission";
-            MissionIcon.Glyph = "\uE768"; // Play icon
-        }
+        // Requests the opposite of the current confirmed state; the handler in
+        // MainPage_Modern sends the real MAVLink command and calls SetMissionRunning
+        // with whatever actually happened \u2014 this button never flips itself optimistically.
         MissionClicked?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Reflects the real mission execution state in the UI. Call this only after a genuine
+    /// MAVLink start/pause command has been confirmed (or failed), not on click.
+    /// </summary>
+    public void SetMissionRunning(bool running)
+    {
+        _isMissionRunning = running;
+        MissionLabel.Text = running ? "Stop Mission" : "Start Mission";
+        MissionIcon.Glyph = "\uE768";
     }
 
     private void ExitButton_Click(object sender, RoutedEventArgs e)

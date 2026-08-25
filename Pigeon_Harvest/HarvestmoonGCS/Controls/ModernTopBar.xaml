@@ -171,7 +171,7 @@
                         Click="MissionButton_Click">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon x:Name="MissionIcon" Glyph="&#xE768;" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="MissionLabel" Text="Stop Mission" FontSize="12" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="MissionLabel" Text="Start Mission" FontSize="12" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
 

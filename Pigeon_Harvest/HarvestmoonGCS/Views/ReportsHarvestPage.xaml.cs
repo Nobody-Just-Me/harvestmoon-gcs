@@ -70,6 +70,17 @@ public sealed partial class ReportsHarvestPage : Page
         _ = LoadPersistedReportsAsync();
     }
 
+    /// <summary>
+    /// Reloads mission history from disk. Pages are preloaded/cached at app startup, so without
+    /// re-fetching on each activation this page kept showing whatever reports existed when the
+    /// app launched — a mission started later (e.g. a live Dashboard session) never appeared
+    /// until the app was restarted.
+    /// </summary>
+    public void OnPageActivated()
+    {
+        _ = LoadPersistedReportsAsync();
+    }
+
     private void OnPageLoaded(object sender, RoutedEventArgs e)
     {
 #if __ANDROID__
