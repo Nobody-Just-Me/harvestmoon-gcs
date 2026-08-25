@@ -140,14 +140,13 @@
                                             <TextBlock Text="Start Demo"/>
                                         </StackPanel>
                                     </Button>
-                                    <Button x:Name="StartLiveButton" Padding="10,5" Click="StartLiveButton_Click"
-                                            Background="#1565C0" Foreground="White" CornerRadius="6"
-                                            ToolTipService.ToolTip="Start Live: hubungkan UAV dan mulai deteksi kamera real">
-                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <FontIcon Glyph="&#xE714;" FontSize="11" Foreground="White"/>
-                                            <TextBlock Text="Start Live" Foreground="White"/>
+                                    <Border x:Name="LiveViaConnectionPill" CornerRadius="6" Padding="8,3" Background="Transparent" BorderBrush="#1565C0" BorderThickness="1"
+                                            ToolTipService.ToolTip="Live detection starts automatically once the UAV is connected via Connect in the top bar">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <FontIcon Glyph="&#xE714;" FontSize="10" Foreground="#1565C0"/>
+                                            <TextBlock x:Name="LiveViaConnectionText" Text="Live via Connect" FontSize="10" Foreground="#1565C0" FontWeight="SemiBold"/>
                                         </StackPanel>
-                                    </Button>
+                                    </Border>
                                     <Border x:Name="AiStatusPill" Style="{StaticResource PillSuccessStyle}">
                                         <TextBlock x:Name="AiStatusText" Text="AI ON" FontSize="11" Foreground="#065F46" FontWeight="SemiBold"/>
                                     </Border>

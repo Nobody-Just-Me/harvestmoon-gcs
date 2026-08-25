@@ -324,6 +324,19 @@ public sealed partial class DashboardPage : Page
             RewireTelemetry(_flightViewModel?.Telemetry);
             ScheduleDashboardRefresh();
         }
+
+        if (e.PropertyName == nameof(FlightViewModel.IsConnected))
+        {
+            var connected = _flightViewModel?.IsConnected == true;
+            if (connected && !_isLiveRunning && !_isDemoRunning)
+            {
+                _ = StartLiveModeAsync();
+            }
+            else if (!connected && _isLiveRunning)
+            {
+                _ = StopLiveModeAsync();
+            }
+        }
     }
 
     private void OnTelemetryPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -2237,15 +2250,12 @@ public sealed partial class DashboardPage : Page
         });
     }
 
-    private async void StartLiveButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_isLiveRunning) { await StopLiveModeAsync(); return; }
-        await StartLiveModeAsync();
-    }
-
     /// <summary>
-    /// Live mode: mulai HSV detection stream dari kamera atau RTSP real.
-    /// Terhubung ke MAVLink jika belum connect, lalu start Python stream.
+    /// Live mode now has no separate manual entry point — it is driven entirely by the
+    /// dashboard's actual UAV connection state (top bar Connect/Disconnect). As soon as
+    /// <see cref="FlightViewModel.IsConnected"/> becomes true, the local camera's real HSV/YOLO
+    /// detection stream starts automatically; disconnecting stops it. This removes the
+    /// duplicate "Start Live" dialog that used to ask for its own separate MAVLink address.
     /// </summary>
     private async Task StartLiveModeAsync()
     {
@@ -2253,98 +2263,18 @@ public sealed partial class DashboardPage : Page
 
         try
         {
-            // Hentikan demo jika sedang berjalan
             if (_isDemoRunning) StopDemoMode();
 
-            // Tampilkan dialog untuk memilih source kamera
-            var sourceDialog = new ContentDialog
-            {
-                Title = "Start Live Detection",
-                PrimaryButtonText = "Start",
-                SecondaryButtonText = "Batal",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = this.XamlRoot,
-            };
-
-            var panel = new StackPanel { Spacing = 10, Padding = new Thickness(0, 8, 0, 0) };
-            panel.Children.Add(new TextBlock
-            {
-                Text = "Source kamera (contoh: 0 untuk webcam, rtsp://192.168.1.1/live untuk RTSP, atau path video file)",
-                TextWrapping = TextWrapping.Wrap, FontSize = 12
-            });
-            var sourceBox = new TextBox
-            {
-                PlaceholderText = "0  |  rtsp://...  |  /path/to/video.mp4",
-                Text = "0",
-                Margin = new Thickness(0, 4, 0, 0)
-            };
-            panel.Children.Add(sourceBox);
-
-            panel.Children.Add(new TextBlock
-            {
-                Text = "MAVLink (opsional — kosongkan jika tidak ada drone)",
-                FontSize = 11, Foreground = new SolidColorBrush(Color.FromArgb(255, 100, 100, 100))
-            });
-            var mavlinkBox = new TextBox
-            {
-                PlaceholderText = "tcp:127.0.0.1:5760  |  udp:14550  |  /dev/ttyUSB0",
-                Margin = new Thickness(0, 2, 0, 0)
-            };
-            panel.Children.Add(mavlinkBox);
-            sourceDialog.Content = panel;
-
-            var result = await sourceDialog.ShowAsync();
-            if (result != ContentDialogResult.Primary) return;
-
-            var cameraSource = sourceBox.Text?.Trim();
-            if (string.IsNullOrWhiteSpace(cameraSource)) cameraSource = "0";
-            var mavlinkAddr = mavlinkBox.Text?.Trim();
-
-            // Tampilkan UI "connecting..." — set _isLiveRunning SETELAH stream berhasil
             UpdateModeBadge("LIVE");
-            StartLiveButton.Content = new StackPanel
-            {
-                Orientation = Orientation.Horizontal, Spacing = 6,
-                Children =
-                {
-                    new FontIcon { Glyph = "", FontSize = 11, Foreground = new SolidColorBrush(Colors.White) },
-                    new TextBlock { Text = "Stop Live", Foreground = new SolidColorBrush(Colors.White) }
-                }
-            };
-            (StartLiveButton as Button)!.Background = new SolidColorBrush(Color.FromArgb(255, 183, 28, 28));
+            if (LiveViaConnectionText != null) LiveViaConnectionText.Text = "Live";
+            if (LiveViaConnectionPill != null) LiveViaConnectionPill.Background = new SolidColorBrush(Color.FromArgb(255, 46, 125, 50));
 
-            // 1. Connect MAVLink jika ada address
-            if (!string.IsNullOrWhiteSpace(mavlinkAddr) && _mavLinkService != null)
-            {
-                try
-                {
-                    var config = ParseMavLinkAddress(mavlinkAddr);
-                    var connected = await _mavLinkService.ConnectAsync(config);
-                    if (connected)
-                    {
-                        // Fix: update FlightViewModel setelah MAVLink connect berhasil
-                        if (_flightViewModel != null) _flightViewModel.IsConnected = true;
-                        _timelineService?.Add("connected", $"MAVLink terhubung: {mavlinkAddr}", "success");
-                    }
-                    else
-                    {
-                        _timelineService?.Add("warning", $"MAVLink gagal: {mavlinkAddr}", "warning");
-                        AddAlertRow($"MAVLink gagal terhubung: {mavlinkAddr}", "warning");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _timelineService?.Add("warning", $"MAVLink gagal: {ex.Message}", "warning");
-                    AddAlertRow($"MAVLink gagal: {ex.Message}", "warning");
-                }
-            }
+            const string cameraSource = "0";
 
-            // 2. Start HSV detection stream — gunakan ICameraService interface, bukan type check
             if (_cameraService != null)
             {
-                // Resolve model path jika PythonCameraService tersedia
                 string? modelPath = null;
-                if (_cameraService is PythonCameraService pySvc)
+                if (_cameraService is PythonCameraService)
                     modelPath = PythonCameraService.ResolveHealthModelPath();
 
                 DashboardVideoStream?.ShowStatus("Memulai deteksi live...", true);
@@ -2357,7 +2287,7 @@ public sealed partial class DashboardPage : Page
                 );
                 if (!ok)
                 {
-                    AddAlertRow("Gagal memulai stream — cek source kamera", "error");
+                    AddAlertRow("Gagal memulai stream — cek kamera lokal", "error");
                     _timelineService?.Add("error", "Camera stream gagal dimulai", "error");
                     await StopLiveModeAsync();
                     return;
@@ -2365,14 +2295,11 @@ public sealed partial class DashboardPage : Page
                 _timelineService?.Add("camera", $"Live stream: {cameraSource}", "success");
             }
 
-            // Fix: set _isLiveRunning SETELAH stream berhasil dimulai
             _isLiveRunning = true;
 
-            // 3. AI on
             _aiOn = true;
             if (YoloToggleSwitch != null) YoloToggleSwitch.IsOn = true;
 
-            // 4. Tampilkan metadata panel
             ReadinessChecklistPanel.Visibility = Visibility.Visible;
             MissionMetadataPanel.Visibility = Visibility.Visible;
             if (!_missionTimerStarted)
@@ -2385,7 +2312,7 @@ public sealed partial class DashboardPage : Page
             _missionTimer.Start();
 
             UpdateAlertCenter(_flightViewModel?.Telemetry, _mavLinkService?.IsConnected == true);
-            _timelineService?.Add("armed", $"Live mode aktif · source: {cameraSource}", "success");
+            _timelineService?.Add("armed", $"Live mode aktif (UAV terhubung) · source: {cameraSource}", "success");
             RenderIncidentTimeline();
         }
         catch (Exception ex)
@@ -2396,80 +2323,28 @@ public sealed partial class DashboardPage : Page
         }
     }
 
+    /// <summary>
+    /// Stops only the camera/detection stream. Does NOT touch the MAVLink connection —
+    /// disconnecting the UAV is exclusively a top-bar Connect/Disconnect action now.
+    /// </summary>
     private async Task StopLiveModeAsync()
     {
         _isLiveRunning = false;
         UpdateModeBadge("STANDBY");
 
-        // Reset button
-        if (StartLiveButton != null)
-        {
-            StartLiveButton.Content = new StackPanel
-            {
-                Orientation = Orientation.Horizontal, Spacing = 6,
-                Children =
-                {
-                    new FontIcon { Glyph = "", FontSize = 11, Foreground = new SolidColorBrush(Colors.White) },
-                    new TextBlock { Text = "Start Live", Foreground = new SolidColorBrush(Colors.White) }
-                }
-            };
-            (StartLiveButton as Button)!.Background = new SolidColorBrush(Color.FromArgb(255, 21, 101, 192));
-        }
+        if (LiveViaConnectionText != null) LiveViaConnectionText.Text = "Live via Connect";
+        if (LiveViaConnectionPill != null) LiveViaConnectionPill.Background = new SolidColorBrush(Colors.Transparent);
 
-        // H6: Stop kamera + disconnect MAVLink + reset FlightViewModel
         if (_cameraService != null) await _cameraService.StopCameraAsync();
-
-        if (_mavLinkService != null && _mavLinkService.IsConnected)
-        {
-            await _mavLinkService.DisconnectAsync();
-        }
-
-        if (_flightViewModel != null) _flightViewModel.IsConnected = false;
 
         ReadinessChecklistPanel.Visibility = Visibility.Collapsed;
         MissionMetadataPanel.Visibility = Visibility.Collapsed;
         _missionTimer.Stop();
         _missionTimerStarted = false;
-        _timelineService?.Add("disconnected", "Live mode dihentikan", "warning");
-        DashboardVideoStream?.ShowStatus("Live mode stopped", false);
+        _timelineService?.Add("disconnected", "Live mode dihentikan (UAV terputus)", "warning");
+        DashboardVideoStream?.ShowStatus("Kamera standby · hubungkan UAV untuk mulai survey", false);
         UpdateAlertCenter(_flightViewModel?.Telemetry, false);
         RenderIncidentTimeline();
-    }
-
-    /// <summary>
-    /// Parse MAVLink address string menjadi ConnectionConfig.
-    /// Format: tcp:host:port | udp:port | serial:/dev/... | /dev/...
-    /// </summary>
-    private static HarvestmoonGCS.Core.Services.ConnectionConfig ParseMavLinkAddress(string addr)
-    {
-        addr = addr.Trim();
-        if (addr.StartsWith("tcp:", StringComparison.OrdinalIgnoreCase))
-        {
-            var parts = addr.Substring(4).Split(':');
-            return new HarvestmoonGCS.Core.Services.ConnectionConfig
-            {
-                Type    = HarvestmoonGCS.Core.Models.ConnectionType.TCP,
-                Address = parts.Length > 0 ? parts[0] : "127.0.0.1",
-                Port    = parts.Length > 1 && int.TryParse(parts[1], out var p) ? p : 5760,
-            };
-        }
-        if (addr.StartsWith("udp:", StringComparison.OrdinalIgnoreCase))
-        {
-            var portStr = addr.Substring(4).Split(':').Last();
-            return new HarvestmoonGCS.Core.Services.ConnectionConfig
-            {
-                Type = HarvestmoonGCS.Core.Models.ConnectionType.UDP,
-                Port = int.TryParse(portStr, out var p) ? p : 14550,
-            };
-        }
-        // Default: Serial
-        return new HarvestmoonGCS.Core.Services.ConnectionConfig
-        {
-            Type       = HarvestmoonGCS.Core.Models.ConnectionType.Serial,
-            SerialPort = addr.StartsWith("serial:", StringComparison.OrdinalIgnoreCase)
-                ? addr.Substring(7) : addr,
-            BaudRate   = 57600,
-        };
     }
 
     private static string? ResolveDetectedVideoPath()
