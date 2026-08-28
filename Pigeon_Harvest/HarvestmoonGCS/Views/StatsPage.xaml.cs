@@ -331,12 +331,26 @@ public sealed partial class StatsPage : Page
         var anchorAlt = hasRealPosition && vehiclePos!.Altitude > 0 ? vehiclePos.Altitude : 120;
         var anchorArea = hasRealPosition ? "Live UAV Position" : "Field Sector B · Bandung (default)";
 
-        var result = await _harvestFunctionalService.AnalyzeImageAsync(
-            ImagePathTextBox.Text,
-            anchorArea,
-            anchorLat,
-            anchorLon,
-            anchorAlt);
+        HarvestFunctionalService.HarvestAnalysisResult? result;
+        try
+        {
+            // Previously uncaught: if AnalyzeImageAsync throws (bad/corrupt image file, or a
+            // missing native OpenCV dependency), this async void handler had no try/catch, so
+            // "Analyzing UAV image..." stayed on screen forever with no error and no way to
+            // retry short of navigating away — the presenter would have no idea what happened.
+            result = await _harvestFunctionalService.AnalyzeImageAsync(
+                ImagePathTextBox.Text,
+                anchorArea,
+                anchorLat,
+                anchorLon,
+                anchorAlt);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "[StatsPage] RunAnalysisButton_Click failed");
+            AnalysisStatusText.Text = $"Analysis failed: {ex.Message}";
+            return;
+        }
 
         if (result == null)
         {
