@@ -14,6 +14,7 @@ public sealed partial class EdgeModePage : Page
 {
     private readonly HarvestFunctionalService? _harvestService;
     private readonly IFileService? _fileService;
+    private readonly IMavLinkService? _mavLinkService;
     private DispatcherTimer? _refreshTimer;
     private HarvestFunctionalService.YoloBenchmarkResult? _lastBenchmark;
     private bool _isBenchmarking;
@@ -23,6 +24,7 @@ public sealed partial class EdgeModePage : Page
         this.InitializeComponent();
         _harvestService = App.Current.Services.GetService<HarvestFunctionalService>();
         _fileService = App.Current.Services.GetService<IFileService>();
+        _mavLinkService = App.Current.Services.GetService<IMavLinkService>();
         this.Loaded += EdgeModePage_Loaded;
         this.Unloaded += EdgeModePage_Unloaded;
     }
@@ -33,7 +35,11 @@ public sealed partial class EdgeModePage : Page
         SyncTogglesFromService();
 
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        _refreshTimer.Tick += (_, _) => RefreshPerformanceStats();
+        _refreshTimer.Tick += (_, _) =>
+        {
+            RefreshPerformanceStats();
+            RefreshRuntimeInfo();
+        };
         _refreshTimer.Start();
     }
 
@@ -80,8 +86,20 @@ public sealed partial class EdgeModePage : Page
             yoloReady ? Windows.UI.Color.FromArgb(0xFF, 0x22, 0xC5, 0x5E)
                       : Windows.UI.Color.FromArgb(0xFF, 0xEF, 0x44, 0x44));
 
-        // Transport status from settings
-        TransportStatusText.Text = "UDP · 14550 · Listening";
+        // Real transport status — was previously a hardcoded "UDP · 14550 · Listening" regardless
+        // of how the vehicle is actually connected, which would visibly contradict a Serial/USB
+        // connection (e.g. the static demo unit at a booth).
+        if (_mavLinkService != null && _mavLinkService.IsConnected)
+        {
+            var connStr = _mavLinkService.ConnectionString;
+            TransportStatusText.Text = string.IsNullOrWhiteSpace(connStr)
+                ? $"{_mavLinkService.ConnectionType} · Connected"
+                : $"{connStr} · Connected";
+        }
+        else
+        {
+            TransportStatusText.Text = "Not connected";
+        }
     }
 
     private void RefreshPerformanceStats()

@@ -50,6 +50,13 @@ public partial class App : Application
 
         this.InitializeComponent();
         Services = ConfigureServices();
+
+        // GlobalExceptionHandler was previously implemented but never instantiated anywhere,
+        // so it never actually subscribed to Application.Current.UnhandledException — any
+        // unhandled exception on the UI thread (e.g. a ContentDialog.ShowAsync() call while
+        // another dialog is already open) crashed the whole app instead of being caught. This
+        // must run as early as possible so it is subscribed before any page loads.
+        Services.GetRequiredService<GlobalExceptionHandler>();
     }
 
     public new static App Current => (App)Application.Current;
@@ -88,6 +95,7 @@ public partial class App : Application
         services.AddSingleton<PageCacheManager>();
         services.AddSingleton<Serilog.ILogger>(_ => Log.Logger);
         services.AddSingleton<ILoggingService, SerilogLoggingService>();
+        services.AddSingleton<GlobalExceptionHandler>();
 
         // CRITICAL: Gunakan HarvestmoonGCS.Services.MavLinkService (bukan Core) karena
         // versi ini memiliki sub-components lengkap: ConnectionManager, HeartbeatManager,

@@ -597,6 +597,12 @@ public sealed partial class MainPage_Modern : Page
         if (page is AISettingsPage aiSettingsPage)
         {
             aiSettingsPage.OnPageActivated();
+            return;
+        }
+
+        if (page is SettingsPage settingsPage)
+        {
+            settingsPage.OnPageActivated();
         }
     }
 

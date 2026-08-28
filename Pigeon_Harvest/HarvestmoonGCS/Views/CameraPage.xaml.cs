@@ -707,27 +707,59 @@ public sealed partial class CameraPage : Page
             minConf: _minConf);
     }
 
+    // ContentDialog.ShowAsync() throws InvalidOperationException if another dialog on this
+    // XamlRoot is already open — a real risk here since a flaky RTSP/camera source can fire
+    // ConnectionError and a recording error in quick succession. Guard against overlapping calls
+    // instead of relying solely on GlobalExceptionHandler to catch the crash after the fact.
+    private bool _isDialogShowing;
+
     private async void ShowError(string message)
     {
-        var dialog = new ContentDialog
+        if (_isDialogShowing) return;
+        _isDialogShowing = true;
+        try
         {
-            Title = "Error",
-            Content = message,
-            CloseButtonText = "OK",
-            XamlRoot = this.XamlRoot
-        };
-        await dialog.ShowAsync();
+            var dialog = new ContentDialog
+            {
+                Title = "Error",
+                Content = message,
+                CloseButtonText = "OK",
+                XamlRoot = this.XamlRoot
+            };
+            await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[CameraPage] ShowError failed");
+        }
+        finally
+        {
+            _isDialogShowing = false;
+        }
     }
 
     private async void ShowInfo(string message)
     {
-        var dialog = new ContentDialog
+        if (_isDialogShowing) return;
+        _isDialogShowing = true;
+        try
         {
-            Title = "Info",
-            Content = message,
-            CloseButtonText = "OK",
-            XamlRoot = this.XamlRoot
-        };
-        await dialog.ShowAsync();
+            var dialog = new ContentDialog
+            {
+                Title = "Info",
+                Content = message,
+                CloseButtonText = "OK",
+                XamlRoot = this.XamlRoot
+            };
+            await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[CameraPage] ShowInfo failed");
+        }
+        finally
+        {
+            _isDialogShowing = false;
+        }
     }
 }

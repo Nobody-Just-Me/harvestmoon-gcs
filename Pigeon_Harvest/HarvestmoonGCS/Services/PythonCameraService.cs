@@ -564,7 +564,14 @@ public class PythonCameraService : ICameraService
                     }
                     else if (frameData.TryGetProperty("error", out var error))
                     {
-                        Serilog.Log.Error($"[PythonCameraService] Python error: {error.GetString()}");
+                        // Previously this only logged and broke the loop — StartCameraAsync/
+                        // StartClassifyStreamAsync already returned true optimistically as soon
+                        // as the Python process launched, so a real failure here (bad RTSP URL,
+                        // camera unplugged, etc.) surfaced as nothing more than a silent revert
+                        // to "Start Camera" once the loop ended, with no on-screen explanation.
+                        var errMsg = error.GetString() ?? "Unknown camera error";
+                        Serilog.Log.Error($"[PythonCameraService] Python error: {errMsg}");
+                        ConnectionError?.Invoke(this, errMsg);
                         break;
                     }
                 }
