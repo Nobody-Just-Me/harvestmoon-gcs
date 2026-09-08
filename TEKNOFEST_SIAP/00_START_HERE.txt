@@ -42,24 +42,21 @@ TEKNOFEST_SIAP/
 | `MANUAL_BOOK.docx` | Cara menggunakan sistem, troubleshooting |
 | `PANDUAN_POSTER.docx` | Panduan bikin poster untuk booth |
 
-### 2. PENTING — Ganti Video Demo dengan Sawah Asli
+### 2. STATUS VIDEO DEMO — SUDAH MENGGUNAKAN SAWAH ASLI (SIAP DEMO)
 
-Video di `demo_video/` saat ini adalah **video sintetis** (frame warna polos) untuk keperluan tes. Di depan juri, kamu harus pakai **video sawah asli** dari drone.
+Video demo di `demo_video/` **SUDAH DIGANTI DENGAN VIDEO SAWAH ASLI UAV** (hasil inferensi pipeline AI Fusion HSV + YOLOv8 ONNX dari video `15d.mp4` dan `YDX_burned.mp4`):
+- `stream_v7c_final.mp4` (2.7 MB, 15 FPS) — Sawah 15 hari setelah tanam, anotasi lengkap 4 kelas (Lush Green, Inconsistent Growth, Drought / Severe Stress, Bare Soil / Gap) & nilai FHI dinamis.
+- `YDXJ_fused_only_detected.mp4` (3.9 MB, 10 FPS) — Area sawah dengan variasi vegetasi dan bare soil.
 
-Jika kamu punya rekaman sawah asli (SD card drone, HP, flash disk):
-
+Jika ingin me-render ulang dengan rekaman sawah baru:
 ```bash
-# 1. Copy video asli ke folder ini, misalnya nama video_asli.mp4
-
-# 2. Aktifkan venv (sudah dibuat di Pigeon_Harvest/.venv-yolo)
 cd /home/fawwazfa/Program/Harvestmoon
 source Pigeon_Harvest/.venv-yolo/bin/activate
-
-# 3. Jalankan deteksi
-python3 run_detection_video.py \
-  --source video_asli.mp4 \
-  --model model/moonharvest-health-cls.onnx \
-  --out demo_video/stream_v7c_final.mp4
+python3 TEKNOFEST_SIAP/skrip/run_detection_video.py \
+  --source video_baru.mp4 \
+  --model TEKNOFEST_SIAP/model/moonharvest-health-cls.onnx \
+  --det-model TEKNOFEST_SIAP/model/moonharvest-uav-det.onnx \
+  --out TEKNOFEST_SIAP/demo_video/stream_v7c_final.mp4
 ```
 
 ### 3. Jalankan GCS untuk Demo

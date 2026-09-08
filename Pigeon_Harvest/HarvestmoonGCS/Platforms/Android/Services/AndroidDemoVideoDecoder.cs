@@ -25,8 +25,12 @@ public sealed class AndroidDemoVideoDecoder : IDisposable
     private const int MaxWidth = 640;
 
     private readonly Context _context;
-        private const string AssetPath = "demo_videos/YDXJ_fused_only_detected.mp4";
+    private const string AssetPath = "demo_videos/YDXJ_fused_only_detected.mp4";
     private const int TargetFps = 10;
+
+    private CancellationTokenSource? _cts;
+    private Task? _decodeTask;
+    private string? _tempVideoPath;
 
     public bool IsRunning => _decodeTask != null && !_decodeTask.IsCompleted;
 
@@ -128,8 +132,8 @@ public sealed class AndroidDemoVideoDecoder : IDisposable
         for (int i = 0; i < extractor.TrackCount; i++)
         {
             var fmt = extractor.GetTrackFormat(i);
-            var mime = fmt?.GetString(MediaFormat.KeyMime) ?? "";
-            if (mime.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+            var trackMime = fmt?.GetString(MediaFormat.KeyMime) ?? "";
+            if (trackMime.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
             {
                 videoTrack = i;
                 videoFormat = fmt;
@@ -245,7 +249,7 @@ public sealed class AndroidDemoVideoDecoder : IDisposable
         }
     }
 
-    private static byte[]? ImageToJpeg(Android.Media.Image image, MediaFormat videoFormat)
+    private static byte[]? ImageToJpeg(global::Android.Media.Image image, MediaFormat videoFormat)
     {
         try
         {
@@ -263,11 +267,11 @@ public sealed class AndroidDemoVideoDecoder : IDisposable
             var format = image.Format;
             Bitmap? bmp = null;
 
-            if (format == (int)ImageFormatType.Yuv420888)
+            if (format == ImageFormatType.Yuv420888)
             {
                 bmp = YuvToBitmap(image, width, height);
             }
-            else if (format == (int)ImageFormatType.Jpeg)
+            else if (format == ImageFormatType.Jpeg)
             {
                 var plane = image.GetPlanes()?[0];
                 if (plane == null) return null;
@@ -312,7 +316,7 @@ public sealed class AndroidDemoVideoDecoder : IDisposable
         }
     }
 
-    private static Bitmap? YuvToBitmap(Android.Media.Image image, int width, int height)
+    private static Bitmap? YuvToBitmap(global::Android.Media.Image image, int width, int height)
     {
         try
         {

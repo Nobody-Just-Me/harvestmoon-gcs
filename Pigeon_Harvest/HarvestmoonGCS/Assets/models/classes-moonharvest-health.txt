@@ -1,5 +1,4 @@
+lush_green
+inconsistent_growth
+drought_severe_stress
 bare_soil
-disease_stress_vegetation
-drought_stress
-healthy_crop
-stressed_crop

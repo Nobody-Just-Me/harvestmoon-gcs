@@ -27,17 +27,20 @@ public sealed partial class DashboardPage : Page
 {
     private static readonly string[] DemoVideoPathCandidates =
     {
-        // Bundled assets — portable, works on any machine
-        Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "stream_v7c_final.mp4"),
-        Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "YDXJ_fused_only_detected.mp4"),
-        Path.Combine(Directory.GetCurrentDirectory(), "Assets", "demo_videos", "stream_v7c_final.mp4"),
-        Path.Combine(Directory.GetCurrentDirectory(), "Assets", "demo_videos", "YDXJ_fused_only_detected.mp4"),
-        // TEKNOFEST_SIAP demo folder fallback
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "TEKNOFEST_SIAP", "demo_video", "stream_v7c_final.mp4"),
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "TEKNOFEST_SIAP", "demo_video", "YDXJ_fused_only_detected.mp4"),
-        // Additional fallback paths
+        // Prioritas 1: Video utama Teknofest (Sawah asli 15 HST, 2.7MB, 15 FPS)
         "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/stream_v7c_final.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/vidio/15d.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/vid/15d.mp4",
+        Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "stream_v7c_final.mp4"),
+        Path.Combine(Directory.GetCurrentDirectory(), "Assets", "demo_videos", "stream_v7c_final.mp4"),
+
+        // Prioritas 2: Video sekunder Teknofest (Variasi vegetasi & tanah)
         "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/YDXJ_fused_only_detected.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/vidio/YDXJ0012_demo(1).mp4",
+        "/home/fawwazfa/Program/Harvestmoon/vidio/YDX_burned.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/vid/YDXJ0012_demo.mp4",
+        Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "YDXJ_fused_only_detected.mp4"),
+        Path.Combine(Directory.GetCurrentDirectory(), "Assets", "demo_videos", "YDXJ_fused_only_detected.mp4"),
     };
     private readonly FlightViewModel? _flightViewModel;
     private readonly MapViewModel? _mapViewModel;
@@ -1619,9 +1622,10 @@ public sealed partial class DashboardPage : Page
 
                 // Gunakan HSV stream (Python moonharvest_detect_stream.py) agar:
                 // 1. Video loop selamanya (--demo flag aktif)
-                // 2. Bounding box + overlay deteksi ditampilkan real-time
-                // 3. Target 15 FPS meskipun source video hanya 10 FPS
-                var modelPath = _harvestFunctionalService?.RuntimeModelPath;
+                // 2. Bounding box + overlay deteksi ditampilkan real-time dari model v5 (88.5% acc)
+                // 3. Target 15 FPS meskipun source video hanya 10-30 FPS
+                // Prioritas model: v5 (baru, 4 kelas Teknofest) → runtime model → fallback
+                var modelPath = PythonCameraService.ResolveHealthModelPath();
                 bool started = await _cameraService.StartHsvStreamAsync(
                     source: videoPath,
                     modelPath: modelPath,
@@ -1779,7 +1783,14 @@ public sealed partial class DashboardPage : Page
         InjectDemoTelemetry(_demoStep);
         InjectDemoTimelineEvents(_demoStep);
         InjectDemoDetectionUI(_demoStep);
-        int _demoLoopPeriod = (DemoWaypoints.Length - 1) * DemoTicksPerSegment; // 80 steps = full route
+
+        // Simulasi geofence check — cek apakah UAV keluar batas setiap 5 tick
+        if (_demoStep % 5 == 0 && _flightViewModel?.Telemetry != null)
+        {
+            UpdateAlertCenter(_flightViewModel.Telemetry, true);
+        }
+
+        int _demoLoopPeriod = (DemoWaypoints.Length - 1) * DemoTicksPerSegment;
         if (_demoStep >= _demoLoopPeriod) _demoStep = 0;
     }
 
@@ -2272,7 +2283,9 @@ public sealed partial class DashboardPage : Page
             if (LiveViaConnectionText != null) LiveViaConnectionText.Text = "Live";
             if (LiveViaConnectionPill != null) LiveViaConnectionPill.Background = new SolidColorBrush(Color.FromArgb(255, 46, 125, 50));
 
-            const string cameraSource = "0";
+            var cameraSource = Environment.GetEnvironmentVariable("MOONHARVEST_CAMERA_SOURCE");
+            if (string.IsNullOrWhiteSpace(cameraSource))
+                cameraSource = "0";
 
             if (_cameraService != null)
             {
@@ -2374,6 +2387,12 @@ public sealed partial class DashboardPage : Page
 
     private static string? ResolveDetectedVideoPath()
     {
+        var envOverride = Environment.GetEnvironmentVariable("MOONHARVEST_DEMO_VIDEO");
+        if (!string.IsNullOrWhiteSpace(envOverride) && File.Exists(envOverride))
+        {
+            return envOverride;
+        }
+
         foreach (var candidate in DemoVideoPathCandidates)
         {
             if (File.Exists(candidate) && new FileInfo(candidate).Length > 10_000)

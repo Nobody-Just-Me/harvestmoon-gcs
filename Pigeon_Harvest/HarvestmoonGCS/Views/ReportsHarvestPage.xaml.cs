@@ -125,6 +125,10 @@ public sealed partial class ReportsHarvestPage : Page
         // Try to find the demo video file so the exported PDF shows a real path
         var videoCandidates = new[]
         {
+            "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/stream_v7c_final.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/vidio/15d.mp4",
+            "/home/fawwazfa/Program/Harvestmoon/vidio/YDXJ0012_demo(1).mp4",
+            "/home/fawwazfa/Program/Harvestmoon/vid/15d.mp4",
             "/home/fawwazfa/Program/Harvestmoon/demo_videos/fusion_gabung/gabung_fused_only.mp4",
             "/home/fawwazfa/Program/Harvestmoon/demo_videos/fusion_gabung/gabung_fused.mp4",
             "/home/fawwazfa/Program/Harvestmoon/demo_videos/out/gabung_fused_only.mp4",

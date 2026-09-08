@@ -364,19 +364,22 @@ public sealed partial class AISettingsPage : Page
         var baseDirectory = AppContext.BaseDirectory;
         // moonharvest-uav-det is the default: it's a detector with a 3-D YOLOv8-style output that
         // YoloDetector.PostProcessYoloV8 actually knows how to read. moonharvest-health-cls is a
-        // classifier (2-D output) that the same shared post-processing path cannot consume — it
-        // silently produces zero detections if loaded as the active runtime model. Android:
+        // classifier (2-D output) used in Python stream mode. Android:
         // prefer INT8 (smaller, faster via NNAPI); desktop: full FP32.
 #if __ANDROID__
         var preferredModelName = "moonharvest-uav-det-int8.onnx";
+        var preferredClassName = "classes-moonharvest-uav-det.txt";
 #else
         var preferredModelName = "moonharvest-uav-det.onnx";
+        var preferredClassName = "classes-moonharvest-uav-det.txt";
 #endif
         var defaultModelPath = Path.Combine(baseDirectory, "Assets", "models", preferredModelName);
         // Fallback to FP32 if INT8 file is missing (e.g. first install before asset copy)
         if (!File.Exists(defaultModelPath))
             defaultModelPath = Path.Combine(baseDirectory, "Assets", "models", "moonharvest-uav-det.onnx");
-        var defaultClassPath = Path.Combine(baseDirectory, "Assets", "models", "classes-moonharvest-uav-det.txt");
+        var defaultClassPath = Path.Combine(baseDirectory, "Assets", "models", preferredClassName);
+        if (!File.Exists(defaultClassPath))
+            defaultClassPath = Path.Combine(baseDirectory, "Assets", "models", "classes-moonharvest-uav-det.txt");
 
         var currentModel = _harvestFunctionalService?.RuntimeModelPath;
         var currentClass = _harvestFunctionalService?.RuntimeClassPath;

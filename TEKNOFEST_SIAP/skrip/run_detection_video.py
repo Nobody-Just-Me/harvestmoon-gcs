@@ -12,7 +12,8 @@ import numpy as np
 from pathlib import Path
 
 # ── import pipeline dari moonharvest_detect_stream ────────────────────────────
-sys.path.insert(0, str(Path(__file__).parent / "Pigeon_Harvest" / "HarvestmoonGCS"))
+sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/HarvestmoonGCS")
 from moonharvest_detect_stream import (
     HSV_CFG, segment_regions, fuse, load_classifier,
     YOLODetector, nms, compute_fhi, EMASmooth, draw_stream, build_gcs_counts
@@ -110,6 +111,7 @@ def main():
         except Exception as exc:
             print(f"[WARN] frame {fidx}: {exc}")
             vis = frame
+            fhi = 75.0
 
         writer.write(vis)
         written += 1

@@ -1335,6 +1335,7 @@ public sealed class HarvestFunctionalService : IDisposable
             // candidate list (after the detector) preserves it as a fallback file to pick from
             // in AI Settings, but it must not be the model that loads by default.
 #if __ANDROID__
+            modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-health-cls-v5.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-health.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-uav-det-int8.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-uav-det.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-health-cls-int8.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-health.txt")));
@@ -1342,6 +1343,7 @@ public sealed class HarvestFunctionalService : IDisposable
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-agri-320.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-agri-basic.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "Assets", "models", "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-320.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-coco.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "moonharvest-health-cls-v5.onnx"), Path.Combine(dir, "classes-moonharvest-health.txt")));
             modelClassPairs.Add((Path.Combine(dir, "moonharvest-uav-det-int8.onnx"), Path.Combine(dir, "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "moonharvest-uav-det.onnx"), Path.Combine(dir, "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "moonharvest-health-cls-int8.onnx"), Path.Combine(dir, "classes-moonharvest-health.txt")));
@@ -1350,13 +1352,12 @@ public sealed class HarvestFunctionalService : IDisposable
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-320.onnx"), Path.Combine(dir, "classes-yolov8n-coco.txt")));
 #else
+            // Desktop: YOLO detector (moonharvest-uav-det.onnx) for C# object detection
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-uav-det.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-uav-det.txt")));
-            modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "moonharvest-health-cls.onnx"), Path.Combine(dir, "Assets", "models", "classes-moonharvest-health.txt")));
+            modelClassPairs.Add((Path.Combine(dir, "moonharvest-uav-det.onnx"), Path.Combine(dir, "classes-moonharvest-uav-det.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-agri.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-agri-basic.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "Assets", "models", "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "Assets", "models", "yolov8n.onnx"), Path.Combine(dir, "Assets", "models", "classes-yolov8n-coco.txt")));
-            modelClassPairs.Add((Path.Combine(dir, "moonharvest-uav-det.onnx"), Path.Combine(dir, "classes-moonharvest-uav-det.txt")));
-            modelClassPairs.Add((Path.Combine(dir, "moonharvest-health-cls.onnx"), Path.Combine(dir, "classes-moonharvest-health.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-agri.onnx"), Path.Combine(dir, "classes-yolov8n-agri-basic.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n-crop-weed-416.onnx"), Path.Combine(dir, "classes-crop-weed.txt")));
             modelClassPairs.Add((Path.Combine(dir, "yolov8n.onnx"), Path.Combine(dir, "classes-yolov8n-coco.txt")));

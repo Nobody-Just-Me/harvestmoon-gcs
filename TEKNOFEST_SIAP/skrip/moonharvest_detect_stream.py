@@ -48,18 +48,21 @@ SEVERITY = {
     "Bare Soil / Gap":         0.10,
 }
 
-# ── Mapping ONNX class → display (v5 model) ────────────────────────────────────
+# ── Mapping ONNX class → display (v5 model - 4 kelas Teknofest) ────────────────
 ONNX_MAP = {
-    "healthy_crop":  "Lush Green",
-    "stressed_crop": "Inconsistent Growth",
-    "drought_stress":"Drought / Severe Stress",
-    "bare_soil":     "Bare Soil / Gap",
-    "lush_green":    "Lush Green",
-    "well_irrigated":"Lush Green",
-    "inconsistent_growth":"Inconsistent Growth",
-    "soil_issues":   "Bare Soil / Gap",
-    "disease":       "Inconsistent Growth",
-    "pest":          "Inconsistent Growth",
+    # Kelas v5 baru (moonharvest-health-cls-v5.onnx)
+    "lush_green":            "Lush Green",
+    "inconsistent_growth":   "Inconsistent Growth",
+    "drought_severe_stress": "Drought / Severe Stress",
+    "bare_soil":             "Bare Soil / Gap",
+    # Kelas lama (backward compatibility)
+    "healthy_crop":          "Lush Green",
+    "stressed_crop":         "Inconsistent Growth",
+    "drought_stress":        "Drought / Severe Stress",
+    "well_irrigated":        "Lush Green",
+    "soil_issues":           "Bare Soil / Gap",
+    "disease":               "Inconsistent Growth",
+    "pest":                  "Inconsistent Growth",
 }
 
 # Kelas ONNX yang boleh override label HSV per zona
@@ -216,29 +219,51 @@ class ONNXClassifier:
     def __init__(self, path):
         import onnxruntime as ort, ast
         self.sess  = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
-        self.iname = self.sess.get_inputs()[0].name
+        inp        = self.sess.get_inputs()[0]
+        self.iname = inp.name
+        shp        = inp.shape
+        self.h     = shp[2] if len(shp) > 2 and isinstance(shp[2], int) and shp[2] > 0 else 224
+        self.w     = shp[3] if len(shp) > 3 and isinstance(shp[3], int) and shp[3] > 0 else 224
+        self.batch_size = shp[0] if isinstance(shp[0], int) and shp[0] > 0 else None
         meta = self.sess.get_modelmeta().custom_metadata_map
         raw  = meta.get("names", "{}")
-        parsed = ast.literal_eval(raw)
-        self.names = parsed if isinstance(parsed, dict) else {i:v for i,v in enumerate(parsed)}
-        print(f"[ONNX] {Path(path).name}  kelas: {self.names}")
+        try:
+            parsed = ast.literal_eval(raw)
+            self.names = parsed if isinstance(parsed, dict) else {i:v for i,v in enumerate(parsed)}
+        except Exception:
+            self.names = {0: 'bare_soil', 1: 'disease_stress_vegetation', 2: 'drought_stress', 3: 'healthy_crop', 4: 'stressed_crop'}
+        sys.stderr.write(f"[ONNX] {Path(path).name}  kelas: {self.names}  imgsz=({self.w},{self.h})  batch={self.batch_size}\n")
+        sys.stderr.flush()
 
-    def infer(self, crops, imgsz=160, batch=32):
+    def infer(self, crops, imgsz=None, batch=32):
         if not crops: return []
-        batch_list = []
-        for c in crops:
-            img = cv2.resize(c, (imgsz, imgsz)).astype(np.float32) / 255.0
-            batch_list.append(img.transpose(2,0,1))
         out = []
-        for s in range(0, len(batch_list), batch):
-            arr    = np.stack(batch_list[s:s+batch])
-            logits = self.sess.run(None, {self.iname: arr})[0]
-            exp    = np.exp(logits - logits.max(axis=1, keepdims=True))
-            probs  = exp / exp.sum(axis=1, keepdims=True)
-            for row in probs:
-                cid  = int(np.argmax(row))
-                conf = float(row[cid])
+        if self.batch_size == 1:
+            for c in crops:
+                img = cv2.resize(c, (self.w, self.h)).astype(np.float32) / 255.0
+                arr = np.expand_dims(img.transpose(2,0,1), axis=0)
+                logits = self.sess.run(None, {self.iname: arr})[0]
+                exp    = np.exp(logits - logits.max(axis=1, keepdims=True))
+                probs  = exp / exp.sum(axis=1, keepdims=True)
+                cid    = int(np.argmax(probs[0]))
+                conf   = float(probs[0][cid])
                 out.append((self.names.get(cid, str(cid)), conf))
+        else:
+            w = self.w if imgsz is None else imgsz
+            h = self.h if imgsz is None else imgsz
+            batch_list = []
+            for c in crops:
+                img = cv2.resize(c, (w, h)).astype(np.float32) / 255.0
+                batch_list.append(img.transpose(2,0,1))
+            for s in range(0, len(batch_list), batch):
+                arr    = np.stack(batch_list[s:s+batch])
+                logits = self.sess.run(None, {self.iname: arr})[0]
+                exp    = np.exp(logits - logits.max(axis=1, keepdims=True))
+                probs  = exp / exp.sum(axis=1, keepdims=True)
+                for row in probs:
+                    cid  = int(np.argmax(row))
+                    conf = float(row[cid])
+                    out.append((self.names.get(cid, str(cid)), conf))
         return out
 
 class PyTorchFallback:
@@ -246,9 +271,10 @@ class PyTorchFallback:
         from ultralytics import YOLO
         self.model = YOLO(str(path))
         self.names = self.model.names
-        print(f"[PT] {Path(path).name}  kelas: {self.names}")
+        sys.stderr.write(f"[PT] {Path(path).name}  kelas: {self.names}\n")
+        sys.stderr.flush()
 
-    def infer(self, crops, imgsz=160, batch=32):
+    def infer(self, crops, imgsz=416, batch=32):
         out = []
         for c in crops:
             r = self.model(c, verbose=False, imgsz=imgsz)[0]
@@ -262,7 +288,8 @@ def load_classifier(path):
     pt   = Path(path)
     onnx = pt.with_suffix(".onnx")
     if onnx.exists(): return ONNXClassifier(onnx)
-    print("[WARN] ONNX tidak ditemukan, pakai PyTorch")
+    sys.stderr.write("[WARN] ONNX tidak ditemukan, pakai PyTorch\n")
+    sys.stderr.flush()
     return PyTorchFallback(pt)
 
 # ── YOLO Detector (moonharvest-uav-det.onnx) ──────────────────────────────────
@@ -293,8 +320,9 @@ class YOLODetector:
         self.iname    = inp.name
         # Input shape: [1, 3, H, W] — gunakan ukuran dinamis atau default 640
         shp           = inp.shape
-        self.imgsz    = (shp[2] if isinstance(shp[2], int) and shp[2] > 0 else 640,
-                         shp[3] if isinstance(shp[3], int) and shp[3] > 0 else 640)
+        self.h        = shp[2] if isinstance(shp[2], int) and shp[2] > 0 else 640
+        self.w        = shp[3] if isinstance(shp[3], int) and shp[3] > 0 else 640
+        self.imgsz    = (self.h, self.w)
         meta          = self.sess.get_modelmeta().custom_metadata_map
         raw           = meta.get("names", "{}")
         try:
@@ -304,7 +332,8 @@ class YOLODetector:
             self.names = {0:"crop", 1:"weed", 2:"crop_row", 3:"disease_stress_vegetation"}
         self.conf_thr = conf_thr
         self.nc       = len(self.names)
-        print(f"[YOLO-DET] {Path(path).name}  kelas: {self.names}  imgsz={self.imgsz}")
+        sys.stderr.write(f"[YOLO-DET] {Path(path).name}  kelas: {self.names}  imgsz=({self.w},{self.h})\n")
+        sys.stderr.flush()
 
     def detect(self, frame):
         """
@@ -313,8 +342,7 @@ class YOLODetector:
                           "conf": float, "area": int, "source": "yolo-det"}
         """
         oh, ow = frame.shape[:2]
-        iw, ih = self.imgsz
-        img    = cv2.resize(frame, (iw, ih)).astype(np.float32) / 255.0
+        img    = cv2.resize(frame, (self.w, self.h)).astype(np.float32) / 255.0
         inp    = img.transpose(2, 0, 1)[None]          # [1,3,H,W]
 
         out    = self.sess.run(None, {self.iname: inp})[0]  # [1, 4+nc, anchors]
@@ -361,7 +389,7 @@ class YOLODetector:
         return dets
 
 # ── Fusion HSV + ONNX ──────────────────────────────────────────────────────────
-def fuse(frame, regions, classifier, imgsz=160):
+def fuse(frame, regions, classifier, imgsz=None):
     """
     HSV sebagai primary. ONNX hanya override jika:
     - confidence >= ONNX_MIN_CONF (0.70)
@@ -524,10 +552,11 @@ def draw_stream(frame, dets, fhi):
         col = COLORS.get(d["class"], (200, 200, 200))
         thick = 3 if d.get("source", "").startswith("yolo") else 2
         cv2.rectangle(out, (x1, y1), (x2, y2), col, thick)
-        label = f"{d['class'][:18]} {d['conf']:.2f}"
+        label = f"{d['class']} {d['conf']:.2f}"
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-        cv2.rectangle(out, (x1, y1 - th - 6), (x1 + tw + 4, y1), col, -1)
-        cv2.putText(out, label, (x1 + 2, y1 - 3),
+        ty = max(y1, th + 6)
+        cv2.rectangle(out, (x1, ty - th - 6), (x1 + tw + 4, ty), col, -1)
+        cv2.putText(out, label, (x1 + 2, ty - 3),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1, cv2.LINE_AA)
     return out
 
@@ -693,6 +722,15 @@ def main():
     # Load YOLO-det
     detector = None
     det_path = getattr(args, "det_model", "")
+    if not det_path:
+        det_candidates = [
+            (Path(args.model).parent / "moonharvest-uav-det.onnx") if args.model else None,
+            Path(__file__).parent.parent / "model" / "moonharvest-uav-det.onnx",
+            Path(__file__).parent.parent.parent / "Pigeon_Harvest" / "HarvestmoonGCS" / "Assets" / "models" / "moonharvest-uav-det.onnx",
+            Path("/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/model/moonharvest-uav-det.onnx"),
+            Path("/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/HarvestmoonGCS/Assets/models/moonharvest-uav-det.onnx"),
+        ]
+        det_path = next((str(p) for p in det_candidates if p and p.exists()), "")
     if det_path and os.path.isfile(det_path):
         try:
             detector = YOLODetector(det_path)

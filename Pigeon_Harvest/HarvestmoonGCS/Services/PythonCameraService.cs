@@ -409,6 +409,12 @@ public class PythonCameraService : ICameraService
                 args += $" --model {QuoteArg(modelPath)}";
             }
 
+            var detModel = ResolveDetModelPath();
+            if (!string.IsNullOrWhiteSpace(detModel) && File.Exists(detModel))
+            {
+                args += $" --det-model {QuoteArg(detModel)}";
+            }
+
             var psi = new ProcessStartInfo
             {
                 FileName = pythonCmd,
@@ -854,6 +860,7 @@ public class PythonCameraService : ICameraService
         var candidates = new List<string>();
         var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
 
+        // Env override
         var envPath = Environment.GetEnvironmentVariable("MOONHARVEST_HEALTH_MODEL");
         AddCandidate(candidates, seen, envPath);
 
@@ -866,7 +873,21 @@ public class PythonCameraService : ICameraService
             var current = root;
             for (var depth = 0; depth < 8; depth++)
             {
-                // v4 model (2026-06-21) — retrained with gabung.mp4 UAV frames
+                // v5/v6 model (moonharvest-health-cls-v5.onnx) — 88.5% accuracy, 4 kelas Teknofest
+                AddCandidate(candidates, seen,
+                    Path.Combine(current, "Assets", "models", "moonharvest-health-cls-v5.onnx"));
+                AddCandidate(candidates, seen,
+                    Path.Combine(current, "HarvestmoonGCS", "Assets", "models", "moonharvest-health-cls-v5.onnx"));
+                // v6 training run weights (paling baru)
+                AddCandidate(candidates, seen,
+                    Path.Combine(current, "training", "runs", "moonharvest_v6_nano_fp32", "weights", "best.pt"));
+                // v5 training run weights
+                AddCandidate(candidates, seen,
+                    Path.Combine(current, "training", "runs", "moonharvest_v5_nano_fp32", "weights", "best.pt"));
+                // v4 training run weights
+                AddCandidate(candidates, seen,
+                    Path.Combine(current, "training", "runs", "moonharvest_teknofest_v4", "weights", "best.pt"));
+                // Legacy paths — v4 model (2026-06-21)
                 AddCandidate(candidates, seen,
                     Path.Combine(current, "runs", "classify", "health_train_v3-20260621", "weights", "best.pt"));
                 // v3 fallback
@@ -875,14 +896,53 @@ public class PythonCameraService : ICameraService
                 // v2 fallback
                 AddCandidate(candidates, seen,
                     Path.Combine(current, "runs", "classify", "health_train_v2-20260619", "weights", "best.pt"));
-                AddCandidate(candidates, seen,
-                    Path.Combine(current, "runs", "classify", "health_train_v2-20260617", "weights", "best.pt"));
 
                 var parent = Directory.GetParent(current);
                 if (parent == null) break;
                 current = parent.FullName;
             }
         }
+
+        // Absolute fallback paths
+        AddCandidate(candidates, seen,
+            "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/HarvestmoonGCS/Assets/models/moonharvest-health-cls-v5.onnx");
+        AddCandidate(candidates, seen,
+            "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/training/runs/moonharvest_v6_nano_fp32/weights/best.pt");
+        AddCandidate(candidates, seen,
+            "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/training/runs/moonharvest_v5_nano_fp32/weights/best.pt");
+
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    public static string? ResolveDetModelPath()
+    {
+        var candidates = new List<string>();
+        var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+        var envPath = Environment.GetEnvironmentVariable("MOONHARVEST_DET_MODEL");
+        AddCandidate(candidates, seen, envPath);
+
+        var probeRoots = new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() }
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct();
+
+        foreach (var root in probeRoots)
+        {
+            var current = root;
+            for (var depth = 0; depth < 8; depth++)
+            {
+                AddCandidate(candidates, seen, Path.Combine(current, "Assets", "models", "moonharvest-uav-det.onnx"));
+                AddCandidate(candidates, seen, Path.Combine(current, "HarvestmoonGCS", "Assets", "models", "moonharvest-uav-det.onnx"));
+                AddCandidate(candidates, seen, Path.Combine(current, "TEKNOFEST_SIAP", "model", "moonharvest-uav-det.onnx"));
+
+                var parent = Directory.GetParent(current);
+                if (parent == null) break;
+                current = parent.FullName;
+            }
+        }
+
+        AddCandidate(candidates, seen, "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/HarvestmoonGCS/Assets/models/moonharvest-uav-det.onnx");
+        AddCandidate(candidates, seen, "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/model/moonharvest-uav-det.onnx");
 
         return candidates.FirstOrDefault(File.Exists);
     }

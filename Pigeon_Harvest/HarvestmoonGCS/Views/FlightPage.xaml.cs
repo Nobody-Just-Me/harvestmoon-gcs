@@ -1476,10 +1476,14 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
 
     private static readonly string[] _demoVideoCandidates = new[]
     {
-        "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused_only.mp4",
-        "/home/fawwazfa/Program/Harvestmoon/test_program/moonharvest_hsv_detector/moonharvest_package/fusion_out/hsvv_fused.mp4",
-        "/home/fawwazfa/Program/Harvestmoon/runs/uav_detection/derr_detected.mp4",
-        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "derr.mp4")),
+        "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/stream_v7c_final.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/vidio/15d.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/vidio/YDXJ0012_demo(1).mp4",
+        "/home/fawwazfa/Program/Harvestmoon/vidio/YDX_burned.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/vid/15d.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/vid/YDXJ0012_demo.mp4",
+        "/home/fawwazfa/Program/Harvestmoon/vid/YDX_burned.mp4",
+        Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "stream_v7c_final.mp4"),
     };
 
     private async void OnStartStopStream(object sender, RoutedEventArgs e)
