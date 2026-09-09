@@ -169,10 +169,10 @@ public sealed partial class MissionPlannerPage : Page
         const double centerLat = -6.24361;
         const double centerLon = 107.36556;
         const double mPerDegLon = 111320.0 * 0.99407; // cos(-6.24361 deg)
-        double spacingLon = (1050.0 / 7.0) / mPerDegLon;
-        double startLon = centerLon - 3.5 * spacingLon;
+        double spacingLon = (1050.0 / 6.0) / mPerDegLon;
+        double startLon = centerLon - 3.0 * spacingLon;
 
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < 7; i++)
         {
             _waypoints.Add(new MissionWaypointItem
             {

@@ -471,8 +471,9 @@ public sealed partial class DashboardPage : Page
             telemetry,
             _mapViewModel?.Waypoints,
             _mapViewModel?.WaypointRadius ?? 2.0);
+        int demoCycleTicks = Math.Max(1, (DemoWaypoints.Length - 1) * 2 * DemoTicksPerSegment);
         var progress = _isDemoRunning
-            ? Math.Clamp(((_demoStep % (14 * DemoTicksPerSegment)) * 100.0 / (14 * DemoTicksPerSegment)), 0, 100)
+            ? Math.Clamp(((_demoStep % demoCycleTicks) * 100.0 / demoCycleTicks), 0, 100)
             : (connected ? missionProgress.ProgressPercent : 0.0);
         if (_lastMissionProgressValue != progress)
         {
@@ -1721,21 +1722,21 @@ public sealed partial class DashboardPage : Page
             UpdateAlertCenter(_flightViewModel?.Telemetry, true);
             UpdateDemoFieldReport();
 
-        // 7. Reset UI counters — start from WP 8-9 (segment index 2, midpoint WP8→WP9)
-        // DemoWaypointStartSequence=6, so WP8 = index 2, WP9 = index 3
-        // Each segment = DemoTicksPerSegment (10) ticks → WP8 starts at step 20
-        _demoStep = 20; // jump to WP 8 (segment 2)
-        _currentDemoWaypointIndex = 2;
+        // 7. Reset UI counters — start from WP 6 (segment index 0)
+        _demoStep = 0;
+        _currentDemoWaypointIndex = 0;
+        _nextDemoWaypointIndex = 1;
         _lastDetectionCount = 0;
         _lastConfidence = 0;
         DetectionCountText.Text = "0 det";
         int initialFps = 15;
         FpsHudText.Text = $"YOLOv8 · {initialFps} FPS";
-            if (_useFusedOnlyDemoSummary)
-            {
-                ApplyDemoVideoAnalysisSummary();
-            }
-            AddAlertRow("UAV survey active · Sukamerta rice field · AUTO mode", "info");
+        _useFusedOnlyDemoSummary = DemoScenarioComboBox?.SelectedIndex == 1;
+        if (_useFusedOnlyDemoSummary)
+        {
+            ApplyDemoVideoAnalysisSummary();
+        }
+        AddAlertRow("UAV survey active · Sukamerta rice field · AUTO mode", "info");
 
             // 8. Start tick timer (1 s interval)
             _demoTimer.Tick -= OnDemoTick;
@@ -1883,7 +1884,7 @@ public sealed partial class DashboardPage : Page
         double verticalSpeed = Math.Sin(step * 0.5) * 0.15;
 
         // Smooth battery drain and voltage curve (3S LiPo: 12.36V - 12.54V)
-        _demoBattery = Math.Max(84.0, _demoBatteryStart - (step % 140) * 0.05);
+        _demoBattery = Math.Max(84.0, _demoBatteryStart - (step % 120) * 0.05);
         _demoBatteryVoltage = 11.1 + (_demoBattery / 100.0) * 1.5;
 
         var telemetry = new TelemetryData
@@ -1962,27 +1963,25 @@ public sealed partial class DashboardPage : Page
 
     private void InjectDemoTimelineEvents(int step)
     {
-        int cycleStep = step % 140;
+        int cycleStep = step % 120;
         switch (cycleStep)
         {
-            case 2:   _timelineService?.Add("yolo",     "YOLO inference active · survey scan running",             "success"); break;
-            case 5:   _timelineService?.Add("waypoint", "WP 6 → Outbound survey transect initiated",              "success"); break;
-            case 10:  _timelineService?.Add("yolo",     DemoClassificationEvents[0],                               "info");    break;
-            case 15:  _timelineService?.Add("waypoint", "WP 7 → Crop canopy scan in progress",                     "success"); break;
-            case 20:  _timelineService?.Add("yolo",     DemoClassificationEvents[1],                               "warning"); break;
-            case 25:  _timelineService?.Add("waypoint", "WP 8 → Approaching east sector boundary",                 "success"); break;
-            case 35:  _timelineService?.Add("yolo",     DemoClassificationEvents[2],                               "info");    break;
-            case 45:  _timelineService?.Add("waypoint", "WP 10 → Outbound transect midpoint reached",             "success"); break;
-            case 55:  _timelineService?.Add("yolo",     DemoClassificationEvents[3],                               "warning"); break;
-            case 65:  _timelineService?.Add("waypoint", "WP 12 → Approaching eastern turnaround waypoint",        "success"); break;
-            case 70:  _timelineService?.Add("waypoint", "WP 13 → Turnaround initiated · banking into inbound leg", "success"); break;
-            case 75:  _timelineService?.Add("yolo",     DemoClassificationEvents[4],                               "critical"); break;
-            case 85:  _timelineService?.Add("waypoint", "WP 12 → Inbound return transect active",                 "success"); break;
-            case 95:  _timelineService?.Add("tlog",     $"Telemetry batch flushed · {step * 2} packets saved",    "info");    break;
-            case 105: _timelineService?.Add("waypoint", "WP 10 → Field center cross-verification completed",       "success"); break;
-            case 115: _timelineService?.Add("yolo",     DemoClassificationEvents[5],                               "info");    break;
-            case 125: _timelineService?.Add("waypoint", "WP 8 → Approaching western corridor boundary",            "success"); break;
-            case 135: _timelineService?.Add("waypoint", "WP 7 → Survey pass completed · loop active",             "success"); break;
+            case 2:   _timelineService?.Add("yolo",     "YOLO inference active · 60s multi-sector survey scan",       "success"); break;
+            case 5:   _timelineService?.Add("waypoint", "WP 6 → Sektor A (Vegetatif Subur) · Outbound aktif",        "success"); break;
+            case 10:  _timelineService?.Add("yolo",     "Lush Green (conf 0.94) · Kanopi optimal ~73%",               "info");    break;
+            case 15:  _timelineService?.Add("waypoint", "WP 7 → Memasuki Sektor B (Sawah 15 HST · PPT Baseline)",    "success"); break;
+            case 22:  _timelineService?.Add("yolo",     "Inconsistent Growth (conf 0.82) · FHI 81.6% terverifikasi",   "info");    break;
+            case 30:  _timelineService?.Add("waypoint", "WP 8 → Memasuki Sektor C (Anomali Stres & Kekeringan)",    "warning"); break;
+            case 35:  _timelineService?.Add("yolo",     "Drought / Severe Stress (conf 0.86) · Sektor C terdeteksi",  "critical"); break;
+            case 45:  _timelineService?.Add("waypoint", "WP 10 → Memasuki Sektor D (Zona Pemulihan & Irigasi)",      "success"); break;
+            case 52:  _timelineService?.Add("yolo",     "Crop Recovery (conf 0.88) · FHI meningkat ke 86%",           "info");    break;
+            case 58:  _timelineService?.Add("waypoint", "WP 12 → Titik putar balik tercapai · Banking initiated",     "success"); break;
+            case 62:  _timelineService?.Add("waypoint", "WP 12 → Inbound leg aktif · Sapuan balik dimulai",           "success"); break;
+            case 72:  _timelineService?.Add("tlog",     $"Telemetry batch flushed · {step * 2} packets saved",        "info");    break;
+            case 82:  _timelineService?.Add("waypoint", "WP 10 → Cross-verification Sektor D",                       "success"); break;
+            case 92:  _timelineService?.Add("waypoint", "WP 8 → Re-inspeksi Sektor C (Stres Area)",                  "warning"); break;
+            case 102: _timelineService?.Add("waypoint", "WP 7 → Re-inspeksi Sektor B (15 HST)",                      "info");    break;
+            case 115: _timelineService?.Add("waypoint", "WP 6 → Putaran survei selesai · Loop aktif",                 "success"); break;
         }
         if (step % 5 == 0 && step > 0) RenderIncidentTimeline();
     }
@@ -2464,7 +2463,7 @@ public sealed partial class DashboardPage : Page
         var videoPath = ResolveDetectedVideoPath();
         if (!string.IsNullOrWhiteSpace(videoPath) && File.Exists(videoPath))
         {
-            _useFusedOnlyDemoSummary = DemoScenarioComboBox?.SelectedIndex == 0;
+            _useFusedOnlyDemoSummary = DemoScenarioComboBox?.SelectedIndex == 1;
             var modelPath = PythonCameraService.ResolveHealthModelPath();
             await _cameraService.StopCameraAsync();
             await _cameraService.StartHsvStreamAsync(
@@ -2483,25 +2482,29 @@ public sealed partial class DashboardPage : Page
         if (DemoScenarioComboBox != null)
         {
             var idx = DemoScenarioComboBox.SelectedIndex;
-            if (idx == 1) // Multi-Sektor
+            if (idx == 0) // ★ Multi-Sektor 60s Showcase Utama
             {
                 var p = ResolveFilePath(
-                    "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/stream_multisector_survey.mp4",
-                    Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "stream_multisector_survey.mp4"));
+                    "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/stream_multisector_60s.mp4",
+                    Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "stream_multisector_60s.mp4"),
+                    "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/HarvestmoonGCS/Assets/demo_videos/stream_multisector_60s.mp4",
+                    "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/stream_multisector_survey.mp4");
+                if (p != null) return p;
+            }
+            else if (idx == 1) // Sawah 15 HST (Baseline PPT Slide 751)
+            {
+                var p = ResolveFilePath(
+                    "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/stream_v7c_final.mp4",
+                    Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "stream_v7c_final.mp4"),
+                    "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/HarvestmoonGCS/Assets/demo_videos/stream_v7c_final.mp4");
                 if (p != null) return p;
             }
             else if (idx == 2) // Lahan Kering / Stress Backup
             {
                 var p = ResolveFilePath(
                     "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/YDXJ_fused_only_detected.mp4",
-                    Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "YDXJ_fused_only_detected.mp4"));
-                if (p != null) return p;
-            }
-            else if (idx == 0) // Primary 15 HST
-            {
-                var p = ResolveFilePath(
-                    "/home/fawwazfa/Program/Harvestmoon/TEKNOFEST_SIAP/demo_video/stream_v7c_final.mp4",
-                    Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "stream_v7c_final.mp4"));
+                    Path.Combine(AppContext.BaseDirectory, "Assets", "demo_videos", "YDXJ_fused_only_detected.mp4"),
+                    "/home/fawwazfa/Program/Harvestmoon/Pigeon_Harvest/HarvestmoonGCS/Assets/demo_videos/YDXJ_fused_only_detected.mp4");
                 if (p != null) return p;
             }
         }
@@ -2551,8 +2554,10 @@ public sealed partial class DashboardPage : Page
 
     private static (double Lat, double Lon)[] GenerateDemoRiceFieldWaypoints()
     {
-        // Lurus E-W, 8 titik dengan jarak 150m antar WP — tidak ada belok/approach/takeoff offset
-        return GenerateStraightLineWaypoints(DemoFieldLat, DemoFieldLon, count: 8, totalMeters: 1050, bearingDeg: 90.0);
+        // 7 titik (6 segmen @ 175m = 1050m transek E-W), tiap segmen 10 detik.
+        // 6 segmen x 10s = 60 detik tepat satu arah (sinkron 1:1 dengan video 60s!).
+        // Round-trip 12 segmen x 10s = 120 detik (2 menit).
+        return GenerateStraightLineWaypoints(DemoFieldLat, DemoFieldLon, count: 7, totalMeters: 1050, bearingDeg: 90.0);
     }
 
     private static (double Lat, double Lon) OffsetCoordinate(double latitude, double longitude, double distanceMeters, double bearingDeg)

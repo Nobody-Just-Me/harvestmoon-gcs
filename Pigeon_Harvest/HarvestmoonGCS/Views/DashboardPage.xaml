@@ -138,12 +138,12 @@
                                               SelectedIndex="0"
                                               FontSize="11"
                                               Padding="8,3"
-                                              MinWidth="150"
+                                              MinWidth="175"
                                               SelectionChanged="DemoScenarioComboBox_SelectionChanged"
                                               ToolTipService.ToolTip="Pilih Skenario Video Demo TEKNOFEST">
-                                        <ComboBoxItem Content="Sawah 15 HST (FHI 81.7%)"/>
-                                        <ComboBoxItem Content="Multi-Sektor Survey (81–87%)"/>
-                                        <ComboBoxItem Content="Lahan Kering (Stress Backup)"/>
+                                        <ComboBoxItem Content="★ Multi-Sektor 60s (Showcase Utama)"/>
+                                        <ComboBoxItem Content="Sawah 15 HST (15.5s · FHI 81.7% PPT)"/>
+                                        <ComboBoxItem Content="Lahan Kering (35s · Uji Stres)"/>
                                     </ComboBox>
                                     <Button x:Name="StartDemoButton" Style="{StaticResource HarvestPrimaryButton}" Padding="10,5" Click="StartDemoButton_Click">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
