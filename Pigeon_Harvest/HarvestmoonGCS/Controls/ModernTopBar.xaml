@@ -109,7 +109,7 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <FontIcon x:Name="PageIcon" Glyph="&#xE80F;" FontSize="16" Foreground="{ThemeResource PrimaryBrush}" VerticalAlignment="Center"/>
                 <TextBlock x:Name="PageTitle" Text="Dashboard" FontSize="14" FontWeight="SemiBold" Foreground="{ThemeResource ForegroundBrush}" VerticalAlignment="Center"/>
-                <TextBlock x:Name="PageSubtitle" Text="/ Field Sector B · Bandung" FontSize="12" Foreground="{ThemeResource MutedForegroundBrush}" VerticalAlignment="Center"/>
+                <TextBlock x:Name="PageSubtitle" Text="/ Live Operations · Sukamerta, Karawang" FontSize="12" Foreground="{ThemeResource MutedForegroundBrush}" VerticalAlignment="Center"/>
             </StackPanel>
 
             <!-- CENTER: Status Pills (Wifi, Battery, GPS, AI) -->

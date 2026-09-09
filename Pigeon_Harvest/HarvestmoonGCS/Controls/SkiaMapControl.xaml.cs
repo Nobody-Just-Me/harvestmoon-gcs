@@ -18,12 +18,12 @@ namespace HarvestmoonGCS.Controls
 {
     public sealed partial class SkiaMapControl : UserControl
     {
-        private double _centerLat = -7.2754; // Surabaya default
-        private double _centerLon = 112.7947;
+        private double _centerLat = -6.24361; // Karawang rice field default
+        private double _centerLon = 107.36556;
         private int _zoomLevel = 15;
         
-        private double _vehicleLat = -7.2754;
-        private double _vehicleLon = 112.7947;
+        private double _vehicleLat = -6.24361;
+        private double _vehicleLon = 107.36556;
         private bool _showVehicle = false;
         private bool _followVehicle = false;
         private double _lastRenderedVehicleLat = double.NaN;
@@ -1322,7 +1322,7 @@ namespace HarvestmoonGCS.Controls
             else
             {
                 // Center on default location if no vehicle
-                SetCenter(-7.2754, 112.7947, _zoomLevel);
+                SetCenter(-6.24361, 107.36556, _zoomLevel);
                 Serilog.Log.Information("[SkiaMapControl] Centered map on default location");
             }
         }

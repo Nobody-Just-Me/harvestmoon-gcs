@@ -20,6 +20,7 @@ using HarvestmoonGCS.Core.Services;
 using HarvestmoonGCS.Core.Services.Optimization;
 using HarvestmoonGCS.Services;
 using HarvestmoonGCS.Controls;
+using HarvestmoonGCS.ViewModels;
 using Serilog;
 using MavLinkNet;
 using ConnectionType = HarvestmoonGCS.Core.Models.ConnectionType;
@@ -41,6 +42,7 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
     private bool _yoloReady;
     private string _lastYoloSummary = "YOLO: IDLE";
     private FlightViewModel? _viewModel;
+    private MapViewModel? _mapViewModel;
     private IMavLinkService? _mavLinkService;
     private RealTimeDataService? _realTimeDataService;
     private DispatcherTimer? _uiRefreshTimer;
@@ -160,6 +162,7 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         SizeChanged += OnFlightPageSizeChanged;
 
         _viewModel = App.Current.Services.GetService<FlightViewModel>();
+        _mapViewModel = App.Current.Services.GetService<MapViewModel>();
         _mavLinkService = App.Current.Services.GetService<IMavLinkService>();
         _optimizedTelemetryHandler = App.Current.Services.GetService<IOptimizedTelemetryHandler>();
         _optimizedRenderer = App.Current.Services.GetService<IOptimizedRenderer>();
@@ -427,6 +430,11 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         }
     }
 
+    public void OnPageActivated()
+    {
+        SyncMapFromViewModel();
+    }
+
     private void InitializeMapControl()
     {
         if (mapControl == null) return;
@@ -439,6 +447,28 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
         mapControl.SetCenter(initLat, initLon, 15);
         mapControl.SetFollowVehicle(true);
         mapControl.SetMapControlsVisible(false);
+        SyncMapFromViewModel();
+    }
+
+    private void SyncMapFromViewModel()
+    {
+        if (mapControl == null) return;
+        mapControl.ClearWaypoints();
+        if (_mapViewModel?.Waypoints != null && _mapViewModel.Waypoints.Count > 0)
+        {
+            foreach (var wp in _mapViewModel.Waypoints.OrderBy(w => w.Sequence))
+            {
+                mapControl.AddWaypointMarker(wp.Sequence, wp.Latitude, wp.Longitude, wp.Altitude, wp.Command.ToString());
+            }
+        }
+        if (_mapViewModel?.IsGeofenceActive == true)
+        {
+            mapControl.SetGeofence(true, _mapViewModel.GeofenceCenterLat, _mapViewModel.GeofenceCenterLon, _mapViewModel.GeofenceRadius);
+        }
+        else
+        {
+            mapControl.SetGeofence(true, 0, 0, 0);
+        }
     }
 
     private async void OnTakeoffClicked(object sender, RoutedEventArgs e)

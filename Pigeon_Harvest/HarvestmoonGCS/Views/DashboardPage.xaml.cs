@@ -622,9 +622,9 @@ public sealed partial class DashboardPage : Page
             Serilog.Log.Warning(ex, "[DashboardPage] Failed to bind offline map service");
         }
 
-        // Use same center as Map page (-7.2754, 112.7947 zoom 15) unless we have live telemetry
-        var initialLat = IsValidCoordinate(_centerLat, _centerLon) && (_centerLat != -6.9175) ? _centerLat : -7.2754;
-        var initialLon = IsValidCoordinate(_centerLat, _centerLon) && (_centerLon != 107.6191) ? _centerLon : 112.7947;
+        // Use Karawang demo center unless we have live telemetry
+        var initialLat = IsValidCoordinate(_centerLat, _centerLon) && (_centerLat != -6.9175) ? _centerLat : DemoFieldLat;
+        var initialLon = IsValidCoordinate(_centerLat, _centerLon) && (_centerLon != 107.6191) ? _centerLon : DemoFieldLon;
         DashboardMapControl.SetCenter(initialLat, initialLon, 15);
 
         // Sync follow-vehicle state
@@ -2029,12 +2029,12 @@ public sealed partial class DashboardPage : Page
             var frame = DemoDetectionFrames[step % DemoDetectionFrames.Length];
             count   = frame.Length;
             avgConf = 0.85; // fixed confidence avg 85% for demo fallback
-            // Fallback cyclic data calibrated to 15d.mp4 distribution
+            // Fallback cyclic data calibrated to Sukamerta Karawang survey transect
             double jitter   = Math.Sin(step * 0.7) * 1.5;
-            double rawH = Math.Max(0,  6.8 + jitter * 0.3);
-            double rawS = Math.Max(0, 69.3 - jitter * 0.4);
-            double rawD = 0.0; // drought sangat minim di 15d
-            double rawB = Math.Max(0, 23.9 + Math.Cos(step * 0.4));
+            double rawH = Math.Max(0, 81.6 + jitter * 0.5);
+            double rawS = Math.Max(0, 12.8 - jitter * 0.4);
+            double rawD = Math.Max(0,  3.4 + jitter * 0.1);
+            double rawB = Math.Max(0,  2.2 + Math.Cos(step * 0.4) * 0.3);
             double rawT = Math.Max(1, rawH + rawS + rawD + rawB);
             dLushGreen = rawH * 100 / rawT;
             dStress    = rawS * 100 / rawT;

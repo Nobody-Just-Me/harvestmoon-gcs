@@ -55,6 +55,7 @@ public sealed partial class MissionPlannerPage : Page
         MissionMapControl?.SetActive(true);
         MissionMapControl?.InvalidateArrange();
         _ = SyncFromWaypointServiceAsync();
+        ApplyGeofence();
     }
 
     private async Task SyncFromWaypointServiceAsync()

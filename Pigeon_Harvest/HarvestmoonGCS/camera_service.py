@@ -152,16 +152,27 @@ def cmd_stream(source: str) -> int:
         # Keep live cameras/network streams capped for UI stability.
         frame_delay = 1.0 / max(1.0, min(15.0, src_fps))
 
+    eof_retries = 0
     try:
         while True:
             ok, frame = cap.read()
             if not ok or frame is None:
                 if is_file_source:
+                    eof_retries += 1
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    if eof_retries > 3:
+                        try:
+                            cap.release()
+                            time.sleep(0.05)
+                            cap = cv2.VideoCapture(source)
+                        except Exception:
+                            pass
+                        eof_retries = 0
                     time.sleep(0.05)
                     continue
                 time.sleep(0.05)
                 continue
+            eof_retries = 0
 
             ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 78])
             if not ok:

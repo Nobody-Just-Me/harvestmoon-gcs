@@ -47,6 +47,11 @@ public sealed partial class StatsPage : Page
         this.Unloaded += OnUnloaded;
     }
 
+    public void OnPageActivated()
+    {
+        RenderDemoAnalysis();
+    }
+
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         if (_recommendationService != null)
@@ -319,6 +324,19 @@ public sealed partial class StatsPage : Page
             return;
         }
 
+        var inputPath = ImagePathTextBox.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(inputPath))
+        {
+            AnalysisStatusText.Text = "Pilih citra UAV terlebih dahulu (klik tombol Browse).";
+            return;
+        }
+
+        if (!File.Exists(inputPath))
+        {
+            AnalysisStatusText.Text = "File citra UAV tidak ditemukan. Pastikan path valid.";
+            return;
+        }
+
         AnalysisStatusText.Text = "Analyzing UAV image...";
 
         // Anchor the analysis at the vehicle's real last-known GPS position when available
@@ -326,10 +344,10 @@ public sealed partial class StatsPage : Page
         // a fixed default so zone coordinates are still computable when no UAV has connected.
         var vehiclePos = _mapViewModel?.VehiclePosition;
         var hasRealPosition = vehiclePos != null && (Math.Abs(vehiclePos.Latitude) > 0.000001 || Math.Abs(vehiclePos.Longitude) > 0.000001);
-        var anchorLat = hasRealPosition ? vehiclePos!.Latitude : -6.91124;
-        var anchorLon = hasRealPosition ? vehiclePos!.Longitude : 107.61152;
-        var anchorAlt = hasRealPosition && vehiclePos!.Altitude > 0 ? vehiclePos.Altitude : 120;
-        var anchorArea = hasRealPosition ? "Live UAV Position" : "Field Sector B · Bandung (default)";
+        var anchorLat = hasRealPosition ? vehiclePos!.Latitude : -6.24361;
+        var anchorLon = hasRealPosition ? vehiclePos!.Longitude : 107.36556;
+        var anchorAlt = hasRealPosition && vehiclePos!.Altitude > 0 ? vehiclePos.Altitude : 60;
+        var anchorArea = hasRealPosition ? "Live UAV Position" : "Sawah Sektor Sukamerta · Karawang";
 
         HarvestFunctionalService.HarvestAnalysisResult? result;
         try

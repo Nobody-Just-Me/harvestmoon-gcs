@@ -758,6 +758,7 @@ def main():
     _session_fhi     = []
 
     def compute_loop():
+        nonlocal cap
         ema    = EMASmooth(HSV_CFG["ema_alpha"])
         fidx   = 0
         eof_retries = 0
@@ -767,8 +768,17 @@ def main():
             if not ret or frame is None:
                 if DEMO_MODE and not isinstance(src, int):
                     # Demo mode: loop video selamanya tanpa batas
+                    eof_retries += 1
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     fidx = 0
+                    if eof_retries > 3:
+                        try:
+                            cap.release()
+                            time.sleep(0.05)
+                            cap = cv2.VideoCapture(src)
+                        except Exception:
+                            pass
+                        eof_retries = 0
                     continue
                 _emit_q.put(None)
                 break

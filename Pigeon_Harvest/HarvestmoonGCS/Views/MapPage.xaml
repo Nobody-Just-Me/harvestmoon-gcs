@@ -401,12 +401,12 @@
                                 
                                 <StackPanel Grid.Column="0" Spacing="4">
                                     <TextBlock Text="Latitude" Foreground="{ThemeResource MutedForegroundBrush}" FontSize="10"/>
-                                    <TextBox x:Name="tb_geofence_lat" PlaceholderText="-7.2754"/>
+                                    <TextBox x:Name="tb_geofence_lat" PlaceholderText="-6.24361"/>
                                 </StackPanel>
                                 
                                 <StackPanel Grid.Column="1" Spacing="4" Margin="8,0,0,0">
                                     <TextBlock Text="Longitude" Foreground="{ThemeResource MutedForegroundBrush}" FontSize="10"/>
-                                    <TextBox x:Name="tb_geofence_lon" PlaceholderText="112.7947"/>
+                                    <TextBox x:Name="tb_geofence_lon" PlaceholderText="107.36556"/>
                                 </StackPanel>
                                 
                                 <Button Grid.Column="2" 

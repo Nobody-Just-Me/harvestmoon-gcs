@@ -573,6 +573,12 @@ public sealed partial class MainPage_Modern : Page
             return;
         }
 
+        if (page is FlightPage flightPage)
+        {
+            flightPage.OnPageActivated();
+            return;
+        }
+
         if (page is MapPage mapPage)
         {
             mapPage.OnPageActivated();
@@ -600,6 +606,24 @@ public sealed partial class MainPage_Modern : Page
             return;
         }
 
+        if (page is StatsPage statsPage)
+        {
+            statsPage.OnPageActivated();
+            return;
+        }
+
+        if (page is CameraPage cameraPage)
+        {
+            cameraPage.OnPageActivated();
+            return;
+        }
+
+        if (page is EdgeModePage edgeModePage)
+        {
+            edgeModePage.OnPageActivated();
+            return;
+        }
+
         if (page is SettingsPage settingsPage)
         {
             settingsPage.OnPageActivated();
@@ -618,13 +642,13 @@ public sealed partial class MainPage_Modern : Page
         {
             case "Dashboard":
             case "Flight":
-                TopBar.UpdatePageTitle("Dashboard", "/ Live Operations · Field Site Alpha", "\uE80F");
+                TopBar.UpdatePageTitle("Dashboard", "/ Live Operations · Sukamerta, Karawang", "\uE80F");
                 break;
             case "Map":
                 TopBar.UpdatePageTitle("Map", "/ Full Map · Waypoints · Geofence · Offline Tiles", "\uE707");
                 break;
             case "MissionPlanner":
-                TopBar.UpdatePageTitle("Mission Planner", "/ Field Sector B · Bandung", "\uE707");
+                TopBar.UpdatePageTitle("Mission Planner", "/ Sukamerta, Karawang · 1050m Transect", "\uE707");
                 break;
             case "Camera":
                 TopBar.UpdatePageTitle("Camera", "/ Live UAV Capture", "\uE714");
@@ -636,7 +660,7 @@ public sealed partial class MainPage_Modern : Page
                 TopBar.UpdatePageTitle("AI Settings", "/ Diagnostics & Models", "\uE7C1");
                 break;
             case "Tlog":
-                TopBar.UpdatePageTitle("Reports", "/ Field Sector B · Bandung", "\uE8A5");
+                TopBar.UpdatePageTitle("Reports", "/ Mission History & Evidence · Karawang", "\uE8A5");
                 break;
             case "Settings":
                 TopBar.UpdatePageTitle("Settings", "/ System Preferences", "\uE713");

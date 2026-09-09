@@ -103,32 +103,61 @@ public sealed partial class CameraPage : Page
             OnStreamingStatusChanged(this, true);
 
         // Initialize and sync PiP map
-        if (PipMap != null)
-        {
-            double cLat = (_flightViewModel?.Telemetry?.Latitude != null && _flightViewModel.Telemetry.Latitude != 0)
-                ? _flightViewModel.Telemetry.Latitude
-                : -6.24361;
-            double cLon = (_flightViewModel?.Telemetry?.Longitude != null && _flightViewModel.Telemetry.Longitude != 0)
-                ? _flightViewModel.Telemetry.Longitude
-                : 107.36556;
-            PipMap.SetCenter(cLat, cLon, 16);
-            PipMap.SetFollowVehicle(true);
-            PipMap.SetMapControlsVisible(false);
-
-            if (_mapViewModel?.Waypoints != null && _mapViewModel.Waypoints.Count > 0)
-            {
-                PipMap.ClearWaypoints();
-                foreach (var wp in _mapViewModel.Waypoints)
-                {
-                    PipMap.AddWaypointMarker(wp.Sequence, wp.Latitude, wp.Longitude, wp.Altitude, "WP");
-                }
-            }
-        }
+        SyncPipMap();
 
         if (_flightViewModel != null)
         {
             _flightViewModel.PropertyChanged -= FlightViewModel_PropertyChanged;
             _flightViewModel.PropertyChanged += FlightViewModel_PropertyChanged;
+        }
+    }
+
+    public void OnPageActivated()
+    {
+        EnsureYoloInitialized();
+        AttachServiceHandlers();
+        if (_cameraService != null && _cameraService.IsStreaming)
+        {
+            OnStreamingStatusChanged(this, true);
+        }
+        SyncPipMap();
+        if (_flightViewModel != null)
+        {
+            _flightViewModel.PropertyChanged -= FlightViewModel_PropertyChanged;
+            _flightViewModel.PropertyChanged += FlightViewModel_PropertyChanged;
+        }
+    }
+
+    private void SyncPipMap()
+    {
+        if (PipMap == null) return;
+
+        double cLat = (_flightViewModel?.Telemetry?.Latitude != null && _flightViewModel.Telemetry.Latitude != 0)
+            ? _flightViewModel.Telemetry.Latitude
+            : -6.24361;
+        double cLon = (_flightViewModel?.Telemetry?.Longitude != null && _flightViewModel.Telemetry.Longitude != 0)
+            ? _flightViewModel.Telemetry.Longitude
+            : 107.36556;
+        PipMap.SetCenter(cLat, cLon, 16);
+        PipMap.SetFollowVehicle(true);
+        PipMap.SetMapControlsVisible(false);
+
+        if (_mapViewModel?.Waypoints != null && _mapViewModel.Waypoints.Count > 0)
+        {
+            PipMap.ClearWaypoints();
+            foreach (var wp in _mapViewModel.Waypoints)
+            {
+                PipMap.AddWaypointMarker(wp.Sequence, wp.Latitude, wp.Longitude, wp.Altitude, "WP");
+            }
+        }
+
+        if (_mapViewModel?.IsGeofenceActive == true)
+        {
+            PipMap.SetGeofence(true, _mapViewModel.GeofenceCenterLat, _mapViewModel.GeofenceCenterLon, _mapViewModel.GeofenceRadius);
+        }
+        else
+        {
+            PipMap.SetGeofence(true, 0, 0, 0);
         }
     }
 

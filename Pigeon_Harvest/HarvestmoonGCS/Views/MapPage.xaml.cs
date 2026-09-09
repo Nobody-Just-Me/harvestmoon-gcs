@@ -89,8 +89,8 @@ public sealed partial class MapPage : Page
         {
             try
             {
-                // Center on waypoint centroid when demo/mission waypoints are loaded; fall back to default
-                double centerLat = -7.2754, centerLon = 112.7947;
+                // Center on waypoint centroid when demo/mission waypoints are loaded; fall back to Karawang default
+                double centerLat = -6.24361, centerLon = 107.36556;
                 int zoom = 15;
                 if (ViewModel?.Waypoints.Count > 0)
                 {
@@ -203,8 +203,8 @@ public sealed partial class MapPage : Page
         // Inisialisasi tampilan map selalu dijalankan setiap kali halaman ditampilkan
         _ = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
-            // Center on loaded waypoints when available (e.g. demo), fall back to default
-            double centerLat = -7.2754, centerLon = 112.7947;
+            // Center on loaded waypoints when available (e.g. demo), fall back to Karawang default
+            double centerLat = -6.24361, centerLon = 107.36556;
             int zoom = 15;
             if (ViewModel?.Waypoints.Count > 0)
             {

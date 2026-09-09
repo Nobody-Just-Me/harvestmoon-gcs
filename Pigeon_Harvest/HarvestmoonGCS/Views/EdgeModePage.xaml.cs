@@ -43,6 +43,23 @@ public sealed partial class EdgeModePage : Page
         _refreshTimer.Start();
     }
 
+    public void OnPageActivated()
+    {
+        RefreshRuntimeInfo();
+        SyncTogglesFromService();
+        RefreshPerformanceStats();
+        if (_refreshTimer == null)
+        {
+            _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+            _refreshTimer.Tick += (_, _) =>
+            {
+                RefreshPerformanceStats();
+                RefreshRuntimeInfo();
+            };
+            _refreshTimer.Start();
+        }
+    }
+
     private void EdgeModePage_Unloaded(object sender, RoutedEventArgs e)
     {
         _refreshTimer?.Stop();
