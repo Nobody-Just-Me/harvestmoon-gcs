@@ -33,8 +33,8 @@ public sealed partial class MissionPlannerPage : Page
     private readonly MapViewModel? _mapViewModel;
     private readonly List<MissionWaypointItem> _waypoints = new();
     private bool _initialized;
-    private double _defaultLat = -6.8148;
-    private double _defaultLon = 107.6172;
+    private double _defaultLat = -6.24361;
+    private double _defaultLon = 107.36556;
 
     public MissionPlannerPage()
     {
@@ -148,10 +148,40 @@ public sealed partial class MissionPlannerPage : Page
             return;
         }
 
-        _waypoints.Add(new MissionWaypointItem { Sequence = 10, Latitude = -6.8148, Longitude = 107.6128, Altitude = 82 });
-        _waypoints.Add(new MissionWaypointItem { Sequence = 11, Latitude = -6.8148, Longitude = 107.6155, Altitude = 82 });
-        _waypoints.Add(new MissionWaypointItem { Sequence = 12, Latitude = -6.8148, Longitude = 107.6182, Altitude = 82 });
-        _waypoints.Add(new MissionWaypointItem { Sequence = 13, Latitude = -6.8148, Longitude = 107.6209, Altitude = 82 });
+        if (_mapViewModel != null && _mapViewModel.Waypoints.Count > 0)
+        {
+            foreach (var wp in _mapViewModel.Waypoints.OrderBy(w => w.Sequence))
+            {
+                _waypoints.Add(new MissionWaypointItem
+                {
+                    Sequence = wp.Sequence,
+                    Latitude = wp.Latitude,
+                    Longitude = wp.Longitude,
+                    Altitude = wp.Altitude > 0 ? wp.Altitude : 60,
+                });
+            }
+            RefreshWaypointList();
+            RenderMap();
+            return;
+        }
+
+        // Demo rice field transect in Sukamerta, Rawamerta, Karawang (1050m E-W, 8 WPs)
+        const double centerLat = -6.24361;
+        const double centerLon = 107.36556;
+        const double mPerDegLon = 111320.0 * 0.99407; // cos(-6.24361 deg)
+        double spacingLon = (1050.0 / 7.0) / mPerDegLon;
+        double startLon = centerLon - 3.5 * spacingLon;
+
+        for (int i = 0; i < 8; i++)
+        {
+            _waypoints.Add(new MissionWaypointItem
+            {
+                Sequence = 6 + i,
+                Latitude = centerLat,
+                Longitude = startLon + i * spacingLon,
+                Altitude = 60
+            });
+        }
     }
 
     private void MapProviderComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -298,14 +328,16 @@ public sealed partial class MissionPlannerPage : Page
             return;
         }
 
-        var center = _waypoints[0];
-        MissionMapControl.SetGeofence(true, center.Latitude, center.Longitude, GeofenceRadiusSlider.Value);
+        double centerLat = _waypoints.Average(w => w.Latitude);
+        double centerLon = _waypoints.Average(w => w.Longitude);
+        double radius = GeofenceRadiusSlider?.Value ?? 650;
+        MissionMapControl.SetGeofence(true, centerLat, centerLon, radius);
 
         // Keep the shared geofence model (used by IGeofenceService.SendGeofenceToVehicleAsync and
         // the Dashboard's boundary-distance alerting) in sync with what's drawn here.
         _geofenceService?.SetGeofenceType(GeofenceType.Circular);
-        _geofenceService?.SetGeofenceCenter(center.Latitude, center.Longitude);
-        _geofenceService?.SetGeofenceRadius(GeofenceRadiusSlider.Value);
+        _geofenceService?.SetGeofenceCenter(centerLat, centerLon);
+        _geofenceService?.SetGeofenceRadius(radius);
         _geofenceService?.SetGeofenceActive(true);
     }
 

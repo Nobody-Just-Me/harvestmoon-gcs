@@ -430,7 +430,14 @@ public sealed partial class FlightPage : Page, INotifyPropertyChanged
     private void InitializeMapControl()
     {
         if (mapControl == null) return;
-        mapControl.SetCenter(-7.2754, 112.7947, 15); // Surabaya
+        double initLat = (_viewModel?.Telemetry?.Latitude != null && _viewModel.Telemetry.Latitude != 0)
+            ? _viewModel.Telemetry.Latitude
+            : -6.24361;
+        double initLon = (_viewModel?.Telemetry?.Longitude != null && _viewModel.Telemetry.Longitude != 0)
+            ? _viewModel.Telemetry.Longitude
+            : 107.36556;
+        mapControl.SetCenter(initLat, initLon, 15);
+        mapControl.SetFollowVehicle(true);
         mapControl.SetMapControlsVisible(false);
     }
 

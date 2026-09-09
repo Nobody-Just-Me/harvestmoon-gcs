@@ -10,6 +10,8 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
 using HarvestmoonGCS.Core.Services;
 using HarvestmoonGCS.Core.Models;
+using HarvestmoonGCS.Core.ViewModels;
+using HarvestmoonGCS.ViewModels;
 using HarvestmoonGCS.Services;
 using Windows.Storage;
 using Windows.Storage.Pickers;
@@ -24,6 +26,8 @@ public sealed partial class CameraPage : Page
     private readonly IFileService? _fileService;
     private readonly IncidentTimelineService? _timelineService;
     private readonly HarvestFunctionalService? _harvestFunctionalService;
+    private readonly FlightViewModel? _flightViewModel;
+    private readonly MapViewModel? _mapViewModel;
     private DispatcherTimer _recordingTimer;
     private DateTime _recordingStartTime;
     private bool _isStreaming;
@@ -59,6 +63,8 @@ public sealed partial class CameraPage : Page
             _fileService = App.Current.Services.GetService<IFileService>();
             _timelineService = App.Current.Services.GetService<IncidentTimelineService>();
             _harvestFunctionalService = App.Current.Services.GetService<HarvestFunctionalService>();
+            _flightViewModel = App.Current.Services.GetService<FlightViewModel>();
+            _mapViewModel = App.Current.Services.GetService<MapViewModel>();
             
             if (_cameraService == null)
             {
@@ -95,11 +101,57 @@ public sealed partial class CameraPage : Page
         // Sync button state if a demo stream was already started before this page opened
         if (_cameraService != null && _cameraService.IsStreaming)
             OnStreamingStatusChanged(this, true);
+
+        // Initialize and sync PiP map
+        if (PipMap != null)
+        {
+            double cLat = (_flightViewModel?.Telemetry?.Latitude != null && _flightViewModel.Telemetry.Latitude != 0)
+                ? _flightViewModel.Telemetry.Latitude
+                : -6.24361;
+            double cLon = (_flightViewModel?.Telemetry?.Longitude != null && _flightViewModel.Telemetry.Longitude != 0)
+                ? _flightViewModel.Telemetry.Longitude
+                : 107.36556;
+            PipMap.SetCenter(cLat, cLon, 16);
+            PipMap.SetFollowVehicle(true);
+            PipMap.SetMapControlsVisible(false);
+
+            if (_mapViewModel?.Waypoints != null && _mapViewModel.Waypoints.Count > 0)
+            {
+                PipMap.ClearWaypoints();
+                foreach (var wp in _mapViewModel.Waypoints)
+                {
+                    PipMap.AddWaypointMarker(wp.Sequence, wp.Latitude, wp.Longitude, wp.Altitude, "WP");
+                }
+            }
+        }
+
+        if (_flightViewModel != null)
+        {
+            _flightViewModel.PropertyChanged -= FlightViewModel_PropertyChanged;
+            _flightViewModel.PropertyChanged += FlightViewModel_PropertyChanged;
+        }
+    }
+
+    private void FlightViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(FlightViewModel.Telemetry) && _flightViewModel?.Telemetry != null)
+        {
+            var t = _flightViewModel.Telemetry;
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                PipMap?.UpdateVehiclePosition(t.Latitude, t.Longitude);
+            });
+        }
     }
 
     private void CameraPage_Unloaded(object sender, RoutedEventArgs e)
     {
         _isInitialized = false;
+
+        if (_flightViewModel != null)
+        {
+            _flightViewModel.PropertyChanged -= FlightViewModel_PropertyChanged;
+        }
 
         DetachServiceHandlers();
         _yoloProcessor.Dispose();

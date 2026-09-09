@@ -471,7 +471,9 @@ public sealed partial class DashboardPage : Page
             telemetry,
             _mapViewModel?.Waypoints,
             _mapViewModel?.WaypointRadius ?? 2.0);
-        var progress = connected ? missionProgress.ProgressPercent : 0.0;
+        var progress = _isDemoRunning
+            ? Math.Clamp(((_demoStep % (14 * DemoTicksPerSegment)) * 100.0 / (14 * DemoTicksPerSegment)), 0, 100)
+            : (connected ? missionProgress.ProgressPercent : 0.0);
         if (_lastMissionProgressValue != progress)
         {
             MissionProgressBar.Value = progress;
@@ -481,7 +483,7 @@ public sealed partial class DashboardPage : Page
         if (_isDemoRunning)
         {
             int currentSeq = DemoWaypointStartSequence + _currentDemoWaypointIndex;
-            int nextSeq = DemoWaypointStartSequence + Math.Min(_currentDemoWaypointIndex + 1, DemoWaypoints.Length - 1);
+            int nextSeq = DemoWaypointStartSequence + _nextDemoWaypointIndex;
             SetTextIfChanged(WaypointProgressText, $"WP {currentSeq} → {nextSeq}", ref _lastWaypointProgressText);
         }
         else
@@ -1817,6 +1819,7 @@ public sealed partial class DashboardPage : Page
     }
 
     private int _currentDemoWaypointIndex;
+    private int _nextDemoWaypointIndex = 1;
 
     private void InjectDemoTelemetry(int step)
     {
@@ -1835,16 +1838,18 @@ public sealed partial class DashboardPage : Page
             // Outbound survey leg (West to East)
             int idx = cycleSeg;
             _currentDemoWaypointIndex = idx;
+            _nextDemoWaypointIndex = Math.Min(idx + 1, DemoWaypoints.Length - 1);
             (lat0, lon0) = DemoWaypoints[idx];
-            (lat1, lon1) = DemoWaypoints[idx + 1];
+            (lat1, lon1) = DemoWaypoints[_nextDemoWaypointIndex];
         }
         else
         {
             // Inbound return leg (East to West)
             int idx = oneWaySegs - (cycleSeg - oneWaySegs);
             _currentDemoWaypointIndex = idx;
+            _nextDemoWaypointIndex = Math.Max(0, idx - 1);
             (lat0, lon0) = DemoWaypoints[idx];
-            (lat1, lon1) = DemoWaypoints[idx - 1];
+            (lat1, lon1) = DemoWaypoints[_nextDemoWaypointIndex];
         }
 
         // Linear interpolation — smooth continuous position without teleport
@@ -1877,9 +1882,9 @@ public sealed partial class DashboardPage : Page
         // Vertical speed: tiny oscillation
         double verticalSpeed = Math.Sin(step * 0.5) * 0.15;
 
-        // Real, monotonic drain across the loop (was previously floored at exactly the
-        // starting value via Math.Max(82, start - ...), so the battery never actually moved).
-        _demoBattery = Math.Max(84.0, _demoBatteryStart - step * 0.09);
+        // Smooth battery drain and voltage curve (3S LiPo: 12.36V - 12.54V)
+        _demoBattery = Math.Max(84.0, _demoBatteryStart - (step % 140) * 0.05);
+        _demoBatteryVoltage = 11.1 + (_demoBattery / 100.0) * 1.5;
 
         var telemetry = new TelemetryData
         {
@@ -1957,24 +1962,27 @@ public sealed partial class DashboardPage : Page
 
     private void InjectDemoTimelineEvents(int step)
     {
-        int cycleStep = step % 80;
+        int cycleStep = step % 140;
         switch (cycleStep)
         {
-            case 2:  _timelineService?.Add("yolo",     "YOLO inference active · survey scan running",           "success"); break;
-            case 5:  _timelineService?.Add("waypoint", "WP 6 → Outbound transect leg active",                  "success"); break;
-            case 10: _timelineService?.Add("yolo",     DemoClassificationEvents[0],                             "info");    break;
-            case 15: _timelineService?.Add("waypoint", "WP 7 → Crop canopy scan in progress",                   "success"); break;
-            case 20: _timelineService?.Add("yolo",     DemoClassificationEvents[1],                             "warning"); break;
-            case 25: _timelineService?.Add("waypoint", "WP 8 → Approaching east sector boundary",               "success"); break;
-            case 35: _timelineService?.Add("yolo",     DemoClassificationEvents[2],                             "info");    break;
-            case 40: _timelineService?.Add("waypoint", "WP 9 → Survey transect turnaround completed",          "success"); break;
-            case 45: _timelineService?.Add("yolo",     DemoClassificationEvents[3],                             "warning"); break;
-            case 50: _timelineService?.Add("waypoint", "WP 10 → Inbound transect leg active",                  "success"); break;
-            case 54: _timelineService?.Add("yolo",     DemoClassificationEvents[4],                             "critical"); break;
-            case 58: _timelineService?.Add("waypoint", "WP 11 → Returning through field center",               "success"); break;
-            case 62: _timelineService?.Add("tlog",     $"Telemetry batch flushed · {step * 2} packets saved",  "info");    break;
-            case 70: _timelineService?.Add("waypoint", "WP 12 → West sector re-scan completed",                 "success"); break;
-            case 75: _timelineService?.Add("yolo",     "Continuous scan active · survey cycle verified",        "success"); break;
+            case 2:   _timelineService?.Add("yolo",     "YOLO inference active · survey scan running",             "success"); break;
+            case 5:   _timelineService?.Add("waypoint", "WP 6 → Outbound survey transect initiated",              "success"); break;
+            case 10:  _timelineService?.Add("yolo",     DemoClassificationEvents[0],                               "info");    break;
+            case 15:  _timelineService?.Add("waypoint", "WP 7 → Crop canopy scan in progress",                     "success"); break;
+            case 20:  _timelineService?.Add("yolo",     DemoClassificationEvents[1],                               "warning"); break;
+            case 25:  _timelineService?.Add("waypoint", "WP 8 → Approaching east sector boundary",                 "success"); break;
+            case 35:  _timelineService?.Add("yolo",     DemoClassificationEvents[2],                               "info");    break;
+            case 45:  _timelineService?.Add("waypoint", "WP 10 → Outbound transect midpoint reached",             "success"); break;
+            case 55:  _timelineService?.Add("yolo",     DemoClassificationEvents[3],                               "warning"); break;
+            case 65:  _timelineService?.Add("waypoint", "WP 12 → Approaching eastern turnaround waypoint",        "success"); break;
+            case 70:  _timelineService?.Add("waypoint", "WP 13 → Turnaround initiated · banking into inbound leg", "success"); break;
+            case 75:  _timelineService?.Add("yolo",     DemoClassificationEvents[4],                               "critical"); break;
+            case 85:  _timelineService?.Add("waypoint", "WP 12 → Inbound return transect active",                 "success"); break;
+            case 95:  _timelineService?.Add("tlog",     $"Telemetry batch flushed · {step * 2} packets saved",    "info");    break;
+            case 105: _timelineService?.Add("waypoint", "WP 10 → Field center cross-verification completed",       "success"); break;
+            case 115: _timelineService?.Add("yolo",     DemoClassificationEvents[5],                               "info");    break;
+            case 125: _timelineService?.Add("waypoint", "WP 8 → Approaching western corridor boundary",            "success"); break;
+            case 135: _timelineService?.Add("waypoint", "WP 7 → Survey pass completed · loop active",             "success"); break;
         }
         if (step % 5 == 0 && step > 0) RenderIncidentTimeline();
     }
