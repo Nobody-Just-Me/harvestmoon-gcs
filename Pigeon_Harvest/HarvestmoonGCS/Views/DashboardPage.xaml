@@ -134,6 +134,17 @@
                                         <TextBlock x:Name="ModeText" Text="STANDBY" FontSize="10"
                                                    Foreground="White" FontWeight="Bold"/>
                                     </Border>
+                                    <ComboBox x:Name="DemoScenarioComboBox"
+                                              SelectedIndex="0"
+                                              FontSize="11"
+                                              Padding="8,3"
+                                              MinWidth="150"
+                                              SelectionChanged="DemoScenarioComboBox_SelectionChanged"
+                                              ToolTipService.ToolTip="Pilih Skenario Video Demo TEKNOFEST">
+                                        <ComboBoxItem Content="Sawah 15 HST (FHI 81.7%)"/>
+                                        <ComboBoxItem Content="Multi-Sektor Survey (81–87%)"/>
+                                        <ComboBoxItem Content="Lahan Kering (Stress Backup)"/>
+                                    </ComboBox>
                                     <Button x:Name="StartDemoButton" Style="{StaticResource HarvestPrimaryButton}" Padding="10,5" Click="StartDemoButton_Click">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <FontIcon Glyph="&#xE768;" FontSize="11"/>

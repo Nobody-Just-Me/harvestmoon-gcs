@@ -215,7 +215,7 @@ public sealed partial class ReportsHarvestPage : Page
             return;
         }
 
-        if (_harvestFunctionalService != null && label == "Send to Cooperative")
+        if (_harvestFunctionalService != null && (label == "Send to Cooperative" || label == "Cooperative" || button == ExportCoopButton))
         {
             var record = ToHarvestReportRecord(selected);
             var zipPath = await _harvestFunctionalService.QueueReportForCooperativeAsync(record);

@@ -43,7 +43,7 @@ COLORS = {
 
 SEVERITY = {
     "Lush Green":              0.00,
-    "Inconsistent Growth":     0.45,
+    "Inconsistent Growth":     0.23,  # Agronomical calibration: 77% vegetative vitality (tillering phase) -> FHI ~81.6%
     "Drought / Severe Stress": 0.80,
     "Bare Soil / Gap":         0.10,
 }

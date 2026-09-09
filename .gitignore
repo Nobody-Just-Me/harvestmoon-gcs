@@ -30,6 +30,12 @@ yolo*.pt
 /datasheet/
 RedEdge/
 Sequoia/
+Pigeon_Harvest/training/datasets/
+Pigeon_Harvest/training/runs/
+Pigeon_Harvest/training/weights/
+*.part
+*.pyc
+__pycache__/
 
 # Temporary outputs
 AFTER_CLEANUP_STATUS.txt
