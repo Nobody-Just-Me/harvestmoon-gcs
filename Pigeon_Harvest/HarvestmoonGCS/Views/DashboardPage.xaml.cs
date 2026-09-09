@@ -1809,7 +1809,10 @@ public sealed partial class DashboardPage : Page
             UpdateAlertCenter(_flightViewModel.Telemetry, true);
         }
 
-        int _demoLoopPeriod = (DemoWaypoints.Length - 1) * DemoTicksPerSegment;
+        // Continuous round-trip survey loop (WP0 -> WP7 -> WP0 -> ...)
+        int oneWaySegs = DemoWaypoints.Length - 1;
+        int totalCycleSegments = oneWaySegs * 2;
+        int _demoLoopPeriod = totalCycleSegments * DemoTicksPerSegment;
         if (_demoStep >= _demoLoopPeriod) _demoStep = 0;
     }
 
@@ -1819,17 +1822,32 @@ public sealed partial class DashboardPage : Page
     {
         if (_flightViewModel == null) return;
 
-        // --- Smooth interpolation along the survey path ---
-        int totalSegments = DemoWaypoints.Length - 1;
-        int globalStep    = step % (totalSegments * DemoTicksPerSegment);
-        int segIdx        = globalStep / DemoTicksPerSegment;
-        _currentDemoWaypointIndex = segIdx;
-        double t          = (globalStep % DemoTicksPerSegment) / (double)DemoTicksPerSegment;
+        // --- Continuous ping-pong interpolation along survey transect ---
+        int oneWaySegs = DemoWaypoints.Length - 1;
+        int totalCycleSegments = oneWaySegs * 2;
+        int globalStep = step % (totalCycleSegments * DemoTicksPerSegment);
+        int cycleSeg = globalStep / DemoTicksPerSegment;
+        double t = (globalStep % DemoTicksPerSegment) / (double)DemoTicksPerSegment;
 
-        var (lat0, lon0) = DemoWaypoints[segIdx];
-        var (lat1, lon1) = DemoWaypoints[Math.Min(segIdx + 1, DemoWaypoints.Length - 1)];
+        double lat0, lon0, lat1, lon1;
+        if (cycleSeg < oneWaySegs)
+        {
+            // Outbound survey leg (West to East)
+            int idx = cycleSeg;
+            _currentDemoWaypointIndex = idx;
+            (lat0, lon0) = DemoWaypoints[idx];
+            (lat1, lon1) = DemoWaypoints[idx + 1];
+        }
+        else
+        {
+            // Inbound return leg (East to West)
+            int idx = oneWaySegs - (cycleSeg - oneWaySegs);
+            _currentDemoWaypointIndex = idx;
+            (lat0, lon0) = DemoWaypoints[idx];
+            (lat1, lon1) = DemoWaypoints[idx - 1];
+        }
 
-        // Linear interpolation — smooth continuous position
+        // Linear interpolation — smooth continuous position without teleport
         double lat = lat0 + (lat1 - lat0) * t;
         double lon = lon0 + (lon1 - lon0) * t;
 
@@ -1939,25 +1957,24 @@ public sealed partial class DashboardPage : Page
 
     private void InjectDemoTimelineEvents(int step)
     {
-        // DemoWaypoints = WP 6-13, extended survey pattern. 8 segments × 10 ticks = 80s loop.
-        switch (step)
+        int cycleStep = step % 80;
+        switch (cycleStep)
         {
-            case 2:  _timelineService?.Add("yolo",     "YOLO inference active · scan started",                  "success"); break;
-            case 5:  _timelineService?.Add("waypoint", "WP 6 → Takeoff · 450m from start",                    "success"); break;
+            case 2:  _timelineService?.Add("yolo",     "YOLO inference active · survey scan running",           "success"); break;
+            case 5:  _timelineService?.Add("waypoint", "WP 6 → Outbound transect leg active",                  "success"); break;
             case 10: _timelineService?.Add("yolo",     DemoClassificationEvents[0],                             "info");    break;
-            case 15: _timelineService?.Add("waypoint", "WP 7 → Climbing · 240m from WP6",                   "success"); break;
+            case 15: _timelineService?.Add("waypoint", "WP 7 → Crop canopy scan in progress",                   "success"); break;
             case 20: _timelineService?.Add("yolo",     DemoClassificationEvents[1],                             "warning"); break;
-            case 25: _timelineService?.Add("waypoint", "WP 8 → Entry corridor · 240m from WP7",                "success"); break;
+            case 25: _timelineService?.Add("waypoint", "WP 8 → Approaching east sector boundary",               "success"); break;
             case 35: _timelineService?.Add("yolo",     DemoClassificationEvents[2],                             "info");    break;
-            case 40: _timelineService?.Add("waypoint", "WP 9 → West start · 180m from WP8","success"); break;
+            case 40: _timelineService?.Add("waypoint", "WP 9 → Survey transect turnaround completed",          "success"); break;
             case 45: _timelineService?.Add("yolo",     DemoClassificationEvents[3],                             "warning"); break;
-            case 50: _timelineService?.Add("waypoint", "WP 10 → Main transect · 225m from WP9",              "success"); break;
+            case 50: _timelineService?.Add("waypoint", "WP 10 → Inbound transect leg active",                  "success"); break;
             case 54: _timelineService?.Add("yolo",     DemoClassificationEvents[4],                             "critical"); break;
-            case 58: _timelineService?.Add("waypoint", "WP 11 → Field center · 450m from WP10",               "success"); break;
+            case 58: _timelineService?.Add("waypoint", "WP 11 → Returning through field center",               "success"); break;
             case 62: _timelineService?.Add("tlog",     $"Telemetry batch flushed · {step * 2} packets saved",  "info");    break;
-            case 70: _timelineService?.Add("waypoint", "WP 12 → Before end · 675m from WP11",              "success"); break;
-            case 75: _timelineService?.Add("yolo",     "Scan complete · ready for RTL",                              "success"); break;
-            case 80: _timelineService?.Add("waypoint", "WP 13 → Route complete · RTL started",                 "success"); break;
+            case 70: _timelineService?.Add("waypoint", "WP 12 → West sector re-scan completed",                 "success"); break;
+            case 75: _timelineService?.Add("yolo",     "Continuous scan active · survey cycle verified",        "success"); break;
         }
         if (step % 5 == 0 && step > 0) RenderIncidentTimeline();
     }
